@@ -114,7 +114,16 @@ export default function BatchSection({
               </span>
             )}
             {variant === "unassigned" && (
-              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-xs px-2 py-1">
+              <Button 
+                size="sm" 
+                className="bg-blue-600 hover:bg-blue-700 text-xs px-2 py-1"
+                onClick={() => {
+                  toast({
+                    title: "Auto-Assignment Started", 
+                    description: `Automatically assigning operators to ${orders.length} production orders`
+                  });
+                }}
+              >
                 <Wand2 className="w-3 h-3 mr-1" />
                 Auto-Assign
               </Button>

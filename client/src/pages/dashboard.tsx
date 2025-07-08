@@ -91,7 +91,10 @@ export default function Dashboard() {
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh
               </Button>
-              <Button className="bg-blue-600 hover:bg-blue-700">
+              <Button 
+                className="bg-blue-600 hover:bg-blue-700"
+                onClick={() => window.location.href = '/operator-settings'}
+              >
                 <Cog className="w-4 h-4 mr-2" />
                 Settings
               </Button>

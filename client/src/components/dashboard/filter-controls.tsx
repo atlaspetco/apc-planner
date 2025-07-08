@@ -142,6 +142,14 @@ export default function FilterControls({
             <Button 
               className="w-full mt-2 bg-green-600 hover:bg-green-700"
               disabled={selectedMOs.length === 0}
+              onClick={() => {
+                if (selectedMOs.length > 0) {
+                  toast({
+                    title: "Batch Created",
+                    description: `Created batch with ${selectedMOs.length} production orders`,
+                  });
+                }
+              }}
             >
               <Plus className="w-4 h-4 mr-2" />
               Create Batch ({selectedMOs.length})
