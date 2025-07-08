@@ -17,14 +17,14 @@ git commit -m "Initial commit: Manufacturing Dashboard with Fulfil API integrati
 ## Step 3: Create New GitHub Repository
 1. Go to GitHub.com
 2. Click "New Repository"
-3. Name: `manufacturing-dashboard` or `planner-v2`
+3. Name: `apc-planner`
 4. Description: "Manufacturing production planning dashboard with Fulfil API integration"
 5. Set to Private
 6. Don't initialize with README (we have files already)
 
 ## Step 4: Connect to New Remote
 ```bash
-git remote add origin https://github.com/YOUR_USERNAME/REPO_NAME.git
+git remote add origin https://github.com/YOUR_USERNAME/apc-planner.git
 git branch -M main
 git push -u origin main
 ```
