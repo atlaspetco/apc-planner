@@ -1,0 +1,95 @@
+You’ve described classic symptoms of a monolithic Streamlit or Flask app with import jobs and UI running in the same process and on the same port:
+	•	Only one endpoint (MO or WO) works at a time — usually means import jobs or API calls are blocking the event loop, DB, or app server.
+	•	Crashing or freezing the frontend — heavy backend tasks block the UI (Streamlit/Flask runs single-threaded by default!).
+	•	Maybe everything on port 5000 — running both import API and Streamlit on one process/port can cause port conflicts, deadlocks, or the Gunicorn/WSGI server to crash under load.
+
+⸻
+
+🚨 What’s Happening (Root Cause):
+	•	Streamlit (or Flask) apps are not meant for concurrent long-running jobs and UI in a single process.
+	•	When you run an import (heavy MO/WO API sync), it blocks the Python interpreter — nobody else can use the app/UI, and if the process dies (or OOMs), all endpoints fail.
+	•	Only one worker/process is serving everything, so UI and API fight for resources.
+	•	If you run Streamlit and an API server (Flask/FastAPI) on the same port/process, they can conflict or cause connection errors. Each app should have its own port/process.
+
+⸻
+
+🟢 How to Fix (High Reliability Approach):
+
+1. Split Backend/API and UI Processes
+	•	Run your import (FastAPI/Flask) on its own port/process.
+	•	Run Streamlit UI separately, pointing it at the backend via HTTP API.
+	•	Example:
+	•	Backend API (FastAPI or Flask): localhost:5000
+	•	Streamlit UI: localhost:8501 (default)
+	•	Make all DB imports, writes, and heavy work happen on the backend only.
+	•	Streamlit never touches the DB directly—it calls backend API endpoints.
+
+⸻
+
+2. Move Heavy Imports to Background Tasks
+	•	Use Python’s concurrent.futures.ThreadPoolExecutor or, better, a true task runner like Celery or FastAPI BackgroundTasks.
+	•	When a user clicks “Import MOs” or “Sync WOs”, Streamlit calls an API endpoint, which kicks off the import as a background job.
+	•	The UI can poll for job status via the API (show a spinner).
+
+⸻
+
+3. Never Run Streamlit/Flask on the Same Port
+	•	Each app gets its own process/port.
+	•	(This also prevents “port in use” errors, double logging, etc.)
+
+⸻
+
+4. Production-Grade Example Structure
+
+You should have:
+	•	/backend/main.py (FastAPI or Flask app)
+	•	Handles all imports, DB writes, sync endpoints (/import_mo, /import_wo, /stats, etc).
+	•	Runs on port 5000 (or any free port).
+	•	/frontend/app.py (Streamlit)
+	•	No DB connections, no heavy logic.
+	•	Just fetches via API:
+
+import requests
+data = requests.get("http://localhost:5000/mo_stats").json()
+
+
+	•	Runs on port 8501 (or default).
+
+⸻
+
+🚀 Copy/Paste How-To Fix Your Setup:
+
+A. Run Backend (FastAPI or Flask)
+
+# In one terminal/session:
+uvicorn backend.main:app --host 0.0.0.0 --port 5000
+
+B. Run Streamlit Frontend
+
+# In another terminal/session:
+streamlit run frontend/app.py --server.port 8501
+
+C. In Your Streamlit Code, Fetch From Backend API
+
+import requests
+api_url = "http://localhost:5000/import_mo"
+response = requests.post(api_url, json={...})
+
+
+⸻
+
+D. For Background Jobs
+	•	Use FastAPI BackgroundTasks or Celery to run imports so the API endpoint returns immediately, and the app stays snappy.
+
+⸻
+
+🟩 Summary
+	•	Do not run everything on port 5000 or in a single Python process.
+	•	Separate backend API and UI processes/ports.
+	•	Move all heavy work to the backend.
+	•	Let Streamlit only fetch data, never run imports/DB jobs itself.
+	•	This will eliminate port conflicts, blocking, and crashing UI!
+
+⸻
+
+Want a basic project scaffold or code samples for FastAPI + Streamlit split? Just say so! Paste any specific error you see for even more precise help.

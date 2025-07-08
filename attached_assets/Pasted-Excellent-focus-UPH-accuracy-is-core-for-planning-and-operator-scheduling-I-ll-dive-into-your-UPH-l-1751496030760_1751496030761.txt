@@ -1,0 +1,167 @@
+Excellent focus—UPH accuracy is core for planning and operator scheduling. I’ll dive into your UPH logic based on server/uph-calculator.ts, authentic-uph-calculator.ts, and database-uph-calculator.ts, and summarize where bugs or design flaws might cause incorrect values.
+
+⸻
+
+1. Where UPH Calculation Can Go Wrong
+
+A. Formula Consistency
+	•	UPH (Units Per Hour) should be calculated as:
+UPH = Total Units Completed / (Total Seconds / 3600)
+	•	If either quantity or duration is missing, zero, or from the wrong time window, the result is unreliable.
+
+B. Aggregation & Grouping
+	•	Your code groups by combinations of operator, work center, routing, (sometimes operation).
+	•	Issue: If a single operator completes work across multiple products or routings but the grouping is not granular enough, you’ll get blended/averaged values that are not representative of actual efficiency for a specific product or work center.
+	•	Best practice: Always group by at least [operator, work center, routing, operation].
+
+C. Data Integrity
+	•	If duration is in seconds but sometimes saved in hours, you must standardize.
+	•	If quantityDone/quantity_done fields have mixed casing (legacy vs Fulfil), you need reliable normalization.
+	•	Any duration = 0 or quantity = 0 should be filtered out.
+
+⸻
+
+2. Review of Your uph-calculator.ts
+
+(Key lines, simplified for clarity):
+
+// Select work cycles joined with work orders & operators
+const cycleData = await db
+  .select({
+    cycleId: workCycles.cycleId,
+    workOrderId: workCycles.workOrderId,
+    operatorId: workCycles.operatorId,
+    duration: workCycles.duration,
+    quantityDone: workCycles.quantityDone,
+    workCenter: workOrders.workCenter,
+    operation: workOrders.operation,
+    routing: workOrders.routing,
+    operatorName: operators.name,
+  })
+  .from(workCycles)
+  .leftJoin(workOrders, eq(workCycles.workOrderId, workOrders.id))
+  .leftJoin(operators, eq(workCycles.operatorId, operators.id))
+  .where(sql`${workCycles.duration} > 0 AND ${workCycles.quantityDone} > 0`);
+
+GOOD: Filters out zeroes.
+
+Grouping (likely below, not shown in snippet):
+	•	If you use a map like operator + workCenter + routing (missing operation), your averages could blend unrelated tasks.
+	•	FIX: Always group on [operator, workCenter, routing, operation].
+
+Calculation:
+
+const unitsPerHour = totalQuantity / (totalDurationSeconds / 3600)
+
+CHECK:
+	•	totalDurationSeconds must always be in seconds.
+	•	If you ever combine values in hours and seconds, you get garbage.
+
+⸻
+
+3. Known Problems / Potential Issues
+
+a) Mixed Work Centers
+	•	If normalizeWorkCenter is too aggressive (e.g., grouping Assembly - Webbing and Assembly - Rope as just “Assembly”), you’re blending different tasks.
+
+b) Not Filtering to Recent Data
+	•	If you do not limit cycles to the correct rolling window (e.g., last 90 days, or operator’s selected window), you may get outdated values.
+
+c) Duplicate Data
+	•	If work cycles are joined to work orders incorrectly (i.e., one-to-many with no deduplication), your sums are doubled.
+
+d) Operations Not Split
+	•	If two operations (e.g., “Sewing”, “Packaging”) on the same work center aren’t separated, you will under- or over-report actual operator efficiency.
+
+⸻
+
+4. Concrete Steps to Fix/Improve
+
+Step 1: Always group by four fields
+	•	[operator, work center, routing, operation]
+
+Step 2: Validate and Normalize Units
+	•	Make sure all durations are in seconds.
+	•	Make sure all quantities are numeric and >0.
+
+Step 3: Filter by Date Range
+	•	For operator UPH views, always filter work cycles to within the requested analysis window.
+
+Step 4: Defensive Zero Checks
+	•	Never allow division by zero in UPH logic.
+	•	Log and skip any records where totalDurationSeconds or totalQuantity is zero.
+
+Step 5: Review normalizeWorkCenter
+	•	Consider keeping original names as secondary group key if your normalizer is broad.
+
+⸻
+
+5. Recommended Code Patch
+
+Here’s a robust template for the core grouping & calculation, assuming you have cycleData as an array of all eligible work cycles:
+
+const uphMap = new Map<string, { totalQty: number, totalSeconds: number, observations: number }>();
+
+for (const row of cycleData) {
+  // Defensive normalization
+  if (!row.operatorName || !row.workCenter || !row.operation || !row.routing) continue;
+  if (!row.quantityDone || !row.duration) continue; // skip bad data
+
+  const key = [
+    row.operatorName,
+    row.workCenter,      // do not over-normalize
+    row.routing,
+    row.operation
+  ].join("|");
+
+  if (!uphMap.has(key)) {
+    uphMap.set(key, { totalQty: 0, totalSeconds: 0, observations: 0 });
+  }
+  const rec = uphMap.get(key)!;
+  rec.totalQty += row.quantityDone;
+  rec.totalSeconds += row.duration;
+  rec.observations += 1;
+}
+
+// Build results
+const uphResults = Array.from(uphMap.entries()).map(([key, val]) => {
+  const [operator, workCenter, routing, operation] = key.split("|");
+  return {
+    operator,
+    workCenter,
+    routing,
+    operation,
+    unitsPerHour:
+      val.totalSeconds > 0
+        ? val.totalQty / (val.totalSeconds / 3600)
+        : 0,
+    observations: val.observations,
+    totalQuantity: val.totalQty,
+    totalHours: val.totalSeconds / 3600,
+  };
+}).filter(r => r.totalHours > 0 && r.totalQuantity > 0); // defensive
+
+
+⸻
+
+6. Summary Table
+
+Possible Error	Impact	Fix / Check
+Not grouping by operation	Blended/misleading UPH	Group by operation in addition
+Too aggressive work center merge	Inaccurate task mapping	Use original names as fallback
+Not filtering by recent date	Outdated/irrelevant UPH	Add date filter on work cycles
+Mixing hours & seconds	Totally invalid UPH	Normalize all to seconds
+Division by zero	Infinity or crash	Skip and log these
+
+
+⸻
+
+Actionable Next Steps:
+	1.	Update UPH grouping to always include operation.
+	2.	Normalize and filter data before aggregation.
+	3.	Add logging for any skipped/invalid data for easier debugging.
+	4.	Test calculation against known good batches to verify accuracy.
+
+⸻
+
+Would you like a drop-in code patch for your existing calculator function, or a specific audit of the data mapping between work cycles and work orders? Let me know which file and function name you want the fix for.

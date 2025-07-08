@@ -1,0 +1,26 @@
+Pasted-I-need-help-drafting-the-prompt-for-Replit-Agent-to-build-our-planning-dashboard-Ive-overcomplicate-1751393404950_1751393404950.txt
+I need help drafting the prompt for Replit Agent to build our planning dashboard. Ive overcomplicated this twice before, focusing too much on pulling APIs to create database for calculations, when it'll be much simpler to create a working version with production orders NOT done, and focusing on recent data to build calculation logic instead of a complete database of all production orders and work orders - 90 days of imports will be enough to build MVP. 
+Now to move on to describing the app needs, but wanted you to have the context of previous failed attempts first.
+
+You are an expert interface developer for professional tools used by top companies around the world. You're now applying those expertise towards internal tooling designs. 
+
+Now i need your help for creating a production planner for our products, allowing someone to see all MO's in a specific state (ie Assigned), have a list of all 'available operators' based on all operators capable of completing that operation. 
+We will have a list of Production Orders (MOs) each week for specific products needing to be made, and the qty they'll be making. The MO contains a list of Work Orders (WOs) for each step in the process. The WO will have a Work Center (Ie Rope) and Operation (ie Assembly) the Operator logs a cycle on, tracking duration of time (seconds) and quantity completed. Based on these operations over time, we calculate average Units per Hour, by operator, for each work center and operation, organized by product. 
+For example, for Lifetime Leash:
+3 WO's for each Operation - Cutting, Assembly, Packaging.
+For each WO, it'll show how many cycles were completed, in what duration (seconds), for how many units completed. They might complete the WO in one cycle or many, and UPH will be calculated for each Operation+Work Center Combination, Per Operator. 
+Reference work order api schema attached to understand all data available from API.
+
+The app will let us plan their weekly schedule based the most efficient person doing the task their best at, and then calculating based on their production rate the total time expected to complete the MO across all WOs. 
+Operators will have a 'settings' page to show which Routings/Products they know how to complete, which Work Centers they've been trained in (cutting, rope, packaging, sewing), and the window of time to calculate their average units per hour (1 day, 5 day, 10 day, 30 day, 90 day, 180 day options), and available hours to schedule (ie 20 hours, 40 hours, a variable we enter as 0-60)
+
+Available MOs would be determined by MOs in Fulfil in a specific state (Requests, Draft, Waiting, Assigned, Running, with multiselect functionality)
+Available Operators would be determined by Operators that have been active in the last 30 days for that work center+operation+routing combo.
+Operators have constraints of only working on 1 operation a time, limited by the hours set by their schedule (set in the Operator card), and work centers/routings/operations also defined. 
+All MOs in the view would need to be completed within the Monday-Friday work week.
+
+My original plan was a list of MOs in each row, with the Work Centers listed across columns, with each work order displayed in those columns showing 'operator' drop downs for the user to choose, witha 'total hours' summary showing total hours per operator based on UPH averages across all WOs they've been assigned, and estimated days to complete across all steps. 
+
+V1 will be manually selected by users, likely as a drop down, but v2 would allow 'optimized routing'. Optimized routing would prepopulate WO dropdown with the best operator. I am unsure if the best way to 'constrain' operators also includes mapping each task to a Monday-Friday schedule to demonstrate it can be completed? That might be the v3
+
+You’ll have a Planning Dashboard with All MOs not Done in Fulfil shown in rows, with work center categories as columns, and drop downs in each cell to select an operator. Once operators are selected, you’ll use their Average Units Per Hour rate for the Work Center + Operation selected, across all operations needed to complete Production Order.  We’ll also be able to see UPH calculations on its own page, with date range selectors and filters for work center, operation, operator, etc. 

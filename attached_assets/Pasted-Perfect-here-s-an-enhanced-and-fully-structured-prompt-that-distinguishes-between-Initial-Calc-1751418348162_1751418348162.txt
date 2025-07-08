@@ -1,0 +1,105 @@
+Perfect — here’s an enhanced and fully structured prompt that distinguishes between:
+	•	Initial Calculation: Build historical Units Per Hour (UPH) data from all completed Work Orders (WOs) in the database.
+	•	Ongoing Weekly Estimation: Estimate hours required for current open MOs using the UPH database.
+
+You can paste this directly into your Replit Agent or prompt execution layer.
+
+⸻
+
+🔧 Replit Agent Prompt — Units Per Hour (UPH) Engine
+
+⸻
+
+🎯 Objective
+
+Build a two-part Units Per Hour (UPH) calculation engine for Atlas Pet Company production planning.
+
+⸻
+
+📍 Part 1: Historical UPH Calculation (One-Time / Nightly Task)
+
+Goal: Build a reliable, operator-level Units Per Hour table by processing all completed WOs from Fulfil’s database.
+
+📥 Input:
+	•	work_orders table: includes id, work_center, operation, operator, routing, mo_id, quantity
+	•	work_cycles table: includes cycle_id, wo_id, operator, duration (seconds), quantity_done
+	•	Work Center can include extended names like "Cutting - LH", "Packaging - Test" — normalize these to one of:
+
+Cutting, Rope, Assembly, Packaging
+
+
+
+🧠 Logic:
+	1.	For each Work Order:
+	•	Group all cycles by work_center + operator + routing
+	•	Normalize Work Center name using substring match
+	•	Sum:
+	•	Total quantity = sum of quantity_done
+	•	Total time (hours) = sum of duration ÷ 3600
+	2.	Calculate:
+
+UPH = Total Quantity / Total Hours
+
+
+	3.	Store in new table:
+
+operator_uph (
+  operator TEXT,
+  routing TEXT,
+  work_center TEXT,
+  units_per_hour FLOAT,
+  observations INT
+)
+
+
+
+⸻
+
+📍 Part 2: Weekly MO Estimator (Live / Interactive Calculation)
+
+Goal: For all MOs not in Done state (draft, waiting, assigned, running), estimate total hours required per Work Center, based on operator UPH.
+
+📥 Input:
+	•	manufacturing_orders table: includes mo_id, routing, state
+	•	work_orders: use associated mo_id, quantity, work_center, operation
+	•	operator_uph: built from Part 1
+
+🧠 Logic:
+	1.	For each MO:
+	•	Group WOs by Work Center
+	•	Present dropdown to assign an operator to each Work Center
+	•	If operator is selected:
+	•	Lookup UPH in operator_uph
+	•	If no data exists for operator+work center+routing, fallback to average UPH for that work center/routing
+	2.	Estimate time per Work Center:
+
+Estimated Hours = Work Order Quantity ÷ Units Per Hour
+
+
+	3.	Sum all values to produce:
+	•	Time per Work Center per MO
+	•	Total time per MO
+	•	Total time across all open MOs
+
+🧾 Output:
+	•	Table with:
+	•	Rows = All operations, organized by Work Center, with Routings in Columns, so each cell show’s a UPH for that operation, on each routing the operation has had been used,  across all WOs. Each operator will need it’s own table view, and the ‘master table’ lets you select multiple operators, and each operator would be shown in sub column/drill down
+	•	Columns = [Cutting, Rope, Assembly, Packaging, Total]
+	•	Cell = Units per Hour
+	•	Dropdowns to assign operators per Work Center
+	•	Total footer row = sum across all MOs
+
+⸻
+
+🔁 Refresh Triggers
+	•	Part 1 can run nightly or when new MOs are marked Done
+	•	Part 2 should run whenever:
+	•	New MOs are created or change state
+	•	User changes operator assignments
+
+⸻
+
+✅ Deliverables
+	•	One calculate_uph() function for Part 1
+	•	One estimate_mo_hours(active_mos, operator_assignments) function for Part 2
+	•	Returns structured JSON or SQL results that can be used in UI or dashboards

@@ -1,0 +1,97 @@
+Here’s a clear breakdown of how fulfil_api.py authenticates with the Fulfil API, and how to instruct Replit Agent to use the same authentication flow for your new production planning app.
+
+⸻
+
+✅ Fulfil API Authentication Summary
+
+🔐 Method Used: API Key (X-API-KEY Header)
+
+This service uses token-based authentication, not OAuth, and authenticates every request by sending a header:
+
+X-API-KEY: <your-token>
+
+
+⸻
+
+🧱 How Authentication Works in Code
+
+1. Token Source
+	•	Pulled from an environment variable:
+
+stored_token = os.getenv("FULFIL_ACCESS_TOKEN")
+
+
+	•	This token is assumed to already be generated manually from Fulfil’s API credentials (not via OAuth).
+
+2. Header Injection
+	•	The token is added to the request headers like so:
+
+self.headers['X-API-KEY'] = self.access_token
+
+
+
+3. Header Used in All Requests
+	•	Every request (GET or POST) includes:
+
+headers=self.headers
+
+which already has:
+
+{
+  "Content-Type": "application/json",
+  "X-API-KEY": "<your-token>"
+}
+
+
+
+⸻
+
+📘 Instructions for Replit Agent Integration
+
+When generating requests to Fulfil’s API:
+	1.	Add this header to every request:
+
+headers = {
+    "Content-Type": "application/json",
+    "X-API-KEY": os.getenv("FULFIL_ACCESS_TOKEN")  # stored in Replit Secrets
+}
+
+
+	2.	Set environment variable:
+	•	Store FULFIL_ACCESS_TOKEN in Replit’s Secrets Manager.
+	3.	Use in all requests (example):
+
+import os
+import requests
+
+FULFIL_API_KEY = os.getenv("FULFIL_ACCESS_TOKEN")
+
+headers = {
+    "Content-Type": "application/json",
+    "X-API-KEY": FULFIL_API_KEY
+}
+
+response = requests.get("https://apc.fulfil.io/api/v2/model/production", headers=headers)
+
+
+
+⸻
+
+🧪 Optional Connection Test Endpoint
+	•	You can check API connectivity by calling:
+
+GET https://apc.fulfil.io/api/v2/model/production?per_page=1
+
+
+
+⸻
+
+✅ TL;DR for Replit Agent Prompt
+
+To authenticate with the Fulfil API, add the following header to every request:
+
+X-API-KEY: 
+
+This token should be stored securely in Replit Secrets Manager. All requests to the Fulfil API (GET or POST) should include this header along with `Content-Type: application/json`. No OAuth or refresh token flow is needed.
+
+Let me know if you want a plug-and-play api.js or auth.ts file scaffolded for Replit’s Node or Python environments.

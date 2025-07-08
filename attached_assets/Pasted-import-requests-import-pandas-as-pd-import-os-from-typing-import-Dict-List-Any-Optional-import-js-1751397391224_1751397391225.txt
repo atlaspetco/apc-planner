@@ -1,0 +1,496 @@
+import requests
+import pandas as pd
+import os
+from typing import Dict, List, Any, Optional
+import json
+import base64
+from urllib.parse import urlencode
+
+class FulfilAPIService:
+    """Service for interacting with Fulfil.io API"""
+    
+    def __init__(self, base_url: Optional[str] = None):
+        # Use the correct Atlas Pet Company Fulfil URL - ensure it's always set correctly
+        self.base_url = "https://apc.fulfil.io"
+        
+        # Initialize headers and token
+        self.access_token = None
+        self.headers = {'Content-Type': 'application/json'}
+        
+        # Use stored access token from environment - X-API-KEY is the RELIABLE method
+        stored_token = os.getenv("FULFIL_ACCESS_TOKEN")
+        if stored_token:
+            self.access_token = stored_token.strip()
+            # CRITICAL: Use X-API-KEY header - this is the working authentication method
+            self.headers['X-API-KEY'] = self.access_token
+
+    def _get_redirect_uri(self) -> str:
+        """Get the redirect URI for OAuth callback"""
+        # Use the exact current Replit app URL
+        return 'https://04a6600e-46c7-45a7-8096-bf5231cfc5be-00-1zuzjf9oejf0j.spock.replit.dev/oauth/callback'
+
+    def _encode_token(self, token: str) -> str:
+        """Encode the API token for Basic Auth"""
+        auth_string = f"{token}:"
+        encoded = base64.b64encode(auth_string.encode()).decode()
+        return encoded
+    
+    def test_connection(self) -> bool:
+        """Test the connection to Fulfil API"""
+        try:
+            if not self.access_token:
+                return False
+            
+            # Use a simple endpoint that should work for connection testing
+            endpoint = f"{self.base_url}/api/v2/model/production"
+            params = {"per_page": 1}
+            
+            response = requests.get(endpoint, params=params, headers=self.headers, timeout=10)
+            return response.status_code == 200
+        except Exception as e:
+            print(f"Connection test failed: {e}")
+            return False
+    
+    def get_manufacturing_orders_count(self) -> int:
+        """Get total count of Manufacturing Orders from Fulfil API"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v2/model/production/count",
+                headers=self.headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            # Handle both direct count and wrapped response formats
+            if isinstance(result, dict):
+                return result.get('count', 0)
+            return int(result) if result else 0
+        except Exception as e:
+            print(f"Error getting MO count: {e}")
+            return 0
+    
+    def get_work_orders_count(self) -> int:
+        """Get total count of Work Orders from Fulfil API"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v2/model/production.work/count",
+                headers=self.headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            # Handle both direct count and wrapped response formats
+            if isinstance(result, dict):
+                return result.get('count', 0)
+            return int(result) if result else 0
+        except Exception as e:
+            print(f"Error getting WO count: {e}")
+            return 0
+    
+    def get_optimal_batch_strategy(self, total_count: int) -> dict:
+        """Calculate optimal batch strategy based on total record count and Fulfil limits"""
+        # Fulfil API typical limits and recommendations
+        max_limit_per_request = 500  # Conservative limit for complex queries
+        recommended_concurrent_requests = 3  # Avoid rate limiting
+        
+        if total_count <= 500:
+            # Small datasets - single batch
+            return {
+                'batch_size': total_count,
+                'total_batches': 1,
+                'concurrent_requests': 1,
+                'strategy': 'single_batch',
+                'estimated_time_minutes': 2
+            }
+        elif total_count <= 5000:
+            # Medium datasets - moderate batching
+            batch_size = 250
+            total_batches = (total_count + batch_size - 1) // batch_size
+            return {
+                'batch_size': batch_size,
+                'total_batches': total_batches,
+                'concurrent_requests': 2,
+                'strategy': 'moderate_batching',
+                'estimated_time_minutes': total_batches * 0.5
+            }
+        elif total_count <= 20000:
+            # Large datasets - optimized batching
+            batch_size = 500
+            total_batches = (total_count + batch_size - 1) // batch_size
+            return {
+                'batch_size': batch_size,
+                'total_batches': total_batches,
+                'concurrent_requests': 3,
+                'strategy': 'optimized_batching',
+                'estimated_time_minutes': total_batches * 0.3
+            }
+        else:
+            # Very large datasets - aggressive chunking
+            batch_size = 500
+            total_batches = (total_count + batch_size - 1) // batch_size
+            return {
+                'batch_size': batch_size,
+                'total_batches': total_batches,
+                'concurrent_requests': 3,
+                'strategy': 'aggressive_chunking',
+                'estimated_time_minutes': total_batches * 0.3,
+                'recommendation': 'Consider incremental imports with date filters'
+            }
+
+    def get_manufacturing_orders(self, state_filter: Optional[str] = None, limit: int = None, offset: int = 0) -> pd.DataFrame:
+        """
+        Retrieve Manufacturing Orders from Fulfil.io using advanced search API
+        
+        Args:
+            state_filter: Filter by MO state (draft, waiting, assigned, running, done)
+            limit: Maximum number of records to retrieve
+            offset: Number of records to skip
+            
+        Returns:
+            pd.DataFrame: Manufacturing Orders data
+        """
+        try:
+            if not self.access_token:
+                return pd.DataFrame()
+            
+            # Use v1 endpoint that works reliably (v2 returns 405 errors)
+            endpoint = f"{self.base_url}/api/v1/model/production"
+            
+            # Build filters array according to Fulfil documentation
+            # Format: [["field_name", "operator", "value"]]
+            filters = []
+            if state_filter and state_filter.lower() != 'all':
+                # Use case-sensitive state values as they appear in Fulfil
+                state_map = {
+                    'draft': 'Draft',
+                    'waiting': 'Waiting',
+                    'assigned': 'Assigned', 
+                    'running': 'Running',
+                    'done': 'Done'
+                }
+                fulfil_state = state_map.get(state_filter.lower(), state_filter)
+                filters.append(["state", "=", fulfil_state])
+            
+            # Prepare search payload with optimized minimal fields for performance
+            payload = {
+                "filters": filters,
+                "fields": [
+                    "id", "rec_name", "state", "quantity", "planned_date", 
+                    "product.code", "routing.name"
+                ],
+                "offset": offset,
+                "limit": limit or 500,
+                "order": [["planned_date", "ASC"]]
+            }
+            
+            response = requests.post(endpoint, json=payload, headers=self.headers, timeout=30)
+            
+            if response.status_code != 200:
+                print(f"Error fetching Manufacturing Orders: {response.status_code} - {response.text}")
+                return pd.DataFrame()
+            
+            data = response.json()
+            
+            if not data:
+                return pd.DataFrame()
+            
+            # Convert to DataFrame and clean
+            df = pd.DataFrame(data)
+            return self._clean_mo_dataframe(df)
+            
+        except Exception as e:
+            print(f"Error fetching Manufacturing Orders: {str(e)}")
+            return pd.DataFrame()
+
+    def get_manufacturing_orders_batch(self, state_filter: Optional[str] = None, batch_size: int = 1000) -> pd.DataFrame:
+        """
+        Retrieve all Manufacturing Orders using batch processing with OFFSET/LIMIT
+        
+        Args:
+            state_filter: Filter by MO state (draft, waiting, assigned, running, done)
+            batch_size: Number of records per batch
+            
+        Returns:
+            pd.DataFrame: All Manufacturing Orders data
+        """
+        try:
+            all_records = []
+            offset = 0
+            
+            while True:
+                batch_df = self.get_manufacturing_orders(
+                    state_filter=state_filter,
+                    limit=batch_size,
+                    offset=offset
+                )
+                
+                if batch_df.empty:
+                    break
+                
+                all_records.append(batch_df)
+                
+                # If we got fewer records than batch_size, we've reached the end
+                if len(batch_df) < batch_size:
+                    break
+                
+                offset += batch_size
+                print(f"Fetched batch: offset {offset-batch_size}, got {len(batch_df)} records")
+            
+            if not all_records:
+                return pd.DataFrame()
+            
+            # Combine all batches
+            return pd.concat(all_records, ignore_index=True)
+            
+        except Exception as e:
+            print(f"Error in batch Manufacturing Orders fetch: {str(e)}")
+            return pd.DataFrame()
+
+    def count_manufacturing_orders(self, state_filter: Optional[str] = None) -> int:
+        """
+        Count total Manufacturing Orders using search_count endpoint
+        
+        Args:
+            state_filter: Filter by MO state (draft, waiting, assigned, running, done)
+            
+        Returns:
+            int: Total count of Manufacturing Orders
+        """
+        try:
+            if not self.access_token:
+                return 0
+            
+            # Use search_count endpoint as per documentation
+            endpoint = f"{self.base_url}/api/v2/model/production.order/search_count"
+            
+            # Build filters array with proper case sensitivity
+            filters = []
+            if state_filter and state_filter.lower() != 'all':
+                state_map = {
+                    'draft': 'Draft',
+                    'waiting': 'Waiting',
+                    'assigned': 'Assigned', 
+                    'running': 'Running',
+                    'done': 'Done'
+                }
+                fulfil_state = state_map.get(state_filter.lower(), state_filter)
+                filters.append(["state", "=", fulfil_state])
+            
+            payload = {"filters": filters}
+            
+            response = requests.post(endpoint, json=payload, headers=self.headers, timeout=30)
+            
+            if response.status_code != 200:
+                print(f"Error counting Manufacturing Orders: {response.status_code} - {response.text}")
+                return 0
+            
+            return response.json()
+            
+        except Exception as e:
+            print(f"Error counting Manufacturing Orders: {str(e)}")
+            return 0
+
+    def get_work_orders(self, mo_id: Optional[str] = None, limit: int = None, offset: int = 0) -> pd.DataFrame:
+        """
+        Retrieve Work Orders from Fulfil.io using advanced search API
+        
+        Args:
+            mo_id: Filter by specific Manufacturing Order ID
+            limit: Maximum number of records to retrieve
+            offset: Number of records to skip
+            
+        Returns:
+            pd.DataFrame: Work Orders data
+        """
+        try:
+            if not self.access_token:
+                return pd.DataFrame()
+            
+            # Use advanced search endpoint for work orders
+            endpoint = f"{self.base_url}/api/v2/model/production.work/search_read"
+            
+            # Build filters array
+            filters = []
+            if mo_id:
+                filters.append(["production", "=", int(mo_id)])
+            
+            # Prepare search payload
+            payload = {
+                "filters": filters,
+                "fields": [
+                    "id", "production", "production.rec_name", "work_center", 
+                    "work_center.name", "operation", "operation.name", "employee", 
+                    "employee.name", "routing", "routing.name", "state", "quantity", 
+                    "hours", "create_date", "write_date"
+                ],
+                "offset": offset,
+                "limit": limit or 1000
+            }
+            
+            response = requests.post(endpoint, json=payload, headers=self.headers, timeout=30)
+            
+            if response.status_code != 200:
+                print(f"Error fetching Work Orders: {response.status_code} - {response.text}")
+                return pd.DataFrame()
+            
+            data = response.json()
+            
+            if not data:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame(data)
+            return self._clean_wo_dataframe(df)
+            
+        except Exception as e:
+            print(f"Error fetching Work Orders: {str(e)}")
+            return pd.DataFrame()
+
+    def get_work_cycles(self, wo_id: Optional[str] = None, limit: int = 1000) -> pd.DataFrame:
+        """
+        Retrieve Work Cycles from Fulfil.io for cycle time analysis
+        
+        Args:
+            wo_id: Filter by specific Work Order ID
+            limit: Maximum number of records to retrieve
+            
+        Returns:
+            pd.DataFrame: Work Cycles data
+        """
+        try:
+            all_records = []
+            page = 1
+            per_page = 500
+            total_fetched = 0
+            
+            endpoint = f"{self.base_url}/api/v2/model/work.cycle"
+            
+            while True:
+                params = {
+                    "per_page": per_page,
+                    "page": page
+                }
+                
+                if wo_id:
+                    params["work_order"] = wo_id
+                
+                response = requests.get(endpoint, params=params, headers=self.headers, timeout=30)
+                
+                if response.status_code != 200:
+                    break
+                
+                try:
+                    data = response.json()
+                except json.JSONDecodeError:
+                    break
+                
+                if not data or len(data) == 0:
+                    break
+                
+                all_records.extend(data)
+                total_fetched += len(data)
+                
+                if len(data) < per_page:
+                    break
+                    
+                page += 1
+                
+                if limit and total_fetched >= limit:
+                    all_records = all_records[:limit]
+                    break
+                
+                if total_fetched >= 10000:
+                    break
+            
+            if not all_records:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame(all_records)
+            return self._clean_cycle_dataframe(df)
+            
+        except Exception as e:
+            return pd.DataFrame()
+
+    def _clean_mo_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Clean and standardize Manufacturing Orders DataFrame"""
+        if df.empty:
+            return df
+        
+        # Ensure required columns exist
+        required_columns = ['id', 'state', 'quantity']
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = None
+        
+        # Clean and standardize data types
+        if 'quantity' in df.columns:
+            df['quantity'] = pd.to_numeric(df['quantity'], errors='coerce').fillna(0)
+        
+        # Handle product code from dot notation field (Fulfil API field name)
+        if 'product.code' in df.columns:
+            df['product_code'] = df['product.code'].fillna('')
+        else:
+            df['product_code'] = ''
+        
+        # Handle product name from dot notation field
+        if 'product.name' in df.columns:
+            df['product'] = df['product.name'].fillna('')
+        else:
+            df['product'] = ''
+        
+        # Handle routing name from dot notation field
+        if 'routing.name' in df.columns:
+            df['routing'] = df['routing.name'].fillna('')
+        else:
+            df['routing'] = ''
+        
+        # Handle additional expanded fields using Fulfil API field names
+        if 'warehouse.name' in df.columns:
+            df['warehouse'] = df['warehouse.name'].fillna('')
+        if 'location.name' in df.columns:
+            df['location'] = df['location.name'].fillna('')
+        if 'supervisor.name' in df.columns:
+            df['supervisor'] = df['supervisor.name'].fillna('')
+        if 'work_center.name' in df.columns:
+            df['work_center'] = df['work_center.name'].fillna('')
+        
+        # Map rec_name and number fields
+        if 'rec_name' not in df.columns:
+            df['rec_name'] = df.get('number', '')
+        if 'number' not in df.columns and 'rec_name' in df.columns:
+            df['number'] = df['rec_name']
+        
+        return df
+
+    def _clean_wo_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Clean and standardize Work Orders DataFrame"""
+        if df.empty:
+            return df
+        
+        # Basic cleaning for work orders
+        required_columns = ['id', 'operation', 'quantity']
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = None
+        
+        return df
+
+    def _clean_cycle_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Clean and standardize Work Cycles DataFrame"""
+        if df.empty:
+            return df
+        
+        # Basic cleaning for work cycles
+        required_columns = ['id', 'duration', 'quantity']
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = None
+        
+        return df
+
+    def get_api_info(self) -> Dict[str, Any]:
+        """Get information about the Fulfil API instance"""
+        return {
+            "base_url": self.base_url,
+            "authenticated": bool(self.access_token),
+            "connection_status": self.test_connection()
+        }

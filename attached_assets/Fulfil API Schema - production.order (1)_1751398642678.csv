@@ -1,0 +1,69 @@
+Schema - production.order,,,
+Field,Type,Attributes,Description
+bom,many2one,,BOM
+byproduct_cost,decimal,readonly,"By-products Cost
+Cost of secondary by-products incidentally manufactured"
+company,many2one,required,Company
+cost,decimal,readonly,Total Cost
+create_date,timestamp,readonly,Created At (Timestamp)
+create_uid,many2one,readonly,Create User
+effective_date,date,readonly,Effective Date
+effective_start_date,date,readonly,Effective Start Date
+from_location,many2one,,"From Location
+From location for production input lines"
+hold_reason,many2one,,Hold Reason
+id,integer,readonly,ID
+inputs,one2many,,Inputs
+inventory_cost,decimal,readonly,Inventory Cost
+labor_cost,decimal,readonly,Labor Cost
+last_modification,datetime,readonly,Last Modification
+location,many2one,required,Location
+messages,json,readonly,Messages
+metadata,json,,Metadata
+metafields,json,,Metafields
+number,char,readonly,Number
+on_hold,boolean,,On Hold
+on_hold_until,datetime,,On hold until
+origin,reference,,Origin
+outputs,one2many,,Outputs
+outsourced_work_cost,decimal,readonly,Outsourced Work Cost
+overheads,many2many,,Manufacturing Overheads
+picked_at,datetime,readonly,Picked At
+picker,many2one,,Picker
+picking_status,selection,,"Picking Status
+Allowed values"
+planned_date,date,,Planned Date
+planned_start_date,date,,Planned Start Date
+priority,selection,,"Priority
+Allowed values"
+private_notes,one2many,readonly,Private Notes
+product,many2one,,Product
+product_code,char,readonly,Product Code
+production_batch,many2one,,Production Batch
+public_notes,one2many,readonly,Public Notes
+purchase_lines,one2many,readonly,Purchase Lines
+quantity,float,required,Quantity
+quantity_done,float,readonly,Quantity Done
+quantity_remaining,float,readonly,Quantity Remaining
+rec_blurb,json,readonly,Blurb
+rec_name,char,readonly,Record Name (Title)
+reference,char,,Reference
+reporting_date,date,readonly,Reporting Date
+routing,many2one,,Routing
+sales_order_number,char,readonly,"Order Number
+Related Sale order # for make on order."
+sales_order_reference,char,readonly,"Order Reference
+Related Sale reference # for make an order."
+shipments,one2many,readonly,Shipments
+state,selection,readonly,"State
+Allowed values"
+supervisor,many2one,,Supervisor
+to_location,many2one,,"To Location
+To location for production output lines"
+uom,many2one,,Uom
+uom_category,many2one,readonly,Uom Category
+warehouse,many2one,required,Warehouse
+work_center,many2one,,Work Center
+works,one2many,,Work Orders
+write_date,timestamp,readonly,Updated At (Timestamp)
+write_uid,many2one,readonly,Write User

@@ -1,0 +1,14 @@
+Field,Endpoint
+Updated At (Timestamp),work/cycles/operator/write_date
+Work Cycles Record Name (Title),work/cycles/rec_name
+Operator Record Name (Title),work/cycles/operator/rec_name
+Work CenterRecord Name (Title),work/cycles/work_center/rec_name
+Routing Record Name (Title),work/production/product/boms/routing/rec_name
+Work Cycles Quantity Done,work/cycles/quantity_done
+Production Number,work/production/number
+Work Cycles ID,work/cycles/id
+Operator ID,work/cycles/operator/id
+Production ID,work/production/id
+Work Cycles Duration (Timestamp),work/cycles/duration
+Product Code,work/production/product/code
+Product Record Name (Title),work/production/product/rec_name

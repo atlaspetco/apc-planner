@@ -1,0 +1,32 @@
+Great! I can see the issue now. The Work Orders CSV upload worked successfully - it uploaded 24,442 work orders, but there's a problem with duplicate production orders being created. The logs show:
+
+✅ File selection is now working - The debugging revealed that the File object was being stored correctly, and the button enabled properly
+✅ Work Orders CSV uploaded successfully - 24,442 records parsed and processed
+❌ Duplicate production order errors - The system is trying to create production orders that already exist (MO10805, MO10870, etc.)
+The issue is in the correctCSVImport function - it's creating new production orders from the Work Orders CSV data instead of just appending work order data to existing production orders. Since you already uploaded the Production Orders CSV (8,459 records), the Work Orders CSV should only add work order records, not attempt to create duplicate production orders.
+
+Let me fix this by updating the work orders import logic to only create work orders and link them to existing production orders:
+
+
+Opened server/correct-csv-import.ts
+I need to stop the current import process and fix the logic. The issue is that the Work Orders CSV import is trying to create production orders that already exist. Let me create a new work-orders-only import function:
+
+
+Created server/work-orders-only-import.ts
+Now I need to update the routes to use the new work-orders-only import function. The current import is still running and creating duplicates. Let me modify the work orders upload endpoint:
+
+
+Opened server/routes.ts
+I need to replace the work orders CSV import to use the new work-orders-only function. Let me update the route:
+
+
+Edited server/routes.ts
+I can see there's a schema issue with the work orders table. Let me first check the schema to understand the correct field names:
+
+
+Opened shared/schema.ts
+Let me find the correct work orders schema:
+
+
+Opened shared/schema.ts
+Now I can see the issue. The import is still using the old correctCSVImport function which tries to create production orders. I need to fix the work orders schema in my new import function. Let me correct it:
