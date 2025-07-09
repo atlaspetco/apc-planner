@@ -27,6 +27,9 @@ export default function OperatorSettings() {
     routings: [],
     isActive: true
   });
+  
+  // Local state for optimistic updates to prevent visual lag
+  const [optimisticUpdates, setOptimisticUpdates] = useState<Map<number, Partial<Operator>>>(new Map());
 
   const { data: allOperators = [], isLoading, refetch: refetchOperators } = useQuery({
     queryKey: ["/api/operators?activeOnly=false"],
@@ -139,14 +142,29 @@ export default function OperatorSettings() {
       const response = await apiRequest("PATCH", `/api/operators/${id}`, updates);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, { id }) => {
+      // Clear optimistic updates for this operator
+      setOptimisticUpdates(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(id);
+        return newMap;
+      });
+      
       queryClient.invalidateQueries({ queryKey: ["/api/operators"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/operators?activeOnly=false"] });
       toast({
         title: "Success",
         description: "Operator settings updated successfully",
       });
     },
-    onError: () => {
+    onError: (_, { id }) => {
+      // Clear optimistic updates on error to revert to server state
+      setOptimisticUpdates(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(id);
+        return newMap;
+      });
+      
       toast({
         title: "Error",
         description: "Failed to update operator settings",
@@ -187,9 +205,25 @@ export default function OperatorSettings() {
   });
 
   const selectedOperatorData = allOperators.find((op: Operator) => op.id === selectedOperator);
+  
+  // Apply optimistic updates to the selected operator data
+  const getOptimisticOperatorData = () => {
+    if (!selectedOperatorData || !selectedOperator) return selectedOperatorData;
+    const optimisticData = optimisticUpdates.get(selectedOperator);
+    return optimisticData ? { ...selectedOperatorData, ...optimisticData } : selectedOperatorData;
+  };
 
   const handleUpdateOperator = (updates: Partial<Operator>) => {
     if (selectedOperator) {
+      // Apply optimistic update immediately
+      setOptimisticUpdates(prev => {
+        const newMap = new Map(prev);
+        const existing = newMap.get(selectedOperator) || {};
+        newMap.set(selectedOperator, { ...existing, ...updates });
+        return newMap;
+      });
+      
+      // Then perform the actual update
       updateOperatorMutation.mutate({ id: selectedOperator, updates });
     }
   };
@@ -265,11 +299,11 @@ export default function OperatorSettings() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>{selectedOperatorData.name}</CardTitle>
+                  <CardTitle>{getOptimisticOperatorData()?.name}</CardTitle>
                   <div className="flex items-center space-x-2">
                     <Switch
                       id="isActive"
-                      checked={selectedOperatorData.isActive}
+                      checked={getOptimisticOperatorData()?.isActive || false}
                       onCheckedChange={(checked) => handleUpdateOperator({ isActive: checked })}
                     />
                     <Label htmlFor="isActive">Active</Label>
@@ -348,8 +382,9 @@ export default function OperatorSettings() {
                       <Label>Work Centers</Label>
                       <div className="mt-2 space-y-2">
                         {(workCenterData as any[]).map((wc: any) => {
-                          const hasData = getOperatorWorkCentersWithData(selectedOperatorData.name).includes(wc.workCenter);
-                          const isChecked = selectedOperatorData.workCenters?.includes(wc.workCenter) || hasData;
+                          const optimisticData = getOptimisticOperatorData();
+                          const hasData = getOperatorWorkCentersWithData(optimisticData?.name || '').includes(wc.workCenter);
+                          const isChecked = optimisticData?.workCenters?.includes(wc.workCenter) || hasData;
                           
                           return (
                             <div key={`${selectedOperatorData.id}-wc-${wc.workCenter}`} className="flex items-center space-x-2">
@@ -358,7 +393,8 @@ export default function OperatorSettings() {
                                 key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
-                                  const currentWorkCenters = selectedOperatorData.workCenters || [];
+                                  const optimisticData = getOptimisticOperatorData();
+                                  const currentWorkCenters = optimisticData?.workCenters || [];
                                   const newWorkCenters = checked
                                     ? [...currentWorkCenters, wc.workCenter]
                                     : currentWorkCenters.filter((center: string) => center !== wc.workCenter);
@@ -383,7 +419,8 @@ export default function OperatorSettings() {
                       <div className="mt-2 space-y-2">
                         {(() => {
                           // Get operations where this operator has data
-                          const operatorOperationsWithData = getOperatorOperationsWithData(selectedOperatorData.name);
+                          const optimisticData = getOptimisticOperatorData();
+                          const operatorOperationsWithData = getOperatorOperationsWithData(optimisticData?.name || '');
                           
                           // Get all available operations from work centers
                           const allOperations = (workCenterData as any[]).flatMap((wc: any) => wc.operations);
@@ -391,7 +428,7 @@ export default function OperatorSettings() {
                           // Show only operations where operator has data, plus any that are manually checked
                           const relevantOperations = allOperations.filter((operation: string) => {
                             const hasData = operatorOperationsWithData.includes(operation);
-                            const isManuallyChecked = selectedOperatorData.operations?.includes(operation);
+                            const isManuallyChecked = optimisticData?.operations?.includes(operation);
                             return hasData || isManuallyChecked;
                           });
                           
@@ -405,7 +442,8 @@ export default function OperatorSettings() {
                           
                           return relevantOperations.map((operation: string, index: number) => {
                             const hasData = operatorOperationsWithData.includes(operation);
-                            const isChecked = selectedOperatorData.operations?.includes(operation) || hasData;
+                            const optimisticData = getOptimisticOperatorData();
+                            const isChecked = optimisticData?.operations?.includes(operation) || hasData;
                             // Create truly unique key combining operator ID, operation, and index
                             const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
                             
@@ -415,7 +453,8 @@ export default function OperatorSettings() {
                                   id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
                                   checked={isChecked}
                                   onCheckedChange={(checked) => {
-                                    const currentOperations = selectedOperatorData.operations || [];
+                                    const optimisticData = getOptimisticOperatorData();
+                                    const currentOperations = optimisticData?.operations || [];
                                     const newOperations = checked
                                       ? [...currentOperations, operation]
                                       : currentOperations.filter((op: string) => op !== operation);
@@ -442,12 +481,13 @@ export default function OperatorSettings() {
                     <div className="mt-2 space-y-2">
                       {(() => {
                         // Get routings where this operator has data
-                        const operatorRoutingsWithData = getOperatorRoutingsWithData(selectedOperatorData.name);
+                        const optimisticData = getOptimisticOperatorData();
+                        const operatorRoutingsWithData = getOperatorRoutingsWithData(optimisticData?.name || '');
                         
                         // Show all routings - both those with data and available options
                         const allPossibleRoutings = [
                           ...operatorRoutingsWithData, // Always include routings where operator has UPH data
-                          ...(selectedOperatorData.routings || []), // Include manually checked routings
+                          ...(optimisticData?.routings || []), // Include manually checked routings
                           ...(routingsData?.routings || []) // Include master list routings
                         ];
                         
@@ -465,7 +505,8 @@ export default function OperatorSettings() {
                         
                         return relevantRoutings.map((routing: string) => {
                           const hasData = operatorRoutingsWithData.includes(routing);
-                          const isChecked = selectedOperatorData.routings?.includes(routing) || hasData;
+                          const optimisticData = getOptimisticOperatorData();
+                          const isChecked = optimisticData?.routings?.includes(routing) || hasData;
                           const stableKey = `routing-${selectedOperatorData.id}-${routing.replace(/\s+/g, '-')}`;
                           
                           return (
@@ -474,7 +515,8 @@ export default function OperatorSettings() {
                                 id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
-                                  const currentRoutings = selectedOperatorData.routings || [];
+                                  const optimisticData = getOptimisticOperatorData();
+                                  const currentRoutings = optimisticData?.routings || [];
                                   const newRoutings = checked
                                     ? [...currentRoutings, routing]
                                     : currentRoutings.filter((rt: string) => rt !== routing);
