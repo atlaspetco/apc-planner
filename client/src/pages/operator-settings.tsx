@@ -103,15 +103,35 @@ export default function OperatorSettings() {
   };
 
   const getOperatorRoutingsWithData = (operatorName: string): string[] => {
-    if (!uphData || !Array.isArray(uphData)) return [];
+    if (!uphData || !Array.isArray(uphData)) {
+      console.log("Debug: uphData is empty or not array:", uphData);
+      return [];
+    }
+    
+    console.log("Debug: Searching for operator:", operatorName);
+    console.log("Debug: Total UPH records:", uphData.length);
     
     // Find all routings where this operator has UPH data
     const operatorUphRecords = uphData.filter((record: any) => {
-      return record.operatorName === operatorName || 
-             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
+      const nameMatch = record.operatorName === operatorName;
+      const idMatch = selectedOperatorData && record.operatorId === selectedOperatorData.id;
+      
+      if (nameMatch || idMatch) {
+        console.log("Debug: Found matching record:", {
+          operatorName: record.operatorName,
+          operatorId: record.operatorId,
+          routing: record.routing,
+          workCenter: record.workCenter
+        });
+      }
+      
+      return nameMatch || idMatch;
     });
     
-    return [...new Set(operatorUphRecords.map((record: any) => record.routing).filter(r => r && r !== 'Unknown'))];
+    const routings = [...new Set(operatorUphRecords.map((record: any) => record.routing).filter(r => r && r !== 'Unknown'))];
+    console.log("Debug: Final routings found:", routings);
+    
+    return routings;
   };
 
   const updateOperatorMutation = useMutation({
