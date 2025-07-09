@@ -46,14 +46,16 @@ export default function PlanningGrid({
   const getRoutingFromProductCode = (productCode: string): string => {
     if (!productCode) return "Unknown";
     
-    // Extract routing patterns based on product codes
+    // Extract routing patterns based on product codes with actual product names
     if (productCode.startsWith("LP-")) return "Lifetime Pouch";
     if (productCode.startsWith("F3-")) return "Fi Snap";
     if (productCode.startsWith("LHP-")) return "Lifetime Handle";
-    if (productCode.startsWith("PB-")) return "PB Series";
-    if (productCode.startsWith("LB-")) return "LB Series";
+    if (productCode.startsWith("PB-")) return "Poop Bags";
+    if (productCode.startsWith("LB-")) return "Lifetime Bowl";
     if (productCode.startsWith("LC-")) return "Lifetime Collar";
     if (productCode.startsWith("LL-")) return "Lifetime Leash";
+    if (productCode.startsWith("LH-")) return "Lifetime Harness";
+    if (productCode.startsWith("LS-")) return "Lifetime Slip";
     
     return "Other";
   };
