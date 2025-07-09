@@ -1,0 +1,71 @@
+Key Issues
+
+Planning grid ignores assigned operators.
+Dashboard fetches production orders from /api/fulfil/current-production-orders, which only returns raw Fulfil data. These records don’t include assignedOperatorId or estimatedHours, so operator selections disappear after assignment. Lines showing the API usage:
+
+25  // Get current production orders from Fulfil API
+26  const { data: currentPOs = [], isLoading: isLoadingCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
+27    queryKey: ["/api/fulfil/current-production-orders"],
+
+The grid renders with these Fulfil orders:
+
+138          <PlanningGrid
+139            productionOrders={currentPOs.orders || []}
+
+Because the data doesn’t come from the local DB, assignments and hours are lost.
+
+Suggested task
+Use DB production orders for planning grid
+
+Start task
+Operator dropdown resets after assignment.
+BatchSection sends the assignment but never updates local data. onSuccess merely invalidates /api/work-orders:
+
+48      onSuccess: () => {
+49        queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+50        toast({
+51          title: "Success",
+52          description: "Operator assigned successfully",
+53        });
+
+Since <MORow> relies on the unchanged order.workOrders array, the dropdown value reverts to empty.
+
+Suggested task
+Persist operator selection in BatchSection
+
+Start task
+Hours to complete uses a placeholder.
+In <MORow> expected hours are calculated with a hard-coded value:
+
+223                        const calculateExpectedHours = (operatorId: number) => {
+224                          // This would use UPH data to calculate expected hours
+225                          const mockUph = 15; // Placeholder - would come from actual UPH data
+226                          return (order.quantity / mockUph).toFixed(1);
+
+Suggested task
+Calculate expected hours from real UPH data
+
+Start task
+Operator summary may miss assignments for larger datasets.
+/api/work-orders paginates results with a default limit of 50:
+
+106    app.get("/api/work-orders", async (req, res) => {
+107      // Add pagination support for large datasets
+108      const page = parseInt(req.query.page as string) || 1;
+109      const limit = parseInt(req.query.limit as string) || 50;
+
+OperatorSummary requests this endpoint once without pagination, so operators might not see all assigned work orders when more than 50 exist.
+
+Suggested task
+Return all work orders for OperatorSummary
+
+Start task
+Testing
+
+Run unit tests and any existing integration tests after implementing the changes.
+
+Manually assign operators in the dashboard to verify that selections persist and hours are calculated.
+
+Confirm that the Operator Summary reflects newly assigned work orders.
+
+Codex couldn't run certain commands due to environment limitations. Consider configuring a setup script or internet access in your Codex environment to install dependencies.

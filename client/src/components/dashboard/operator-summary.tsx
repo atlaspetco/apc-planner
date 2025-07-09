@@ -71,7 +71,7 @@ interface OperatorCardProps {
 
 function OperatorCard({ operator }: OperatorCardProps) {
   const { data: allWorkOrders = [] } = useQuery({
-    queryKey: ["/api/work-orders"],
+    queryKey: ["/api/work-orders", { all: "true" }],
     select: (data) => data.filter((wo: WorkOrder) => wo.assignedOperatorId === operator.id),
   });
 

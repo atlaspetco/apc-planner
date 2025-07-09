@@ -119,14 +119,14 @@ export default function Dashboard() {
         {/* Status Info */}
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
-            Latest data from Fulfil API - {currentPOs.orders?.length || 0} production orders loaded
+            Latest database data - {productionOrders?.length || 0} production orders loaded
           </p>
         </div>
 
         {/* Main Planning Grid */}
         <PlanningGrid 
-          productionOrders={currentPOs.orders || []}
-          isLoading={isLoadingCurrentPOs}
+          productionOrders={productionOrders || []}
+          isLoading={isLoadingPOs}
           selectedMOs={selectedMOs}
           onMOSelection={handleMOSelection}
         />

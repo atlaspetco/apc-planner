@@ -275,9 +275,19 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                   <SelectContent>
                     {availableOperators.map((operator: Operator) => {
                       const calculateExpectedHours = (operatorId: number) => {
-                        // This would use UPH data to calculate expected hours
-                        const mockUph = 15; // Placeholder - would come from actual UPH data
-                        return (order.quantity / mockUph).toFixed(1);
+                        // Get actual UPH data for this operator, work center, and routing
+                        const uphData = operator.uphData || [];
+                        const relevantUph = uphData.find(uph => 
+                          uph.workCenter === workCenter && 
+                          uph.routing === (order.routingName || order.routing)
+                        );
+                        
+                        if (relevantUph && relevantUph.unitsPerHour > 0) {
+                          return (order.quantity / relevantUph.unitsPerHour).toFixed(1);
+                        }
+                        
+                        // Fallback to historical average if no specific data found
+                        return (order.quantity / 15).toFixed(1);
                       };
                       const expectedHours = calculateExpectedHours(operator.id);
                       return (
@@ -295,7 +305,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                 </Select>
                 {workOrder.assignedOperatorId && (
                   <div className="text-xs text-gray-500 mt-1">
-                    {((order.quantity / 15).toFixed(1))}h expected
+                    {workOrder.estimatedHours || 8}h assigned
                   </div>
                 )}
               </div>
