@@ -2317,7 +2317,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          const operatorName = operatorMap.has(operatorId) ? operatorMap.get(operatorId)! : `Operator ${operatorId}`;
+          // Use operator name directly from historicalUph data
+          const operatorRecord = consolidatedUphResults.find(r => r.operatorId === operatorId);
+          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
