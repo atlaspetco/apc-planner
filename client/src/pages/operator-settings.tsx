@@ -234,8 +234,19 @@ export default function OperatorSettings() {
                 </div>
               )}
               
-              {/* All Operators */}
-              {(allOperators as any[]).map((operator: any) => (
+              {/* All Operators - Sorted by Last Active */}
+              {(allOperators as any[])
+                .sort((a: any, b: any) => {
+                  // Sort by activity status first (active at top), then by last active date
+                  if (a.isRecentlyActive && !b.isRecentlyActive) return -1;
+                  if (!a.isRecentlyActive && b.isRecentlyActive) return 1;
+                  
+                  // Both same activity status, sort by last active date (most recent first)
+                  const aDate = a.lastActiveDate ? new Date(a.lastActiveDate).getTime() : 0;
+                  const bDate = b.lastActiveDate ? new Date(b.lastActiveDate).getTime() : 0;
+                  return bDate - aDate;
+                })
+                .map((operator: any) => (
                 <Button
                   key={operator.id}
                   variant={selectedOperator === operator.id ? "default" : "outline"}
@@ -243,12 +254,15 @@ export default function OperatorSettings() {
                   onClick={() => setSelectedOperator(operator.id)}
                 >
                   <div className="flex items-center space-x-2">
-                    <div className={`w-2 h-2 rounded-full ${operator.isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <div className={`w-2 h-2 rounded-full ${operator.isRecentlyActive ? 'bg-green-500' : 'bg-gray-400'}`} />
                     <span>{operator.name}</span>
                     {operator.lastActiveDate && (
                       <span className="text-xs text-gray-500 ml-auto">
                         {new Date(operator.lastActiveDate).toLocaleDateString()}
                       </span>
+                    )}
+                    {operator.isRecentlyActive && (
+                      <span className="text-xs bg-green-100 text-green-700 px-1 py-0.5 rounded">Active</span>
                     )}
                   </div>
                 </Button>
@@ -437,21 +451,16 @@ export default function OperatorSettings() {
                       console.log(`Debug: Operator ${selectedOperatorData.name} has UPH data for ${operatorRoutingsWithData.length} routings:`, operatorRoutingsWithData);
                       console.log('Available routings from API:', routingsData?.routings);
                       
-                      // Show all routings where operator has data (from UPH data) plus any manually checked
-                      // Combine: routings from UPH data + any manually checked + any that exist in master list
+                      // Show all routings - both those with data and available options
                       const allPossibleRoutings = [
                         ...operatorRoutingsWithData, // Always include routings where operator has UPH data
                         ...(selectedOperatorData.routings || []), // Include manually checked routings
                         ...(routingsData?.routings || []) // Include master list routings
                       ];
                       
-                      // Remove duplicates and filter to only show relevant ones
+                      // Remove duplicates - show all routings for full transparency
                       const uniqueRoutings = [...new Set(allPossibleRoutings)];
-                      const relevantRoutings = uniqueRoutings.filter((routing: string) => {
-                        const hasData = operatorRoutingsWithData.includes(routing);
-                        const isManuallyChecked = selectedOperatorData.routings?.includes(routing);
-                        return hasData || isManuallyChecked; // Show if has data OR manually checked
-                      });
+                      const relevantRoutings = uniqueRoutings; // Show all available routings
                       
                       console.log(`Debug: Showing ${relevantRoutings.length} relevant routings for ${selectedOperatorData.name}:`, relevantRoutings);
                       
