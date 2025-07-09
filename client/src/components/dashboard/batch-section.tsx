@@ -292,9 +292,9 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
         );
 
         return (
-          <div key={workCenter} className="col-span-2 flex items-center justify-between">
+          <div key={workCenter} className="col-span-2 text-center">
             {workOrder ? (
-              <>
+              <div className="space-y-1">
                 <Select
                   value={workOrder.assignedOperatorId?.toString() || ""}
                   onValueChange={(operatorIdString) => {
@@ -306,7 +306,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                     }
                   }}
                 >
-                  <SelectTrigger className={`w-32 text-xs h-8 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
+                  <SelectTrigger className={`w-full text-xs h-8 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
                     <SelectValue placeholder="Select Operator">
                       {workOrder.assignedOperatorId && workOrder.operatorName ? workOrder.operatorName : undefined}
                     </SelectValue>
@@ -363,7 +363,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                     })()}h assigned
                   </div>
                 )}
-              </>
+              </div>
             ) : (
               <div className="text-xs text-gray-400 text-center">No work order</div>
             )}
