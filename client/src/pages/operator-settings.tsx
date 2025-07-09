@@ -276,7 +276,17 @@ export default function OperatorSettings() {
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
-                <CardTitle>{selectedOperatorData.name}</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle>{selectedOperatorData.name}</CardTitle>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="isActive"
+                      checked={selectedOperatorData.isActive}
+                      onCheckedChange={(checked) => handleUpdateOperator({ isActive: checked })}
+                    />
+                    <Label htmlFor="isActive">Active</Label>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Basic Info */}
@@ -337,163 +347,159 @@ export default function OperatorSettings() {
                   </Select>
                 </div>
 
-                {/* Active Status */}
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="isActive"
-                    checked={selectedOperatorData.isActive}
-                    onCheckedChange={(checked) => handleUpdateOperator({ isActive: checked })}
-                  />
-                  <Label htmlFor="isActive">Active</Label>
-                </div>
+                {/* Two Column Layout: Work Centers/Operations + Product Routings */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left Column: Work Centers + Operations */}
+                  <div className="space-y-6">
+                    {/* Work Centers */}
+                    <div>
+                      <Label>Work Centers</Label>
+                      <div className="mt-2 space-y-2">
+                        {(workCenterData as any[]).map((wc: any) => {
+                          const hasData = getOperatorWorkCentersWithData(selectedOperatorData.name).includes(wc.workCenter);
+                          const isChecked = selectedOperatorData.workCenters?.includes(wc.workCenter) || hasData;
+                          
+                          return (
+                            <div key={`${selectedOperatorData.id}-wc-${wc.workCenter}`} className="flex items-center space-x-2">
+                              <Switch
+                                id={`wc-${wc.workCenter}-${selectedOperatorData.id}`}
+                                key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}`}
+                                checked={isChecked}
+                                onCheckedChange={(checked) => {
+                                  const currentWorkCenters = selectedOperatorData.workCenters || [];
+                                  const newWorkCenters = checked
+                                    ? [...currentWorkCenters, wc.workCenter]
+                                    : currentWorkCenters.filter((center: string) => center !== wc.workCenter);
+                                  handleUpdateOperator({ workCenters: newWorkCenters });
+                                }}
+                              />
+                              <Label htmlFor={`wc-${wc.workCenter}-${selectedOperatorData.id}`} className="flex items-center space-x-2">
+                                <span>{wc.workCenter}</span>
+                                {hasData && (
+                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Has Data</span>
+                                )}
+                              </Label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                {/* Work Centers */}
-                <div>
-                  <Label>Work Centers</Label>
-                  <div className="mt-2 space-y-2">
-                    {(workCenterData as any[]).map((wc: any) => {
-                      const hasData = getOperatorWorkCentersWithData(selectedOperatorData.name).includes(wc.workCenter);
-                      const isChecked = selectedOperatorData.workCenters?.includes(wc.workCenter) || hasData;
-                      
-                      return (
-                        <div key={`${selectedOperatorData.id}-wc-${wc.workCenter}`} className="flex items-center space-x-2">
-                          <Switch
-                            id={`wc-${wc.workCenter}-${selectedOperatorData.id}`}
-                            key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}`}
-                            checked={isChecked}
-                            onCheckedChange={(checked) => {
-                              const currentWorkCenters = selectedOperatorData.workCenters || [];
-                              const newWorkCenters = checked
-                                ? [...currentWorkCenters, wc.workCenter]
-                                : currentWorkCenters.filter((center: string) => center !== wc.workCenter);
-                              handleUpdateOperator({ workCenters: newWorkCenters });
-                            }}
-                          />
-                          <Label htmlFor={`wc-${wc.workCenter}-${selectedOperatorData.id}`} className="flex items-center space-x-2">
-                            <span>{wc.workCenter}</span>
-                            {hasData && (
-                              <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Has Data</span>
-                            )}
-                          </Label>
-                        </div>
-                      );
-                    })}
+                    {/* Operations */}
+                    <div>
+                      <Label>Operations</Label>
+                      <div className="mt-2 space-y-2">
+                        {(() => {
+                          // Get operations where this operator has data
+                          const operatorOperationsWithData = getOperatorOperationsWithData(selectedOperatorData.name);
+                          
+                          // Get all available operations from work centers
+                          const allOperations = (workCenterData as any[]).flatMap((wc: any) => wc.operations);
+                          
+                          // Show only operations where operator has data, plus any that are manually checked
+                          const relevantOperations = allOperations.filter((operation: string) => {
+                            const hasData = operatorOperationsWithData.includes(operation);
+                            const isManuallyChecked = selectedOperatorData.operations?.includes(operation);
+                            return hasData || isManuallyChecked;
+                          });
+                          
+                          if (relevantOperations.length === 0) {
+                            return (
+                              <div className="text-gray-500 text-sm">
+                                No UPH data found for this operator. Performance data will auto-populate here when available.
+                              </div>
+                            );
+                          }
+                          
+                          return relevantOperations.map((operation: string, index: number) => {
+                            const hasData = operatorOperationsWithData.includes(operation);
+                            const isChecked = selectedOperatorData.operations?.includes(operation) || hasData;
+                            // Create truly unique key combining operator ID, operation, and index
+                            const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
+                            
+                            return (
+                              <div key={stableKey} className="flex items-center space-x-2">
+                                <Switch
+                                  id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) => {
+                                    const currentOperations = selectedOperatorData.operations || [];
+                                    const newOperations = checked
+                                      ? [...currentOperations, operation]
+                                      : currentOperations.filter((op: string) => op !== operation);
+                                    handleUpdateOperator({ operations: newOperations });
+                                  }}
+                                />
+                                <Label htmlFor={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`} className="flex items-center space-x-2">
+                                  <span className="text-sm">{operation}</span>
+                                  {hasData && (
+                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Has Data</span>
+                                  )}
+                                </Label>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                {/* Operations */}
-                <div>
-                  <Label>Operations</Label>
-                  <div className="mt-2 space-y-2">
-                    {(() => {
-                      // Get operations where this operator has data
-                      const operatorOperationsWithData = getOperatorOperationsWithData(selectedOperatorData.name);
-                      
-                      // Get all available operations from work centers
-                      const allOperations = (workCenterData as any[]).flatMap((wc: any) => wc.operations);
-                      
-                      // Show only operations where operator has data, plus any that are manually checked
-                      const relevantOperations = allOperations.filter((operation: string) => {
-                        const hasData = operatorOperationsWithData.includes(operation);
-                        const isManuallyChecked = selectedOperatorData.operations?.includes(operation);
-                        return hasData || isManuallyChecked;
-                      });
-                      
-                      if (relevantOperations.length === 0) {
-                        return (
-                          <div className="text-gray-500 text-sm">
-                            No UPH data found for this operator. Performance data will auto-populate here when available.
-                          </div>
-                        );
-                      }
-                      
-                      return relevantOperations.map((operation: string, index: number) => {
-                        const hasData = operatorOperationsWithData.includes(operation);
-                        const isChecked = selectedOperatorData.operations?.includes(operation) || hasData;
-                        // Create truly unique key combining operator ID, operation, and index
-                        const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
+                  {/* Right Column: Product Routings */}
+                  <div>
+                    <Label>Product Routings</Label>
+                    <div className="mt-2 space-y-2">
+                      {(() => {
+                        // Get routings where this operator has data
+                        const operatorRoutingsWithData = getOperatorRoutingsWithData(selectedOperatorData.name);
                         
-                        return (
-                          <div key={stableKey} className="flex items-center space-x-2">
-                            <Switch
-                              id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
-                              checked={isChecked}
-                              onCheckedChange={(checked) => {
-                                const currentOperations = selectedOperatorData.operations || [];
-                                const newOperations = checked
-                                  ? [...currentOperations, operation]
-                                  : currentOperations.filter((op: string) => op !== operation);
-                                handleUpdateOperator({ operations: newOperations });
-                              }}
-                            />
-                            <Label htmlFor={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`} className="flex items-center space-x-2">
-                              <span className="text-sm">{operation}</span>
-                              {hasData && (
-                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Has Data</span>
-                              )}
-                            </Label>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-
-                {/* Product Routings */}
-                <div>
-                  <Label>Product Routings</Label>
-                  <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
-                    {(() => {
-                      // Get routings where this operator has data
-                      const operatorRoutingsWithData = getOperatorRoutingsWithData(selectedOperatorData.name);
-                      
-                      // Show all routings - both those with data and available options
-                      const allPossibleRoutings = [
-                        ...operatorRoutingsWithData, // Always include routings where operator has UPH data
-                        ...(selectedOperatorData.routings || []), // Include manually checked routings
-                        ...(routingsData?.routings || []) // Include master list routings
-                      ];
-                      
-                      // Remove duplicates - show all routings for full transparency
-                      const uniqueRoutings = [...new Set(allPossibleRoutings)];
-                      const relevantRoutings = uniqueRoutings; // Show all available routings
-                      
-                      if (relevantRoutings.length === 0) {
-                        return (
-                          <div className="text-gray-500 text-sm">
-                            No UPH data found for this operator. Performance data will auto-populate here when available.
-                          </div>
-                        );
-                      }
-                      
-                      return relevantRoutings.map((routing: string) => {
-                        const hasData = operatorRoutingsWithData.includes(routing);
-                        const isChecked = selectedOperatorData.routings?.includes(routing) || hasData;
-                        const stableKey = `routing-${selectedOperatorData.id}-${routing.replace(/\s+/g, '-')}`;
+                        // Show all routings - both those with data and available options
+                        const allPossibleRoutings = [
+                          ...operatorRoutingsWithData, // Always include routings where operator has UPH data
+                          ...(selectedOperatorData.routings || []), // Include manually checked routings
+                          ...(routingsData?.routings || []) // Include master list routings
+                        ];
                         
-                        return (
-                          <div key={stableKey} className="flex items-center space-x-2">
-                            <Switch
-                              id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
-                              checked={isChecked}
-                              onCheckedChange={(checked) => {
-                                const currentRoutings = selectedOperatorData.routings || [];
-                                const newRoutings = checked
-                                  ? [...currentRoutings, routing]
-                                  : currentRoutings.filter((rt: string) => rt !== routing);
-                                handleUpdateOperator({ routings: newRoutings });
-                              }}
-                            />
-                            <Label htmlFor={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`} className="flex items-center space-x-2">
-                              <span className="text-sm">{routing}</span>
-                              {hasData && (
-                                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">Has Data</span>
-                              )}
-                            </Label>
-                          </div>
-                        );
-                      });
-                    })()}
+                        // Remove duplicates - show all routings for full transparency
+                        const uniqueRoutings = [...new Set(allPossibleRoutings)];
+                        const relevantRoutings = uniqueRoutings; // Show all available routings
+                        
+                        if (relevantRoutings.length === 0) {
+                          return (
+                            <div className="text-gray-500 text-sm">
+                              No UPH data found for this operator. Performance data will auto-populate here when available.
+                            </div>
+                          );
+                        }
+                        
+                        return relevantRoutings.map((routing: string) => {
+                          const hasData = operatorRoutingsWithData.includes(routing);
+                          const isChecked = selectedOperatorData.routings?.includes(routing) || hasData;
+                          const stableKey = `routing-${selectedOperatorData.id}-${routing.replace(/\s+/g, '-')}`;
+                          
+                          return (
+                            <div key={stableKey} className="flex items-center space-x-2">
+                              <Switch
+                                id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
+                                checked={isChecked}
+                                onCheckedChange={(checked) => {
+                                  const currentRoutings = selectedOperatorData.routings || [];
+                                  const newRoutings = checked
+                                    ? [...currentRoutings, routing]
+                                    : currentRoutings.filter((rt: string) => rt !== routing);
+                                  handleUpdateOperator({ routings: newRoutings });
+                                }}
+                              />
+                              <Label htmlFor={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`} className="flex items-center space-x-2">
+                                <span className="text-sm">{routing}</span>
+                                {hasData && (
+                                  <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">Has Data</span>
+                                )}
+                              </Label>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
                   </div>
                 </div>
               </CardContent>

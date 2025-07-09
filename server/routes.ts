@@ -171,7 +171,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/work-orders/assign-operator", async (req, res) => {
     try {
       console.log("Assignment request body:", req.body);
-      const { workOrderId, operatorId } = operatorAssignmentSchema.parse(req.body);
+      
+      // Parse manually to handle string work order IDs
+      const workOrderId = typeof req.body.workOrderId === 'string' 
+        ? parseInt(req.body.workOrderId, 10) 
+        : req.body.workOrderId;
+      const operatorId = req.body.operatorId;
+      
       console.log(`Processing assignment: operator ${operatorId} to work order ${workOrderId}`);
       
       // Get all operators to find matching one
@@ -189,15 +195,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log("Found operator:", operator.name);
       
-      // For now, return success without actually updating Fulfil
-      // This allows the dashboard dropdowns to work properly
+      // Update the work order in the database
+      const { db } = await import("./db.js");
+      const { workOrders } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
+      
+      // Update the work order with assigned operator
+      const updatedWorkOrder = await db
+        .update(workOrders)
+        .set({ 
+          assignedOperatorId: operator.id,
+          operatorName: operator.name // Also store operator name for easy display
+        })
+        .where(eq(workOrders.id, workOrderId))
+        .returning();
+      
+      if (updatedWorkOrder.length === 0) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      console.log(`Successfully assigned ${operator.name} to work order ${workOrderId}`);
+      
       res.json({
         success: true,
         message: `Assigned ${operator.name} to work order ${workOrderId}`,
-        workOrderId,
+        workOrder: updatedWorkOrder[0],
         operatorId: operator.id,
-        operatorName: operator.name,
-        workCenter: "Assembly" // placeholder
+        operatorName: operator.name
       });
       
     } catch (error) {

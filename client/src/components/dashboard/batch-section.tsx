@@ -45,11 +45,15 @@ export default function BatchSection({
       });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
+      // Invalidate multiple queries to refresh all related data
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/operators"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+      
       toast({
         title: "Success",
-        description: "Operator assigned successfully",
+        description: `${response.operatorName} assigned successfully`,
       });
     },
     onError: () => {

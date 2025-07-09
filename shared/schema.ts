@@ -283,7 +283,7 @@ export type InsertUphCalculationData = z.infer<typeof insertUphCalculationDataSc
 export const statusFilterSchema = z.array(z.enum(["Requests", "Draft", "Waiting", "Assigned", "Running"]));
 
 export const operatorAssignmentSchema = z.object({
-  workOrderId: z.number(),
+  workOrderId: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]),
   operatorId: z.number(),
 });
 
