@@ -76,6 +76,11 @@ This is a React + Express + TypeScript application designed for manufacturing pr
   - Endpoint: `/api/v2/model/production.work` 
   - Fields: id, production, operation.name, work_center.name, employee.name, state, quantity_done, planned_date
   - Links to production orders via production field
+- **Production Routing**:
+  - Endpoint: `/api/v2/model/production.routing`
+  - Schema Fields: id, name, rec_name, active, steps, create_date, write_date, metadata, metafields
+  - GET endpoints: count, list with filters, get by ID
+  - Required field: name (char type)
 - **API Patterns**:
   - Search Count: POST to `/{model}/search_count` with filters
   - Search Data: POST to `/{model}/search_read` with fields and filters  
@@ -127,7 +132,8 @@ Changelog:
 - July 01, 2025. Added sample data seeding functionality for testing dashboard features
 ```
 
-## Recent Changes (Latest First)
+## Recent Changes (Latest First)  
+- **Database Schema Fulfil API Compliance Complete**: Implemented exact Fulfil API field mapping requirement - database fields now mirror Fulfil's production.routing schema exactly (id, name, rec_name, active, steps, create_date, write_date, metadata, metafields). Fixed all field name inconsistencies in operator settings page - operatorName, workCenter, productRouting now correctly reference UPH data. Added production_routing table with complete Fulfil schema compliance for authentic manufacturing data integrity
 - **Single Refresh Button System Complete**: Consolidated 3 confusing refresh buttons into 1 comprehensive "Refresh from Fulfil" button that executes complete UPH workflow: imports new 'done' work cycles → aggregates duration by work center+routing → calculates UPH per operator. Removed redundant refresh buttons from dashboard header and planning grid. Implemented FulfilUphWorkflow class with proper API endpoints for complete manufacturing data refresh and UPH recalculation
 - **Codebase Cleanup Complete**: Fixed all inactive buttons (Create Batch, Auto-Assign) by adding proper onClick handlers and toast notifications. Removed 8 unused UI components (sidebar, carousel, chart, etc.) and 6 deprecated files (auto-sync, work-cycles-import, etc.) for streamlined codebase. Manufacturing dashboard remains fully functional with cleaned code structure
 - **GitHub Connection Established**: Successfully resolved GitHub authentication issues that were preventing repository synchronization. Created custom GitHub API sync script (github-sync.js) that bypasses Replit's Git interface limitations. Successfully uploaded key project files (package.json, README.md, replit.md, server/routes.ts, client/App.tsx, shared/schema.ts) to atlaspetco/planner repository using Personal Access Token authentication. Project now has reliable GitHub backup and version control capability

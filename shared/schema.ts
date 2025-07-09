@@ -145,6 +145,26 @@ export const fulfilOperations = pgTable("fulfil_operations", {
   lastUpdated: timestamp("last_updated").defaultNow(),
 });
 
+// Production Routing table - mirrors exact Fulfil API schema
+export const productionRouting = pgTable("production_routing", {
+  id: integer("id").primaryKey(), // Fulfil routing ID
+  active: boolean("active").default(true), // Active status
+  create_date: timestamp("create_date"), // Created At (Timestamp) - readonly
+  create_uid: integer("create_uid"), // Create User - readonly
+  messages: json("messages"), // Messages - readonly  
+  metadata: json("metadata"), // Metadata
+  metafields: json("metafields"), // Metafields
+  name: text("name").notNull(), // Name - required
+  private_notes: json("private_notes"), // Private Notes - readonly
+  public_notes: json("public_notes"), // Public Notes - readonly
+  rec_blurb: json("rec_blurb"), // Blurb - readonly
+  rec_name: text("rec_name"), // Record Name (Title) - readonly
+  steps: json("steps"), // Steps - one2many
+  write_date: timestamp("write_date"), // Updated At (Timestamp) - readonly
+  write_uid: integer("write_uid"), // Write User - readonly
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
 export const fulfilRoutings = pgTable("fulfil_routings", {
   id: integer("id").primaryKey(), // Fulfil routing ID
   name: text("name").notNull(), // Routing name from Fulfil

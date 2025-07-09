@@ -1,0 +1,63 @@
+production.routing - Fulfil API Schema,,,
+Field,Type,Attributes,Description
+active,boolean,,Active
+Uncheck to exclude from future use.,,,
+create_date,timestamp,readonly,Created At (Timestamp)
+create_uid,many2one,readonly,Create User
+id,integer,readonly,ID
+messages,json,readonly,Messages
+metadata,json,,Metadata
+metafields,json,,Metafields
+name,char,required,Name
+private_notes,one2many,readonly,Private Notes
+public_notes,one2many,readonly,Public Notes
+rec_blurb,json,readonly,Blurb
+rec_name,char,readonly,Record Name (Title)
+steps,one2many,,Steps
+write_date,timestamp,readonly,Updated At (Timestamp)
+write_uid,many2one,readonly,Write User
+,,,
+,,,
+,,,
+,,,
+Get Routing Count,"GET
+/api/v2/model/production.routing/count
+Get the count of Routings that match the filter criteria
+
+Example Request
+
+curl
+curl --request GET \
+--url https://apc.fulfil.io/api/v2/model/production.routing/count \
+--header 'Content-Type: application/json' \
+--header 'X-API-KEY: YOUR_API_KEY'",,
+List Routings,"GET
+/api/v2/model/production.routing
+Get a list of all Routings with optional filters
+
+Parameters
+Name,Type,Required,Description
+since_id,integer,No,Show Routings with an id greater than given id
+ids,string,No,Retrieve only Routings specified by a comma-separated list of IDs
+created_at_min,string,No,Show Routings created at or after date (format: 2020-12-25T16:15:47) UTC date times
+created_at_max,string,No,Show Routings created at or before date (format: 2020-12-25T16:15:47) UTC date times
+updated_at_min,string,No,Show Routings updated at or after date (format: 2020-12-25T16:15:47) UTC date times
+updated_at_max,string,No,Show Routings updated at or before date (format: 2020-12-25T16:15:47) UTC date times
+per_page        integer,No,The maximum number of results to show on a page
+page,integer,No,The page of results to display
+*Example Request*
+curl --request GET \
+--url https://apc.fulfil.io/api/v2/model/production.routing \
+--header 'Content-Type: application/json' \
+--header 'X-API-KEY: YOUR_API_KEY'",,
+Get Routing by ID,"GET
+/api/v2/model/production.routing/{id}
+Get a specific Routing by ID
+
+Example Request
+
+curl
+curl --request GET \
+--url https://apc.fulfil.io/api/v2/model/production.routing/{id} \
+--header 'Content-Type: application/json' \
+--header 'X-API-KEY: YOUR_API_KEY'",,
