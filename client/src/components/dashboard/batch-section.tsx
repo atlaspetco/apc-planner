@@ -135,9 +135,9 @@ export default function BatchSection({
       {/* Batch Items */}
       {isExpanded && (
         <div className="batch-items">
-          {orders.map((order) => (
+          {orders.map((order, index) => (
             <MORow
-              key={order.id}
+              key={`mo-row-${batchId}-${order.id}-${order.moNumber || order.id}-${index}`}
               order={order}
               isSelected={selectedMOs.includes(order.id)}
               onSelection={(checked) => handleMOSelection(order.id, checked)}
