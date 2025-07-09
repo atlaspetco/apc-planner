@@ -160,15 +160,15 @@ export default function UphAnalytics() {
     
     if (workCenter && routingName) {
       const { p55, p45 } = getRoutingWorkCenterPercentiles(routingName, workCenter);
-      if (uph >= p55) return "default"; // Green for top 45%
-      if (uph >= p45) return "secondary"; // Black/gray for median ±5%
-      return "destructive"; // Red for bottom 45%
+      if (uph >= p55) return "uphHigh"; // Green for top 45%
+      if (uph >= p45) return "uphMedium"; // Black/gray for median ±5%
+      return "uphLow"; // Red for bottom 45%
     }
     
     // Fallback to global thresholds if context not specified
-    if (uph >= 50) return "default";
-    if (uph >= 25) return "secondary";
-    return "destructive";
+    if (uph >= 50) return "uphHigh";
+    if (uph >= 25) return "uphMedium";
+    return "uphLow";
   };
 
   // Order work centers consistently: Cutting, Assembly, Packaging
