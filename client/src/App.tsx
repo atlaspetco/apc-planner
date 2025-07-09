@@ -7,7 +7,7 @@ import Navigation from "@/components/navigation";
 import Dashboard from "@/pages/dashboard";
 import OperatorSettings from "@/pages/operator-settings";
 import UphAnalytics from "@/pages/uph-analytics";
-import FulfilSettings from "@/pages/fulfil-settings";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -17,7 +17,7 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/operator-settings" component={OperatorSettings} />
       <Route path="/uph-analytics" component={UphAnalytics} />
-      <Route path="/fulfil-settings" component={FulfilSettings} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

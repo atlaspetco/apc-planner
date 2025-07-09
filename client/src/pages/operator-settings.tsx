@@ -247,11 +247,6 @@ export default function OperatorSettings() {
                   <div className="flex items-center space-x-2">
                     <div className={`w-2 h-2 rounded-full ${operator.isRecentlyActive ? 'bg-green-500' : 'bg-orange-400'}`} />
                     <span>{operator.name}</span>
-                    {operator.lastActiveDate && (
-                      <span className="text-xs text-gray-500 ml-auto">
-                        {new Date(operator.lastActiveDate).toLocaleDateString()}
-                      </span>
-                    )}
                   </div>
                 </Button>
               ))}
