@@ -34,8 +34,25 @@ export default function BatchSection({
 }: BatchSectionProps) {
   const { toast } = useToast();
 
-  // Calculate total estimated hours for the batch
-  const [totalHours, setTotalHours] = useState(0);
+  // Get local database work orders for total calculation
+  const { data: allLocalWorkOrders = [] } = useQuery({
+    queryKey: ["/api/work-orders"],
+  });
+  
+  // Calculate total estimated hours for the batch from local work orders
+  const calculateBatchTotalHours = () => {
+    return orders.reduce((batchTotal, order) => {
+      const orderWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
+        wo.productionOrderId === order.id
+      );
+      const orderTotal = orderWorkOrders.reduce((total: number, wo: WorkOrder) => {
+        return total + (wo.estimatedHours || 0);
+      }, 0);
+      return batchTotal + orderTotal;
+    }, 0);
+  };
+  
+  const totalHours = calculateBatchTotalHours();
 
   const assignOperatorMutation = useMutation({
     mutationFn: async ({ workOrderId, operatorId }: { workOrderId: number; operatorId: number }) => {
@@ -110,7 +127,7 @@ export default function BatchSection({
           </div>
           <div className="flex items-center space-x-3 text-xs text-gray-600">
             <span>
-              Total: <strong>0h</strong>
+              Total: <strong>{formatHours(totalHours)}h</strong>
             </span>
             {variant === "unassigned" && orders.length > 0 && (
               <span>
@@ -164,8 +181,15 @@ interface MORowProps {
 }
 
 function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }: MORowProps) {
-  // Use work orders directly from the production order data instead of separate API call
-  const workOrders = order.workOrders || order.work_orders || [];
+  // Get local database work orders which contain assignments
+  const { data: allLocalWorkOrders = [] } = useQuery({
+    queryKey: ["/api/work-orders"],
+  });
+  
+  // Filter work orders for this production order
+  const workOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
+    wo.productionOrderId === order.id
+  );
 
   const { data: operators = [] } = useQuery({
     queryKey: ["/api/operators"],
@@ -224,12 +248,14 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                   onValueChange={(operatorIdString) => {
                     if (operatorIdString) {
                       const operatorId = parseInt(operatorIdString);
-                      onOperatorAssignment(workOrder.id, operatorId);
+                      onOperatorAssignment(workOrder.fulfilId || workOrder.id, operatorId);
                     }
                   }}
                 >
-                  <SelectTrigger className="w-full text-xs h-8">
-                    <SelectValue placeholder="Select Operator" />
+                  <SelectTrigger className={`w-full text-xs h-8 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
+                    <SelectValue placeholder="Select Operator">
+                      {workOrder.assignedOperatorId && workOrder.operatorName ? workOrder.operatorName : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {availableOperators.map((operator: Operator) => {
@@ -266,7 +292,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
       })}
 
       <div className="col-span-1 text-center">
-        <div className="text-xs text-gray-500">0h</div>
+        <div className="text-xs text-gray-500">{formatHours(totalHours)}</div>
       </div>
     </div>
   );
