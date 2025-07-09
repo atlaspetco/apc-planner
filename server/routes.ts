@@ -167,12 +167,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(updated);
   });
 
+  // Sync work orders from Fulfil to local database for assignment functionality
+  app.post("/api/work-orders/sync-from-fulfil", async (req, res) => {
+    try {
+      // Get current production orders from Fulfil with work orders
+      const fulfilResponse = await fetch(`${req.protocol}://${req.get('host')}/api/fulfil/current-production-orders`);
+      const fulfilData = await fulfilResponse.json();
+      
+      if (!fulfilData.success || !fulfilData.orders) {
+        return res.status(500).json({ message: "Failed to fetch Fulfil data" });
+      }
+      
+      const { db } = await import("./db.js");
+      const { workOrders, productionOrders } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
+      
+      let syncedWorkOrders = 0;
+      
+      // Process each production order and its work orders
+      for (const order of fulfilData.orders) {
+        // Find local production order by fulfilId
+        const localPO = await db
+          .select()
+          .from(productionOrders)
+          .where(eq(productionOrders.fulfilId, order.fulfilId || 0))
+          .limit(1);
+        
+        if (localPO.length === 0) {
+          console.log(`No local production order found for Fulfil ID: ${order.fulfilId}`);
+          continue;
+        }
+        
+        const localProductionOrderId = localPO[0].id;
+        
+        // Sync work orders for this production order
+        for (const wo of order.work_orders || []) {
+          try {
+            // Check if work order already exists by fulfilId
+            const existing = await db
+              .select()
+              .from(workOrders)
+              .where(eq(workOrders.fulfilId, parseInt(wo.id)))
+              .limit(1);
+            
+            if (existing.length === 0) {
+              // Create new work order
+              await db.insert(workOrders).values({
+                productionOrderId: localProductionOrderId,
+                workCenter: wo.work_center,
+                operation: wo.operation,
+                routing: order.routingName || "Standard",
+                fulfilId: parseInt(wo.id),
+                quantityDone: wo.quantity_done || 0,
+                status: wo.state === "request" ? "Pending" : wo.state,
+                sequence: 1, // Default sequence
+                estimatedHours: 8, // Default estimated hours
+                // Store Fulfil field mapping
+                state: wo.state,
+                rec_name: `WO${wo.id}`,
+                workCenterName: wo.work_center,
+                operationName: wo.operation
+              });
+              
+              syncedWorkOrders++;
+              console.log(`Created work order ${wo.id} for ${order.moNumber}`);
+            } else {
+              // Update existing work order
+              await db
+                .update(workOrders)
+                .set({
+                  workCenter: wo.work_center,
+                  operation: wo.operation,
+                  routing: order.routingName || "Standard",
+                  quantityDone: wo.quantity_done || 0,
+                  status: wo.state === "request" ? "Pending" : wo.state,
+                  state: wo.state,
+                  workCenterName: wo.work_center,
+                  operationName: wo.operation
+                })
+                .where(eq(workOrders.fulfilId, parseInt(wo.id)));
+              
+              console.log(`Updated work order ${wo.id} for ${order.moNumber}`);
+            }
+          } catch (error) {
+            console.error(`Error syncing work order ${wo.id}:`, error);
+          }
+        }
+      }
+      
+      res.json({
+        success: true,
+        message: `Synced ${syncedWorkOrders} work orders from Fulfil to local database`,
+        syncedWorkOrders
+      });
+      
+    } catch (error) {
+      console.error("Error syncing work orders:", error);
+      res.status(500).json({ message: "Error syncing work orders from Fulfil" });
+    }
+  });
+
   // Operator assignment for dashboard work orders
   app.post("/api/work-orders/assign-operator", async (req, res) => {
     try {
       console.log("Assignment request body:", req.body);
       
-      // Parse manually to handle string work order IDs
+      // Parse work order ID - could be a Fulfil ID that we need to map to local DB
       const workOrderId = typeof req.body.workOrderId === 'string' 
         ? parseInt(req.body.workOrderId, 10) 
         : req.body.workOrderId;
@@ -192,13 +292,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("Available operators:", localOperators.map(op => ({id: op.id, name: op.name})));
         return res.status(404).json({ message: "Operator not found" });
       }
-
+      
       console.log("Found operator:", operator.name);
       
-      // Update the work order in the database
+      // Find work order - first check if it's a local DB ID, then check if it's a Fulfil ID
       const { db } = await import("./db.js");
       const { workOrders } = await import("../shared/schema.js");
-      const { eq } = await import("drizzle-orm");
+      const { eq, or } = await import("drizzle-orm");
+      
+      // Try to find work order by local ID first, then by Fulfil ID
+      const workOrder = await db
+        .select()
+        .from(workOrders)
+        .where(
+          or(
+            eq(workOrders.id, workOrderId), // Local database ID
+            eq(workOrders.fulfilId, workOrderId) // Fulfil ID
+          )
+        )
+        .limit(1);
+      
+      if (workOrder.length === 0) {
+        console.log(`Work order not found for ID: ${workOrderId}`);
+        
+        // If not found, try to sync from Fulfil first
+        console.log("Attempting to sync work orders from Fulfil...");
+        try {
+          const fulfilResponse = await fetch(`${req.protocol}://${req.get('host')}/api/fulfil/current-production-orders`);
+          const fulfilData = await fulfilResponse.json();
+          
+          if (fulfilData.success && fulfilData.orders) {
+            const { productionOrders } = await import("../shared/schema.js");
+            
+            // Find the specific work order in Fulfil data
+            for (const order of fulfilData.orders) {
+              const fulfilWorkOrder = order.work_orders?.find((wo: any) => parseInt(wo.id) === workOrderId);
+              
+              if (fulfilWorkOrder) {
+                // Find local production order by moNumber since Fulfil data doesn't include fulfilId
+                const localPO = await db
+                  .select()
+                  .from(productionOrders)
+                  .where(eq(productionOrders.moNumber, order.moNumber))
+                  .limit(1);
+                
+                if (localPO.length > 0) {
+                  // Create the work order in local database
+                  const newWorkOrder = await db.insert(workOrders).values({
+                    productionOrderId: localPO[0].id,
+                    workCenter: fulfilWorkOrder.work_center,
+                    operation: fulfilWorkOrder.operation,
+                    routing: order.routingName || "Standard",
+                    fulfilId: parseInt(fulfilWorkOrder.id),
+                    quantityDone: fulfilWorkOrder.quantity_done || 0,
+                    status: fulfilWorkOrder.state === "request" ? "Pending" : fulfilWorkOrder.state,
+                    sequence: 1,
+                    estimatedHours: 8,
+                    state: fulfilWorkOrder.state,
+                    rec_name: `WO${fulfilWorkOrder.id}`,
+                    workCenterName: fulfilWorkOrder.work_center,
+                    operationName: fulfilWorkOrder.operation,
+                    assignedOperatorId: operator.id,
+                    operatorName: operator.name
+                  }).returning();
+                  
+                  console.log(`Created and assigned work order ${fulfilWorkOrder.id} to ${operator.name}`);
+                  
+                  return res.json({
+                    success: true,
+                    message: `Created work order and assigned ${operator.name}`,
+                    workOrder: newWorkOrder[0],
+                    operatorId: operator.id,
+                    operatorName: operator.name
+                  });
+                }
+              }
+            }
+          }
+        } catch (syncError) {
+          console.error("Error syncing work order:", syncError);
+        }
+        
+        return res.status(404).json({ message: "Work order not found" });
+      }
+
+      // Found work order - update it with assignment
+      const foundWorkOrder = workOrder[0];
+      console.log(`Found work order: ${foundWorkOrder.id} (Fulfil ID: ${foundWorkOrder.fulfilId})`);
       
       // Update the work order with assigned operator
       const updatedWorkOrder = await db
@@ -207,18 +387,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           assignedOperatorId: operator.id,
           operatorName: operator.name // Also store operator name for easy display
         })
-        .where(eq(workOrders.id, workOrderId))
+        .where(eq(workOrders.id, foundWorkOrder.id))
         .returning();
       
       if (updatedWorkOrder.length === 0) {
-        return res.status(404).json({ message: "Work order not found" });
+        return res.status(500).json({ message: "Failed to update work order" });
       }
       
-      console.log(`Successfully assigned ${operator.name} to work order ${workOrderId}`);
+      console.log(`Successfully assigned ${operator.name} to work order ${foundWorkOrder.id} (Fulfil ID: ${foundWorkOrder.fulfilId})`);
       
       res.json({
         success: true,
-        message: `Assigned ${operator.name} to work order ${workOrderId}`,
+        message: `Assigned ${operator.name} to work order ${foundWorkOrder.rec_name || foundWorkOrder.id}`,
         workOrder: updatedWorkOrder[0],
         operatorId: operator.id,
         operatorName: operator.name
