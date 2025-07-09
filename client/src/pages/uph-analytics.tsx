@@ -273,12 +273,12 @@ export default function UphAnalytics() {
                 <div className="ml-2">
                   <p className="text-sm font-medium leading-none">Avg UPH</p>
                   <p className="text-2xl font-bold">
-                    {Object.values(uphData.summary.avgUphByCeter || {}).length > 0
-                      ? Math.round(
-                          Object.values(uphData.summary.avgUphByCeter).reduce((a, b) => a + b, 0) /
-                          Object.values(uphData.summary.avgUphByCeter).length
-                        )
-                      : "N/A"}
+                    {(() => {
+                      const values = Object.values(uphData.summary.avgUphByCeter || {}).filter(v => v !== null && v !== undefined);
+                      return values.length > 0 
+                        ? Math.round(values.reduce((a, b) => a + b, 0) / values.length)
+                        : "N/A";
+                    })()}
                   </p>
                 </div>
               </div>

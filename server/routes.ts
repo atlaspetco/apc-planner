@@ -2239,8 +2239,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Direct database query to get stored UPH data
-      const uphResults = await db.select().from(uphData);
+      // Direct database query to get stored UPH data from historical_uph table
+      const uphResults = await db.select().from(historicalUph);
       const allOperators = await db.select().from(operators);
       
       if (uphResults.length === 0) {
@@ -2276,10 +2276,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return workCenter.charAt(0).toUpperCase() + workCenter.slice(1).toLowerCase();
       };
       
-      // Apply work center consolidation to UPH results
+      // Apply work center consolidation to UPH results and map field names
       const consolidatedUphResults = uphResults.map(row => ({
         ...row,
-        workCenter: consolidateWorkCenter(row.workCenter)
+        workCenter: consolidateWorkCenter(row.workCenter),
+        unitsPerHour: row.unitsPerHour, // historicalUph uses unitsPerHour field
+        calculationPeriod: row.observations // historicalUph uses observations field
       }));
       
       // Get unique work centers and routings after consolidation
