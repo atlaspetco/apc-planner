@@ -111,7 +111,7 @@ export default function OperatorSettings() {
              (selectedOperatorData && record.operatorId === selectedOperatorData.id);
     });
     
-    return [...new Set(operatorUphRecords.map((record: any) => record.productRouting).filter(r => r && r !== 'Unknown'))];
+    return [...new Set(operatorUphRecords.map((record: any) => record.routing).filter(r => r && r !== 'Unknown'))];
   };
 
   const updateOperatorMutation = useMutation({

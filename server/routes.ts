@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { FulfilAPIService } from "./fulfil-api";
 import { db } from "./db.js";
-import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData } from "../shared/schema.js";
+import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph } from "../shared/schema.js";
 import { sql, eq, desc } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
@@ -2408,18 +2408,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get individual UPH records for analytics page filtering
+  // Get individual UPH records for analytics page filtering (use historical_uph table)
   app.get("/api/uph-data", async (req, res) => {
     try {
-      // Direct database query to get all UPH records
-      const uphResults = await db.select().from(uphData);
+      // Direct database query to get all UPH records from historical_uph table
+      const uphResults = await db.select().from(historicalUph);
       
       if (uphResults.length === 0) {
         return res.json([]);
       }
       
-      // Return individual records in format expected by analytics page
-      res.json(uphResults);
+      // Map historical_uph fields to expected format for operator settings page
+      const formattedResults = uphResults.map(record => ({
+        id: record.id,
+        operatorId: record.operatorId,
+        operatorName: record.operator,
+        workCenter: record.workCenter,
+        operation: record.operation,
+        routing: record.routing, // This is the key field that was missing
+        productRouting: record.routing, // Alias for compatibility
+        unitsPerHour: record.unitsPerHour,
+        uph: record.unitsPerHour,
+        observationCount: record.observations,
+        totalDurationHours: record.totalHours,
+        totalQuantity: record.totalQuantity,
+        dataSource: record.dataSource,
+        createdAt: record.lastCalculated,
+        updatedAt: record.lastCalculated
+      }));
+      
+      res.json(formattedResults);
     } catch (error) {
       console.error("Error getting UPH data:", error);
       res.status(500).json({ message: "Error getting UPH data" });
