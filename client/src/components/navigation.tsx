@@ -10,7 +10,7 @@ const navigationItems = [
   { path: "/", label: "Dashboard", icon: BarChart3 },
   { path: "/operator-settings", label: "Operators", icon: Users },
   { path: "/uph-analytics", label: "UPH Analytics", icon: Calculator },
-  { path: "/settings", label: "Settings", icon: Settings },
+  { path: "/settings", label: "API Settings", icon: Settings },
 ];
 
 export default function Navigation() {

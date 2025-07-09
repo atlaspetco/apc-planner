@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Settings, Database, Key, CheckCircle, XCircle, RefreshCw, Users, Upload, Loader2, Clock, Calculator, Activity, AlertTriangle, MessageSquare } from "lucide-react";
+import { Settings as SettingsIcon, Database, Key, CheckCircle, XCircle, RefreshCw, Users, Upload, Loader2, Clock, Calculator, Activity, AlertTriangle, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -155,8 +155,8 @@ export default function Settings() {
     <div className="max-w-4xl mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-          <Settings className="mr-3" />
-          Settings
+          <SettingsIcon className="mr-3" />
+          API Settings
         </h1>
         <p className="text-gray-600">Configure your integrations and data sources</p>
       </div>
