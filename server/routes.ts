@@ -3756,6 +3756,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Sync missing work orders from Fulfil to local database
+  app.post("/api/fulfil/sync-missing-work-orders", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { FulfilCurrentService } = await import("./fulfil-current.js");
+      const fulfil = new FulfilCurrentService();
+      
+      // Get current production orders and their work orders from Fulfil
+      const currentOrders = await fulfil.getCurrentProductionOrders();
+      console.log(`Found ${currentOrders.orders.length} production orders from Fulfil API`);
+      
+      let syncedWorkOrders = 0;
+      let syncedProductionOrders = 0;
+      
+      for (const order of currentOrders.orders) {
+        // Check if production order exists locally
+        const existingPO = await db.select()
+          .from(productionOrders)
+          .where(eq(productionOrders.moNumber, order.moNumber))
+          .limit(1);
+        
+        let productionOrderId: number;
+        
+        if (existingPO.length === 0) {
+          // Insert missing production order
+          const newPO = await db.insert(productionOrders).values({
+            moNumber: order.moNumber,
+            productName: order.productName,
+            quantity: order.quantity,
+            status: order.status,
+            routing: order.routingName,
+            fulfilId: order.fulfilId,
+            rec_name: order.moNumber,
+            state: order.status,
+            product_code: order.productCode,
+          }).returning({ id: productionOrders.id });
+          
+          productionOrderId = newPO[0].id;
+          syncedProductionOrders++;
+          console.log(`Created missing production order: ${order.moNumber}`);
+        } else {
+          productionOrderId = existingPO[0].id;
+        }
+        
+        // Check and sync work orders for this production order
+        for (const wo of order.work_orders || []) {
+          const existingWO = await db.select()
+            .from(workOrders)
+            .where(
+              and(
+                eq(workOrders.productionOrderId, productionOrderId),
+                eq(workOrders.operation, wo.operation)
+              )
+            )
+            .limit(1);
+          
+          if (existingWO.length === 0) {
+            // Insert missing work order
+            await db.insert(workOrders).values({
+              productionOrderId: productionOrderId,
+              workCenter: wo.work_center === 'Sewing' ? 'Assembly' : wo.work_center,
+              operation: wo.operation,
+              routing: order.routingName || 'Standard',
+              quantityDone: wo.quantity_done || 0,
+              status: wo.state || 'pending',
+              sequence: 1,
+              fulfilId: parseInt(wo.id),
+              state: wo.state,
+              rec_name: `WO${wo.id}`,
+              workCenterName: wo.work_center,
+              operationName: wo.operation,
+            });
+            
+            syncedWorkOrders++;
+            console.log(`Created missing work order: ${wo.id} for ${order.moNumber}`);
+          }
+        }
+      }
+      
+      res.json({
+        success: true,
+        message: `Synced ${syncedWorkOrders} missing work orders and ${syncedProductionOrders} missing production orders`,
+        syncedWorkOrders,
+        syncedProductionOrders
+      });
+      
+    } catch (error) {
+      console.error("Error syncing missing work orders:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to sync missing work orders",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Helper function to update import status
   global.updateImportStatus = (update: any) => {
     importStatus = { ...importStatus, ...update, lastUpdate: new Date() };

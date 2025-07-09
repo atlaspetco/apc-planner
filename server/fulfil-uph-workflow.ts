@@ -6,7 +6,7 @@
 import { FulfilAPIService } from "./fulfil-api.js";
 import { db } from "./db.js";
 import { workCycles, uphData, productionOrders } from "../shared/schema.js";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, inArray } from "drizzle-orm";
 
 export class FulfilUphWorkflow {
   private fulfilAPI: FulfilAPIService;
@@ -46,7 +46,7 @@ export class FulfilUphWorkflow {
       const missingCycleIds = [26716, 26721, 26723, 26724];
       const existingCycles = await db.select({ id: workCycles.work_cycles_id })
         .from(workCycles)
-        .where(sql`${workCycles.work_cycles_id} IN (${missingCycleIds.join(',')})`);
+        .where(inArray(workCycles.work_cycles_id, missingCycleIds));
       
       const existingIds = existingCycles.map(c => c.id);
       const actuallyMissingIds = missingCycleIds.filter(id => !existingIds.includes(id));
