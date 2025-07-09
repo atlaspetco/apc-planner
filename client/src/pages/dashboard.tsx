@@ -15,19 +15,20 @@ export default function Dashboard() {
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
-  const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders", { status: JSON.stringify(statusFilter) }],
-    enabled: true,
-    retry: 3,
-    retryDelay: 1000,
-  });
-
-  // Get current production orders from Fulfil API
-  const { data: currentPOs = [], isLoading: isLoadingCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
+  // Use current production orders from Fulfil API as primary data source
+  const { data: currentPOsResponse = {}, isLoading: isLoadingCurrentPOs, error: errorCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
     queryKey: ["/api/fulfil/current-production-orders"],
     retry: 3,
     retryDelay: 1000,
+    staleTime: 0,
+    cacheTime: 0,
   });
+
+  // Extract production orders from API response
+  const productionOrders = currentPOsResponse?.data || [];
+  const isLoadingPOs = isLoadingCurrentPOs;
+  const errorPOs = errorCurrentPOs;
+  const refetchPOs = refetchCurrentPOs;
 
   const { data: summary, isLoading: isLoadingSummary, error: errorSummary, refetch: refetchSummary } = useQuery({
     queryKey: ["/api/dashboard/summary"],
