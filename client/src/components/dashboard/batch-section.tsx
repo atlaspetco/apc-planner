@@ -205,9 +205,21 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   });
 
   const calculateTotalHours = () => {
-    return (workOrders as WorkOrder[]).reduce((total: number, wo: WorkOrder) => {
-      return total + (wo.estimatedHours || 0);
-    }, 0);
+    // Group work orders by work center to calculate parallel vs sequential time
+    const workCenterHours: Record<string, number> = {};
+    
+    (workOrders as WorkOrder[]).forEach((wo: WorkOrder) => {
+      const workCenter = wo.workCenter || wo.workCenterName || 'Unknown';
+      if (!workCenterHours[workCenter]) {
+        workCenterHours[workCenter] = 0;
+      }
+      workCenterHours[workCenter] += (wo.estimatedHours || 0);
+    });
+    
+    // Return the maximum time across work centers (assuming parallel execution)
+    // This gives a more realistic total time for the production order
+    const maxHours = Math.max(...Object.values(workCenterHours), 0);
+    return maxHours;
   };
 
   const totalHours = calculateTotalHours();
