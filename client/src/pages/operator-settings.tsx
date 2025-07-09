@@ -219,18 +219,9 @@ export default function OperatorSettings() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start border-dashed"
-                onClick={() => setShowAddForm(true)}
-              >
-                + Add New Operator
-              </Button>
-              
               {allOperators.length === 0 && (
                 <div className="text-center py-8 text-gray-500">
                   <p>No operators configured yet.</p>
-                  <p className="text-sm mt-2">Click "Add New Operator" to add your first employee.</p>
                 </div>
               )}
               
@@ -260,9 +251,6 @@ export default function OperatorSettings() {
                       <span className="text-xs text-gray-500 ml-auto">
                         {new Date(operator.lastActiveDate).toLocaleDateString()}
                       </span>
-                    )}
-                    {operator.isRecentlyActive && (
-                      <span className="text-xs bg-green-100 text-green-700 px-1 py-0.5 rounded">Active</span>
                     )}
                   </div>
                 </Button>

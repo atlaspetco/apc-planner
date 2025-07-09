@@ -127,9 +127,9 @@ export default function PlanningGrid({
             <div className="col-span-2 text-left">Production Order</div>
             <div className="col-span-1 text-center">Status</div>
             <div className="col-span-1 text-center">Qty</div>
-            <div className="col-span-2 text-center">Cutting</div>
-            <div className="col-span-2 text-center">Assembly</div>
-            <div className="col-span-2 text-center">Packaging</div>
+            <div className="col-span-2 text-center font-medium">Cutting</div>
+            <div className="col-span-2 text-center font-medium">Assembly</div>
+            <div className="col-span-2 text-center font-medium">Packaging</div>
             <div className="col-span-1 text-center">Total</div>
           </div>
 

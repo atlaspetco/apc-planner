@@ -113,4 +113,18 @@
   .batch-expanded {
     max-height: none;
   }
+
+  /* Planning Grid Alignment Fix */
+  .grid-cols-12 {
+    display: grid;
+    grid-template-columns: 
+      minmax(0, 1fr)      /* Select column */
+      minmax(0, 2fr)      /* Production Order */
+      minmax(0, 1fr)      /* Status */
+      minmax(0, 1fr)      /* Qty */
+      minmax(120px, 2fr)  /* Cutting - fixed min width */
+      minmax(120px, 2fr)  /* Assembly - fixed min width */
+      minmax(120px, 2fr)  /* Packaging - fixed min width */
+      minmax(0, 1fr);     /* Total */
+  }
 }
