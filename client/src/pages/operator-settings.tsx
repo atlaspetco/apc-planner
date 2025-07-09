@@ -413,17 +413,33 @@ export default function OperatorSettings() {
                       // Get routings where this operator has data
                       const operatorRoutingsWithData = getOperatorRoutingsWithData(selectedOperatorData.name);
                       
-                      // Show all routings where operator has data, plus any that are manually checked
-                      const relevantRoutings = routingsData?.routings?.filter((routing: string) => {
+                      // Debug: Log the data
+                      console.log(`Debug: Operator ${selectedOperatorData.name} has UPH data for ${operatorRoutingsWithData.length} routings:`, operatorRoutingsWithData);
+                      console.log('Available routings from API:', routingsData?.routings);
+                      
+                      // Show all routings where operator has data (from UPH data) plus any manually checked
+                      // Combine: routings from UPH data + any manually checked + any that exist in master list
+                      const allPossibleRoutings = [
+                        ...operatorRoutingsWithData, // Always include routings where operator has UPH data
+                        ...(selectedOperatorData.routings || []), // Include manually checked routings
+                        ...(routingsData?.routings || []) // Include master list routings
+                      ];
+                      
+                      // Remove duplicates and filter to only show relevant ones
+                      const uniqueRoutings = [...new Set(allPossibleRoutings)];
+                      const relevantRoutings = uniqueRoutings.filter((routing: string) => {
                         const hasData = operatorRoutingsWithData.includes(routing);
                         const isManuallyChecked = selectedOperatorData.routings?.includes(routing);
-                        return hasData || isManuallyChecked;
-                      }) || [];
+                        return hasData || isManuallyChecked; // Show if has data OR manually checked
+                      });
+                      
+                      console.log(`Debug: Showing ${relevantRoutings.length} relevant routings for ${selectedOperatorData.name}:`, relevantRoutings);
                       
                       if (relevantRoutings.length === 0) {
                         return (
                           <div className="text-gray-500 text-sm">
                             No UPH data found for this operator. Performance data will auto-populate here when available.
+                            <div className="text-xs mt-1">Debug: Found {operatorRoutingsWithData.length} routings in UPH data</div>
                           </div>
                         );
                       }
