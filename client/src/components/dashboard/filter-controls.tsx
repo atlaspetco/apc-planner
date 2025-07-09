@@ -71,28 +71,23 @@ export default function FilterControls({
     String(Math.ceil((new Date().getDate() - new Date().getDay() + 1) / 7)).padStart(2, '0');
 
   return (
-    <Card className="mb-4 md:mb-6">
-      <CardHeader className="pb-3 md:pb-6">
+    <Card className="mb-6">
+      <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base md:text-lg">
-            <span className="hidden md:block">Filters & Controls</span>
-            <span className="md:hidden">Filters</span>
-          </CardTitle>
+          <CardTitle>Filters & Controls</CardTitle>
           <Button 
             variant="ghost" 
             size="sm"
             onClick={() => refreshMutation.mutate()}
             disabled={refreshMutation.isPending}
           >
-            <RefreshCw className={`w-4 h-4 md:mr-2 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">
-              {refreshMutation.isPending ? 'Processing...' : 'Refresh from Fulfil'}
-            </span>
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+            {refreshMutation.isPending ? 'Processing...' : 'Refresh from Fulfil'}
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Status Filter */}
           <div>
             <Label className="text-sm font-medium text-gray-700">MO Status</Label>

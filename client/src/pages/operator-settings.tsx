@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CustomToggle } from "@/components/ui/custom-toggle";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RefreshCw } from "lucide-react";
@@ -225,19 +225,17 @@ export default function OperatorSettings() {
                 </div>
               )}
               
-              {/* All Operators - Sorted by Activity Status, then by Complications */}
+              {/* All Operators - Sorted by Last Active */}
               {(allOperators as any[])
                 .sort((a: any, b: any) => {
-                  // Sort by activity status first (active at top)
+                  // Sort by activity status first (active at top), then by last active date
                   if (a.isRecentlyActive && !b.isRecentlyActive) return -1;
                   if (!a.isRecentlyActive && b.isRecentlyActive) return 1;
                   
-                  // Within same activity status, sort by total complications (UPH record count)
-                  const aComplications = uphData ? uphData.filter((record: any) => record.operatorName === a.name).length : 0;
-                  const bComplications = uphData ? uphData.filter((record: any) => record.operatorName === b.name).length : 0;
-                  
-                  // More complications = higher versatility, so sort descending
-                  return bComplications - aComplications;
+                  // Both same activity status, sort by last active date (most recent first)
+                  const aDate = a.lastActiveDate ? new Date(a.lastActiveDate).getTime() : 0;
+                  const bDate = b.lastActiveDate ? new Date(b.lastActiveDate).getTime() : 0;
+                  return bDate - aDate;
                 })
                 .map((operator: any) => (
                 <Button
@@ -249,6 +247,11 @@ export default function OperatorSettings() {
                   <div className="flex items-center space-x-2">
                     <div className={`w-2 h-2 rounded-full ${operator.isRecentlyActive ? 'bg-green-500' : 'bg-orange-400'}`} />
                     <span>{operator.name}</span>
+                    {operator.lastActiveDate && (
+                      <span className="text-xs text-gray-500 ml-auto">
+                        {new Date(operator.lastActiveDate).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
                 </Button>
               ))}
@@ -262,17 +265,9 @@ export default function OperatorSettings() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{selectedOperatorData.name}</CardTitle>
-                    <p className="text-sm text-gray-500 mt-1">
-                      Last updated: {selectedOperatorData.updatedAt 
-                        ? new Date(selectedOperatorData.updatedAt).toLocaleString()
-                        : 'Never'
-                      }
-                    </p>
-                  </div>
+                  <CardTitle>{selectedOperatorData.name}</CardTitle>
                   <div className="flex items-center space-x-2">
-                    <CustomToggle
+                    <Switch
                       id="isActive"
                       checked={selectedOperatorData.isActive}
                       onCheckedChange={(checked) => handleUpdateOperator({ isActive: checked })}
@@ -294,13 +289,13 @@ export default function OperatorSettings() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="slackUserId">Slack User ID</Label>
+                    <Label htmlFor="email">Email</Label>
                     <Input
-                      id="slackUserId"
-                      placeholder="e.g., U01234ABCDE"
-                      key={`slackUserId-${selectedOperatorData.id}`}
-                      defaultValue={selectedOperatorData.slackUserId || ""}
-                      onBlur={(e) => handleUpdateOperator({ slackUserId: e.target.value })}
+                      id="email"
+                      type="email"
+                      key={`email-${selectedOperatorData.id}`}
+                      defaultValue={selectedOperatorData.email || ""}
+                      onBlur={(e) => handleUpdateOperator({ email: e.target.value })}
                     />
                   </div>
                 </div>
@@ -350,18 +345,18 @@ export default function OperatorSettings() {
                       <div className="mt-2 space-y-2">
                         {(workCenterData as any[]).map((wc: any) => {
                           const hasData = getOperatorWorkCentersWithData(selectedOperatorData.name).includes(wc.workCenter);
-                          const isManuallyChecked = selectedOperatorData.workCenters?.includes(wc.workCenter) || false;
-                          const isChecked = isManuallyChecked || hasData;
+                          const isChecked = selectedOperatorData.workCenters?.includes(wc.workCenter) || hasData;
                           
                           return (
                             <div key={`${selectedOperatorData.id}-wc-${wc.workCenter}`} className="flex items-center space-x-2">
-                              <CustomToggle
+                              <Switch
                                 id={`wc-${wc.workCenter}-${selectedOperatorData.id}`}
+                                key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
                                   const currentWorkCenters = selectedOperatorData.workCenters || [];
                                   const newWorkCenters = checked
-                                    ? [...new Set([...currentWorkCenters, wc.workCenter])]
+                                    ? [...currentWorkCenters, wc.workCenter]
                                     : currentWorkCenters.filter((center: string) => center !== wc.workCenter);
                                   handleUpdateOperator({ workCenters: newWorkCenters });
                                 }}
@@ -406,20 +401,19 @@ export default function OperatorSettings() {
                           
                           return relevantOperations.map((operation: string, index: number) => {
                             const hasData = operatorOperationsWithData.includes(operation);
-                            const isManuallyChecked = selectedOperatorData.operations?.includes(operation) || false;
-                            const isChecked = isManuallyChecked || hasData;
+                            const isChecked = selectedOperatorData.operations?.includes(operation) || hasData;
                             // Create truly unique key combining operator ID, operation, and index
                             const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
                             
                             return (
                               <div key={stableKey} className="flex items-center space-x-2">
-                                <CustomToggle
+                                <Switch
                                   id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
                                   checked={isChecked}
                                   onCheckedChange={(checked) => {
                                     const currentOperations = selectedOperatorData.operations || [];
                                     const newOperations = checked
-                                      ? [...new Set([...currentOperations, operation])]
+                                      ? [...currentOperations, operation]
                                       : currentOperations.filter((op: string) => op !== operation);
                                     handleUpdateOperator({ operations: newOperations });
                                   }}
@@ -467,19 +461,18 @@ export default function OperatorSettings() {
                         
                         return relevantRoutings.map((routing: string) => {
                           const hasData = operatorRoutingsWithData.includes(routing);
-                          const isManuallyChecked = selectedOperatorData.routings?.includes(routing) || false;
-                          const isChecked = isManuallyChecked || hasData;
+                          const isChecked = selectedOperatorData.routings?.includes(routing) || hasData;
                           const stableKey = `routing-${selectedOperatorData.id}-${routing.replace(/\s+/g, '-')}`;
                           
                           return (
                             <div key={stableKey} className="flex items-center space-x-2">
-                              <CustomToggle
+                              <Switch
                                 id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
                                   const currentRoutings = selectedOperatorData.routings || [];
                                   const newRoutings = checked
-                                    ? [...new Set([...currentRoutings, routing])]
+                                    ? [...currentRoutings, routing]
                                     : currentRoutings.filter((rt: string) => rt !== routing);
                                   handleUpdateOperator({ routings: newRoutings });
                                 }}

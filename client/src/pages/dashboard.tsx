@@ -80,30 +80,27 @@ export default function Dashboard() {
     <div className="bg-gray-50 min-h-screen">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 md:py-4">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 md:space-x-4">
-              <Factory className="text-blue-600 text-xl md:text-2xl" />
-              <h1 className="text-lg md:text-2xl font-bold text-gray-900">
-                <span className="hidden md:block">Production Planning Dashboard</span>
-                <span className="md:hidden">Planning</span>
-              </h1>
+            <div className="flex items-center space-x-4">
+              <Factory className="text-blue-600 text-2xl" />
+              <h1 className="text-2xl font-bold text-gray-900">Production Planning Dashboard</h1>
             </div>
-            <div className="flex items-center space-x-2 md:space-x-4">
+            <div className="flex items-center space-x-4">
+
               <Button 
                 className="bg-blue-600 hover:bg-blue-700"
-                size="sm"
                 onClick={() => window.location.href = '/operator-settings'}
               >
-                <Cog className="w-4 h-4 md:mr-2" />
-                <span className="hidden md:inline">Settings</span>
+                <Cog className="w-4 h-4 mr-2" />
+                Settings
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 md:py-6">
+      <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Filter Controls */}
         <FilterControls 
           statusFilter={statusFilter}
