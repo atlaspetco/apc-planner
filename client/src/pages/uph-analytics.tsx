@@ -123,13 +123,13 @@ export default function UphAnalytics() {
     return uph.toFixed(1);
   };
 
-  // Calculate routing + work center specific color ranges (context-specific conditional formatting)
-  const getRoutingWorkCenterPercentiles = (routingName: string, workCenter: string) => {
-    if (!uphData?.routings) return { p55: 50, p45: 25 };
+  // Get min/max values for each routing + work center context (only highlight extreme values)
+  const getRoutingWorkCenterExtremes = (routingName: string, workCenter: string) => {
+    if (!uphData?.routings) return { max: null, min: null };
     
     // Find the specific routing
     const routing = uphData.routings.find(r => r.routingName === routingName);
-    if (!routing) return { p55: 50, p45: 25 };
+    if (!routing) return { max: null, min: null };
     
     // Get all UPH values for this specific routing + work center combination
     const uphValuesForContext: number[] = [];
@@ -140,35 +140,28 @@ export default function UphAnalytics() {
       }
     });
 
-    if (uphValuesForContext.length === 0) return { p55: 50, p45: 25 };
+    if (uphValuesForContext.length === 0) return { max: null, min: null };
     
-    uphValuesForContext.sort((a, b) => a - b);
+    const max = Math.max(...uphValuesForContext);
+    const min = Math.min(...uphValuesForContext);
     
-    // Calculate percentiles for red-black-green scale:
-    // Bottom 45% = red, Median ±5% = black, Top 45% = green
-    const p45Index = Math.floor(uphValuesForContext.length * 0.45);
-    const p55Index = Math.floor(uphValuesForContext.length * 0.55);
-    
-    const p45 = uphValuesForContext[p45Index] || 25; // 45th percentile
-    const p55 = uphValuesForContext[p55Index] || 50; // 55th percentile
-    
-    return { p55, p45 };
+    return { max, min };
   };
 
   const getUphBadgeVariant = (uph: number | null, workCenter?: string, routingName?: string) => {
     if (uph === null || uph === undefined) return "outline";
     
     if (workCenter && routingName) {
-      const { p55, p45 } = getRoutingWorkCenterPercentiles(routingName, workCenter);
-      if (uph >= p55) return "uphHigh"; // Green for top 45%
-      if (uph >= p45) return "uphMedium"; // Black/gray for median ±5%
-      return "uphLow"; // Red for bottom 45%
+      const { max, min } = getRoutingWorkCenterExtremes(routingName, workCenter);
+      
+      // Only color the single highest (green) and single lowest (red) values
+      if (max !== null && uph === max) return "uphHigh"; // Green for single highest
+      if (min !== null && uph === min) return "uphLow"; // Red for single lowest
+      return "uphMedium"; // Gray for everything else
     }
     
-    // Fallback to global thresholds if context not specified
-    if (uph >= 50) return "uphHigh";
-    if (uph >= 25) return "uphMedium";
-    return "uphLow";
+    // No coloring for product totals - return neutral
+    return "outline";
   };
 
   // Order work centers consistently: Cutting, Assembly, Packaging
@@ -351,7 +344,8 @@ export default function UphAnalytics() {
                             .map((wc) => (
                             <Badge
                               key={wc}
-                              variant={getUphBadgeVariant(routing.routingAverages[wc], wc, routing.routingName)}
+                              variant="outline"
+                              className="text-base font-medium"
                             >
                               {wc}: {formatUph(routing.routingAverages[wc])}
                             </Badge>
