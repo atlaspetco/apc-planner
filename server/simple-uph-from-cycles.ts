@@ -11,31 +11,35 @@ export async function calculateUphFromExistingCycles() {
   console.log("Calculating UPH from existing work cycles data...");
 
   try {
-    // Get all work cycles with complete data
-    const cycles = await db
-      .select({
-        operator: workCycles.work_cycles_operator_rec_name,
-        workCenter: workCycles.work_cycles_work_center_rec_name,
-        operation: workCycles.work_operation_rec_name,
-        routing: workCycles.work_production_routing_rec_name,
-        duration: workCycles.work_cycles_duration,
-        quantityDone: workCycles.work_cycles_quantity_done
-      })
-      .from(workCycles)
-      .where(sql`
-        ${workCycles.work_cycles_operator_rec_name} IS NOT NULL 
-        AND ${workCycles.work_cycles_work_center_rec_name} IS NOT NULL 
-        AND ${workCycles.work_operation_rec_name} IS NOT NULL
-        AND ${workCycles.work_production_routing_rec_name} IS NOT NULL
-        AND ${workCycles.work_cycles_duration} > 0
-      `);
-
+    // Get all work cycles with complete data using raw SQL to avoid field mapping issues
+    const cyclesResult = await db.execute(sql`
+      SELECT 
+        work_cycles_operator_rec_name as operator,
+        work_cycles_operator_id as operator_id,
+        work_cycles_work_center_rec_name as work_center,
+        work_center_id,
+        work_operation_rec_name as operation,
+        work_production_routing_rec_name as routing,
+        work_cycles_duration as duration,
+        work_cycles_quantity_done as quantity_done
+      FROM work_cycles 
+      WHERE work_cycles_operator_rec_name IS NOT NULL 
+        AND work_cycles_work_center_rec_name IS NOT NULL 
+        AND work_operation_rec_name IS NOT NULL
+        AND work_production_routing_rec_name IS NOT NULL
+        AND work_cycles_duration > 0
+    `);
+    
+    const cycles = cyclesResult.rows;
     console.log(`Found ${cycles.length} complete work cycles for UPH calculation`);
 
-    // Group by operator + work center + routing for aggregation
+    // Group by operator ID + work center ID + routing ID for aggregation (use IDs for consistency)
     const groupedCycles = new Map<string, {
+      operatorId: number;
       operator: string;
+      workCenterId: number;
       workCenter: string;
+      routingId: number;
       routing: string;
       operation: string;
       totalDuration: number;
@@ -45,17 +49,21 @@ export async function calculateUphFromExistingCycles() {
 
     for (const cycle of cycles) {
       // Clean work center name (handle "Sewing / Assembly" -> "Sewing")
-      let cleanWorkCenter = cycle.workCenter?.trim() || "";
+      let cleanWorkCenter = cycle.work_center?.trim() || "";
       if (cleanWorkCenter.includes(" / ")) {
         cleanWorkCenter = cleanWorkCenter.split(" / ")[0].trim();
       }
 
+      // Use operator name + work center + routing for grouping
       const key = `${cycle.operator}|${cleanWorkCenter}|${cycle.routing}`;
       
       if (!groupedCycles.has(key)) {
         groupedCycles.set(key, {
+          operatorId: cycle.operator_id || null,
           operator: cycle.operator!,
+          workCenterId: cycle.work_center_id || null,
           workCenter: cleanWorkCenter,
+          routingId: null,
           routing: cycle.routing!,
           operation: cycle.operation!,
           totalDuration: 0,
@@ -66,7 +74,7 @@ export async function calculateUphFromExistingCycles() {
 
       const group = groupedCycles.get(key)!;
       group.totalDuration += cycle.duration || 0;
-      group.totalQuantity += cycle.quantityDone || 1; // Default to 1 if quantity is null/0
+      group.totalQuantity += cycle.quantity_done || 1; // Default to 1 if quantity is null/0
       group.observations += 1;
     }
 
@@ -74,6 +82,7 @@ export async function calculateUphFromExistingCycles() {
 
     // Calculate UPH for each group and store in database
     const uphCalculations: Array<{
+      operatorId: number;
       routing: string;
       operation: string;
       operator: string;
@@ -94,6 +103,7 @@ export async function calculateUphFromExistingCycles() {
         // Filter for realistic UPH values
         if (uph >= 1 && uph <= 500) {
           uphCalculations.push({
+            operatorId: group.operatorId,
             routing: group.routing,
             operation: group.operation,
             operator: group.operator,
@@ -114,7 +124,21 @@ export async function calculateUphFromExistingCycles() {
     await db.delete(historicalUph);
     
     if (uphCalculations.length > 0) {
-      await db.insert(historicalUph).values(uphCalculations);
+      // Map to database schema with operatorId field
+      const dbInsertValues = uphCalculations.map(calc => ({
+        operatorId: calc.operatorId,
+        routing: calc.routing,
+        operation: calc.operation,
+        operator: calc.operator,
+        workCenter: calc.workCenter,
+        totalQuantity: calc.totalQuantity,
+        totalHours: calc.totalHours,
+        unitsPerHour: calc.unitsPerHour,
+        observations: calc.observations,
+        dataSource: calc.dataSource
+      }));
+      
+      await db.insert(historicalUph).values(dbInsertValues);
     }
 
     return {

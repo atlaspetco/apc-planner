@@ -180,6 +180,7 @@ export const fulfilOperators = pgTable("fulfil_operators", {
 // Historical UPH calculations from completed work orders
 export const historicalUph = pgTable("historical_uph", {
   id: serial("id").primaryKey(),
+  operatorId: integer("operator_id"), // Operator ID for consistent matching
   routing: text("routing").notNull(), // Template/Routing name from MO
   operation: text("operation").notNull(),
   operator: text("operator"), // Operator name (nullable for routing-only calculations)

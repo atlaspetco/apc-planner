@@ -303,25 +303,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // UPH Data
   app.get("/api/uph-data", async (req, res) => {
-    const { operatorId, workCenter, operation, dateRange, startDate, endDate } = req.query;
-    
-    let parsedOperatorId: number | undefined;
-    if (operatorId) {
-      parsedOperatorId = parseInt(operatorId as string);
-      if (isNaN(parsedOperatorId) || parsedOperatorId <= 0) {
-        return res.status(400).json({ message: "Invalid operator ID" });
-      }
+    try {
+      // Return data from historical_uph table instead of deprecated uph_data table
+      const data = await db.select({
+        id: historicalUph.id,
+        operatorId: historicalUph.operatorId,
+        operatorName: historicalUph.operator, // Map operator field to operatorName for frontend compatibility
+        workCenter: historicalUph.workCenter,
+        operation: historicalUph.operation,
+        routing: historicalUph.routing, // This field exists in historical_uph but was missing from uph_data
+        productRouting: historicalUph.routing, // Alias for backward compatibility
+        uph: historicalUph.unitsPerHour,
+        observationCount: historicalUph.observations,
+        totalDurationHours: historicalUph.totalHours,
+        totalQuantity: historicalUph.totalQuantity,
+        dataSource: historicalUph.dataSource,
+        lastUpdated: historicalUph.lastCalculated
+      }).from(historicalUph);
+      
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching UPH data:", error);
+      res.status(500).json({ error: "Failed to fetch UPH data" });
     }
-    
-    const uphData = await storage.getUphData(
-      parsedOperatorId,
-      workCenter as string,
-      operation as string,
-      dateRange as string,
-      startDate as string,
-      endDate as string
-    );
-    res.json(uphData);
   });
 
   app.get("/api/uph-data/operator/:operatorId", async (req, res) => {
