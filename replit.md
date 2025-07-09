@@ -68,19 +68,29 @@ This is a React + Express + TypeScript application designed for manufacturing pr
 - **Authentication**: Uses FULFIL_ACCESS_TOKEN environment secret with X-API-KEY header
 - **Base URL**: https://apc.fulfil.io (AtlasPetCompany Fulfil instance)
 - **API Version**: v2 with RESTful endpoints
+
+#### Data Sources for Planning Dashboard:
+- **Active Production Orders (for Planning Grid)**: 
+  - Endpoint: `GET /api/v2/model/production.work?state=request,draft,waiting,assigned`
+  - Fields: id, production, operation.name, work_center.name, employee.name, state, quantity_done, planned_date
+  - Links to production orders via production field
+  - Used to populate planning grid with current/active work
+
+- **Completed Work Cycles (for UPH Calculations)**: 
+  - Endpoint: `GET /api/v2/model/production.work.cycles?state=done`
+  - Fields: work_operation_rec_name, work_cycles_work_center_rec_name, work_production_routing_rec_name, work_cycles_operator_rec_name, work_cycles_duration
+  - Refresh every 4 hours to update UPH calculations
+  - **CRITICAL**: All UPH data comes from completed work cycles, not API calls during planning
+
 - **Production Orders**: 
   - Endpoint: `/api/v2/model/production.order`
   - Fields: id, rec_name, state, quantity, planned_date, product.code, routing.name
   - States: Draft, Waiting, Assigned, Running, Done
-- **Work Orders**: 
-  - Endpoint: `/api/v2/model/production.work` 
-  - Fields: id, production, operation.name, work_center.name, employee.name, state, quantity_done, planned_date
-  - Links to production orders via production field
+
 - **Production Routing**:
   - Endpoint: `/api/v2/model/production.routing`
   - Schema Fields: id, name, rec_name, active, steps, create_date, write_date, metadata, metafields
-  - GET endpoints: count, list with filters, get by ID
-  - Required field: name (char type)
+
 - **API Patterns**:
   - Search Count: POST to `/{model}/search_count` with filters
   - Search Data: POST to `/{model}/search_read` with fields and filters  
@@ -133,6 +143,7 @@ Changelog:
 ```
 
 ## Recent Changes (Latest First)  
+- **Data Source Architecture Clarified**: Fixed overcomplicated API approach - all UPH calculations now use existing work_cycles table data directly. Clarified two distinct data sources: (1) Active work orders from `production.work?state=request,draft,waiting,assigned` for planning grid population, (2) Completed work cycles from `production.work.cycles?state=done` for UPH calculations (refresh every 4 hours). Eliminated unnecessary API calls during planning operations by using pre-loaded work_cycles data with authentic field mapping (work_operation_rec_name, work_cycles_operator_rec_name, work_production_routing_rec_name)
 - **Database Schema Fulfil API Compliance Complete**: Implemented exact Fulfil API field mapping requirement - database fields now mirror Fulfil's production.routing schema exactly (id, name, rec_name, active, steps, create_date, write_date, metadata, metafields). Fixed all field name inconsistencies in operator settings page - operatorName, workCenter, productRouting now correctly reference UPH data. Added production_routing table with complete Fulfil schema compliance for authentic manufacturing data integrity
 - **Single Refresh Button System Complete**: Consolidated 3 confusing refresh buttons into 1 comprehensive "Refresh from Fulfil" button that executes complete UPH workflow: imports new 'done' work cycles → aggregates duration by work center+routing → calculates UPH per operator. Removed redundant refresh buttons from dashboard header and planning grid. Implemented FulfilUphWorkflow class with proper API endpoints for complete manufacturing data refresh and UPH recalculation
 - **Codebase Cleanup Complete**: Fixed all inactive buttons (Create Batch, Auto-Assign) by adding proper onClick handlers and toast notifications. Removed 8 unused UI components (sidebar, carousel, chart, etc.) and 6 deprecated files (auto-sync, work-cycles-import, etc.) for streamlined codebase. Manufacturing dashboard remains fully functional with cleaned code structure

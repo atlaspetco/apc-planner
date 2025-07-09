@@ -2135,6 +2135,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Calculate UPH from existing work cycles data (no API calls needed)
+  app.post("/api/uph/calculate-simple", async (req, res) => {
+    try {
+      const { calculateUphFromExistingCycles } = await import("./simple-uph-from-cycles.js");
+      const result = await calculateUphFromExistingCycles();
+      res.json(result);
+    } catch (error) {
+      console.error("Error calculating UPH from existing cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error calculating UPH from existing cycles: ${error.message}`,
+        validUphCalculations: 0
+      });
+    }
+  });
+
   // Aggregate work cycles for UPH calculations
   app.post("/api/uph/aggregate-work-cycles", async (req, res) => {
     try {
