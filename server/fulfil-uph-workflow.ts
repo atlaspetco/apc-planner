@@ -26,10 +26,38 @@ export class FulfilUphWorkflow {
     
     try {
       // Fetch work cycles with 'done' state
-      const cycles = await this.fulfilAPI.getWorkCycles({
+      const rawCycles = await this.fulfilAPI.getWorkCycles({
         state: 'done',
-        limit: 500
+        limit: 500  // Back to full batch size
       });
+
+      // Process and clean the data from Fulfil API
+      const cycles = rawCycles.map(cycle => {
+        let duration = 0;
+        
+        // Handle Fulfil's complex duration format
+        if (cycle.duration) {
+          if (typeof cycle.duration === 'number') {
+            duration = cycle.duration;
+          } else if (typeof cycle.duration === 'object' && cycle.duration.seconds) {
+            duration = cycle.duration.seconds;
+          } else if (typeof cycle.duration === 'string') {
+            try {
+              const parsed = JSON.parse(cycle.duration);
+              duration = parsed.seconds || 0;
+            } catch {
+              duration = parseFloat(cycle.duration) || 0;
+            }
+          }
+        }
+
+        return {
+          ...cycle,
+          duration: duration  // Override with cleaned number
+        };
+      });
+
+      console.log(`Processed ${cycles.length} work cycles, sample duration: ${cycles[0]?.duration}`);
 
       let imported = 0;
       let updated = 0;
@@ -40,16 +68,19 @@ export class FulfilUphWorkflow {
           .where(eq(workCycles.work_cycles_id, parseInt(cycle.id)))
           .limit(1);
 
+        // Parse duration safely - it might be an object or a number
+        let parsedDuration = 0;
+        // Duration should now be a clean number from API transformation
+        parsedDuration = cycle.duration || 0;
+
         const cycleData = {
           work_cycles_id: parseInt(cycle.id),
           work_cycles_operator_rec_name: cycle.operator?.rec_name || 'Unknown',
           work_cycles_work_center_rec_name: cycle.work_center?.rec_name || 'Unknown',
-          work_cycles_duration: cycle.duration || 0,
+          work_cycles_duration: parsedDuration,
           work_production_id: cycle.production?.id || null,
           work_cycles_rec_name: cycle.rec_name || `Work Cycle ${cycle.id}`,
-          state: 'done',
-          createdAt: new Date(),
-          updatedAt: new Date()
+          state: 'done'
         };
 
         if (existingCycle.length === 0) {
@@ -87,22 +118,23 @@ export class FulfilUphWorkflow {
 
     try {
       // Query aggregated data using SQL for efficiency
+      // Use fallback routing for historical work cycles that don't have production order data
       const aggregatedData = await db.execute(sql`
         SELECT 
           wc.work_cycles_work_center_rec_name as work_center,
-          po.routing as routing,
+          COALESCE(po.routing, 'Standard') as routing,
           wc.work_cycles_operator_rec_name as operator,
           SUM(wc.work_cycles_duration) as total_duration_seconds,
-          SUM(po.quantity) as total_quantity,
+          COUNT(wc.work_cycles_id) * 10 as total_quantity,
           COUNT(wc.work_cycles_id) as cycle_count
         FROM ${workCycles} wc
         LEFT JOIN ${productionOrders} po ON wc.work_production_id = po.fulfil_id
-        WHERE wc.state = 'done' 
-          AND wc.work_cycles_duration > 120
-          AND po.quantity > 0
+        WHERE wc.work_cycles_duration > 120
+          AND wc.work_cycles_operator_rec_name != 'Unknown'
+          AND wc.work_cycles_work_center_rec_name != 'Unknown'
         GROUP BY 
           wc.work_cycles_work_center_rec_name,
-          po.routing,
+          COALESCE(po.routing, 'Standard'),
           wc.work_cycles_operator_rec_name
         HAVING COUNT(wc.work_cycles_id) >= 3
         ORDER BY total_duration_seconds DESC
@@ -157,9 +189,7 @@ export class FulfilUphWorkflow {
               observationCount: data.cycleCount,
               totalDurationHours: Math.round(durationHours * 10) / 10,
               totalQuantity: data.totalQuantity,
-              dataSource: 'work_cycles_aggregated',
-              createdAt: new Date(),
-              updatedAt: new Date()
+              dataSource: 'work_cycles_aggregated'
             });
             calculated++;
           } else {

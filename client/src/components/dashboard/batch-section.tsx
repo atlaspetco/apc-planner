@@ -236,7 +236,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                       };
                       const expectedHours = calculateExpectedHours(operator.id);
                       return (
-                        <SelectItem key={`operator-${operator.id}`} value={operator.id.toString()}>
+                        <SelectItem key={`${workCenter}-operator-${operator.id}-${order.id}`} value={operator.id.toString()}>
                           <div className="flex flex-col text-left">
                             <div className="font-medium">{operator.name}</div>
                             <div className="text-xs text-gray-500">

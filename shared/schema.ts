@@ -78,12 +78,18 @@ export const operators = pgTable("operators", {
 export const uphData = pgTable("uph_data", {
   id: serial("id").primaryKey(),
   operatorId: integer("operator_id").references(() => operators.id, { onDelete: "cascade" }),
+  operatorName: text("operator_name").notNull(),
   workCenter: text("work_center").notNull(),
   operation: text("operation").notNull(),
-  routing: text("routing").notNull(),
-  unitsPerHour: real("units_per_hour").notNull(),
+  productRouting: text("product_routing").notNull(),
+  uph: real("uph").notNull(), // Units per hour
+  observationCount: integer("observation_count").default(1),
+  totalDurationHours: real("total_duration_hours"),
+  totalQuantity: integer("total_quantity"),
+  dataSource: text("data_source").default("manual"),
   calculationPeriod: integer("calculation_period").default(30), // days
-  lastUpdated: timestamp("last_updated").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const batches = pgTable("batches", {
@@ -119,7 +125,9 @@ export const workCycles = pgTable("work_cycles", {
   work_id: integer("work_id"), // work/id
   work_operator_id: integer("work_operator_id"), // work/operator/id
   work_center_id: integer("work_center_id"), // work_center/id
+  state: text("state"), // work cycle state (done, etc.)
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Fulfil reference tables for ID to name mappings

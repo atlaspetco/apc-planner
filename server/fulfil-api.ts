@@ -462,7 +462,7 @@ export class FulfilAPIService {
         filters: filters,
         fields: [
           'id', 'rec_name', 'state', 'duration',
-          'operator.rec_name', 'work_center.rec_name', 'production.id'
+          'operator.rec_name', 'work_center.rec_name'
         ],
         limit: limit,
         offset: offset
@@ -488,15 +488,29 @@ export class FulfilAPIService {
       console.log(`Retrieved ${data.length} work cycles`);
       
       // Transform the response to match our interface
-      return data.map((cycle: any) => ({
-        id: cycle.id.toString(),
-        rec_name: cycle.rec_name || `Cycle ${cycle.id}`,
-        state: cycle.state || 'unknown',
-        duration: cycle.duration || 0,
-        operator: cycle.operator ? { rec_name: cycle.operator.rec_name } : undefined,
-        work_center: cycle.work_center ? { rec_name: cycle.work_center.rec_name } : undefined,
-        production: cycle.production ? { id: cycle.production.id } : undefined
-      }));
+      return data.map((cycle: any) => {
+        // Parse duration from Fulfil's timedelta format
+        let duration = 0;
+        if (cycle.duration) {
+          if (typeof cycle.duration === 'number') {
+            duration = cycle.duration;
+          } else if (typeof cycle.duration === 'object' && cycle.duration.seconds) {
+            duration = cycle.duration.seconds;
+          } else if (typeof cycle.duration === 'string') {
+            duration = parseFloat(cycle.duration);
+          }
+        }
+
+        return {
+          id: cycle.id.toString(),
+          rec_name: cycle.rec_name || `Cycle ${cycle.id}`,
+          state: cycle.state || 'unknown',
+          duration: duration,
+          operator: cycle.operator ? { rec_name: cycle.operator.rec_name } : undefined,
+          work_center: cycle.work_center ? { rec_name: cycle.work_center.rec_name } : undefined,
+          production: cycle.production ? { id: cycle.production.id } : undefined
+        };
+      });
     } catch (error) {
       console.error("Error fetching work cycles:", error);
       return [];
