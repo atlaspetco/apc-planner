@@ -58,12 +58,24 @@ export default function OperatorSettings() {
     
     // Find all work centers where this operator has UPH data
     const operatorUphRecords = uphData.filter((record: any) => {
-      // Try to match by operator name in the UPH data
-      return record.operatorName === operatorName || 
-             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
+      // Use correct field name: operator_name instead of operatorName
+      return record.operator_name === operatorName || 
+             (selectedOperatorData && record.operator_id === selectedOperatorData.id);
     });
     
-    return [...new Set(operatorUphRecords.map((record: any) => record.workCenter))];
+    // Get work centers and split combined ones like "Sewing / Assembly"
+    const allWorkCenters = operatorUphRecords.flatMap((record: any) => {
+      const workCenter = record.work_center;
+      if (!workCenter || workCenter === 'Unknown') return [];
+      
+      // Split combined work centers like "Sewing / Assembly" into separate centers
+      if (workCenter.includes(' / ')) {
+        return workCenter.split(' / ').map((wc: string) => wc.trim());
+      }
+      return [workCenter];
+    });
+    
+    return [...new Set(allWorkCenters)];
   };
 
   const getOperatorOperationsWithData = (operatorName: string): string[] => {
@@ -71,18 +83,23 @@ export default function OperatorSettings() {
     
     // Find all operations where this operator has UPH data
     const operatorUphRecords = uphData.filter((record: any) => {
-      return record.operatorName === operatorName || 
-             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
+      return record.operator_name === operatorName || 
+             (selectedOperatorData && record.operator_id === selectedOperatorData.id);
     });
     
-    // Extract individual operations from comma-separated operation field
+    // Extract individual operations from the operation field
     const allOperations = operatorUphRecords.flatMap((record: any) => {
       if (!record.operation) return [];
-      // Split comma-separated operations and clean up whitespace
-      return record.operation.split(',').map((op: string) => op.trim()).filter((op: string) => op.length > 0);
+      
+      // Handle operations like "Sewing / Assembly Operations" -> extract base operations
+      const operation = record.operation.replace(' Operations', '');
+      if (operation.includes(' / ')) {
+        return operation.split(' / ').map((op: string) => op.trim());
+      }
+      return [operation];
     });
     
-    return [...new Set(allOperations)];
+    return [...new Set(allOperations.filter(op => op && op !== 'Unknown'))];
   };
 
   const getOperatorRoutingsWithData = (operatorName: string): string[] => {
@@ -90,11 +107,11 @@ export default function OperatorSettings() {
     
     // Find all routings where this operator has UPH data
     const operatorUphRecords = uphData.filter((record: any) => {
-      return record.operatorName === operatorName || 
-             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
+      return record.operator_name === operatorName || 
+             (selectedOperatorData && record.operator_id === selectedOperatorData.id);
     });
     
-    return [...new Set(operatorUphRecords.map((record: any) => record.routing))];
+    return [...new Set(operatorUphRecords.map((record: any) => record.product_routing).filter(r => r && r !== 'Unknown'))];
   };
 
   const updateOperatorMutation = useMutation({
