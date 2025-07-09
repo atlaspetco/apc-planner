@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { CustomToggle } from "@/components/ui/custom-toggle";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RefreshCw } from "lucide-react";
@@ -267,7 +267,7 @@ export default function OperatorSettings() {
                 <div className="flex items-center justify-between">
                   <CardTitle>{selectedOperatorData.name}</CardTitle>
                   <div className="flex items-center space-x-2">
-                    <Switch
+                    <CustomToggle
                       id="isActive"
                       checked={selectedOperatorData.isActive}
                       onCheckedChange={(checked) => handleUpdateOperator({ isActive: checked })}
@@ -350,9 +350,8 @@ export default function OperatorSettings() {
                           
                           return (
                             <div key={`${selectedOperatorData.id}-wc-${wc.workCenter}`} className="flex items-center space-x-2">
-                              <Switch
+                              <CustomToggle
                                 id={`wc-${wc.workCenter}-${selectedOperatorData.id}`}
-                                key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}-${selectedOperatorData.workCenters?.length || 0}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
                                   const currentWorkCenters = selectedOperatorData.workCenters || [];
@@ -409,9 +408,8 @@ export default function OperatorSettings() {
                             
                             return (
                               <div key={stableKey} className="flex items-center space-x-2">
-                                <Switch
+                                <CustomToggle
                                   id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
-                                  key={`switch-op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${selectedOperatorData.operations?.length || 0}`}
                                   checked={isChecked}
                                   onCheckedChange={(checked) => {
                                     const currentOperations = selectedOperatorData.operations || [];
@@ -470,9 +468,8 @@ export default function OperatorSettings() {
                           
                           return (
                             <div key={stableKey} className="flex items-center space-x-2">
-                              <Switch
+                              <CustomToggle
                                 id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
-                                key={`switch-rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}-${selectedOperatorData.routings?.length || 0}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
                                   const currentRoutings = selectedOperatorData.routings || [];
