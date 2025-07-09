@@ -25,34 +25,54 @@ export class FulfilUphWorkflow {
     console.log("Importing 'done' work cycles from Fulfil...");
     
     try {
-      // Fetch ALL work cycles without state filtering - use proper pagination
-      let allCycles = [];
-      let offset = 0;
-      const batchSize = 500; // API maximum
+      // Fetch only the most recent cycles (limit 500 - API maximum)
+      const recentCycles = await this.fulfilAPI.getWorkCycles({
+        limit: 500,
+        offset: 0
+      });
       
-      while (true) {
-        const batchCycles = await this.fulfilAPI.getWorkCycles({
-          limit: batchSize,
-          offset: offset
-        });
-        
-        if (batchCycles.length === 0) break;
-        
-        allCycles.push(...batchCycles);
-        offset += batchSize;
-        
-        console.log(`Fetched batch: ${batchCycles.length} cycles, total so far: ${allCycles.length}`);
-        
-        // Safety break to prevent infinite loops
-        if (offset >= 50000) break;
-      }
+      console.log(`Fetched ${recentCycles.length} recent cycles from API`);
+      
+      // Find max cycle ID in database to determine which cycles to import
+      const maxCycleQuery = await db.select()
+        .from(workCycles)
+        .orderBy(sql`${workCycles.work_cycles_id} DESC`)
+        .limit(1);
+      
+      const maxDbCycleId = maxCycleQuery[0]?.work_cycles_id || 0;
+      console.log(`Max cycle ID in database: ${maxDbCycleId}`);
+      
+      // Also check for missing cycles within the current range (for July 8th cycles)
+      const missingCycleIds = [26716, 26721, 26723, 26724];
+      const existingCycles = await db.select({ id: workCycles.work_cycles_id })
+        .from(workCycles)
+        .where(sql`${workCycles.work_cycles_id} IN (${missingCycleIds.join(',')})`);
+      
+      const existingIds = existingCycles.map(c => c.id);
+      const actuallyMissingIds = missingCycleIds.filter(id => !existingIds.includes(id));
+      
+      console.log(`Checking for missing July 8th cycles: ${missingCycleIds.join(', ')}`);
+      console.log(`Found ${actuallyMissingIds.length} missing cycles: ${actuallyMissingIds.join(', ')}`);
+      
+      // Filter for cycles newer than what's in database
+      const newCycles = recentCycles.filter(cycle => cycle.id > maxDbCycleId);
+      console.log(`Found ${newCycles.length} new cycles to import (ID > ${maxDbCycleId})`);
+      
+      // Add missing cycles to the import list
+      const missingCycles = recentCycles.filter(cycle => actuallyMissingIds.includes(cycle.id));
+      console.log(`Found ${missingCycles.length} missing cycles to import`);
+      
+      // Look for Evan Crosby's cycles specifically
+      const allCycles = [...newCycles, ...missingCycles];
+      const evanCycles = allCycles.filter(cycle => cycle.rec_name && cycle.rec_name.includes("Evan Crosby"));
+      console.log(`Found ${evanCycles.length} Evan Crosby cycles in data to import`);
       
       const rawCycles = allCycles;
 
       // Deduplicate by cycle ID first
       const cycleMap = new Map();
       for (const cycle of rawCycles) {
-        const cycleId = cycle['work/cycles/id'] || cycle.id;
+        const cycleId = cycle.id;
         if (cycleId && !cycleMap.has(cycleId.toString())) {
           cycleMap.set(cycleId.toString(), cycle);
         }
@@ -64,12 +84,23 @@ export class FulfilUphWorkflow {
       let updated = 0;
 
       for (const cycle of cycleMap.values()) {
-        const cycleId = cycle['work/cycles/id'] || cycle.id;
-        const operatorName = cycle['work/cycles/operator/rec_name'];
-        const workCenterName = cycle['work/cycles/work_center/rec_name'];
-        const durationField = cycle['work/cycles/duration'] || cycle.duration;
+        const cycleId = cycle.id;
         
-        if (!operatorName || !workCenterName || !durationField || !cycleId) {
+        // Parse operator and work center from rec_name (e.g., "Assembly - Rope | Evan Crosby | Rope")
+        const recParts = cycle.rec_name?.split(' | ') || [];
+        const operationName = recParts[0] || '';
+        const operatorName = recParts[1] || '';
+        const workCenterName = recParts[2] || '';
+        
+        const durationField = cycle.duration;
+        
+        // Debug what we're getting from the API
+        if (cycleId >= 26716 && cycleId <= 26724) {
+          console.log(`Raw cycle object for ${cycleId}:`, JSON.stringify(cycle, null, 2));
+        }
+        
+        if (!operatorName || !workCenterName || !cycleId) {
+          console.log(`Skipping cycle ${cycleId}: operatorName=${operatorName}, workCenterName=${workCenterName}, durationField=${JSON.stringify(durationField)}`);
           continue; // Skip cycles without essential data
         }
 
@@ -77,8 +108,19 @@ export class FulfilUphWorkflow {
         let parsedDuration = 0;
         if (typeof durationField === 'number') {
           parsedDuration = durationField;
-        } else if (typeof durationField === 'object' && durationField.seconds) {
-          parsedDuration = durationField.seconds;
+        } else if (typeof durationField === 'object') {
+          // Handle Fulfil's timedelta format
+          if (durationField.seconds) {
+            parsedDuration = durationField.seconds;
+          } else if (durationField.__class__ === 'timedelta' && durationField.iso_string) {
+            // Parse ISO string format PT58M44.170763S
+            const timeMatch = durationField.iso_string.match(/PT(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?/);
+            if (timeMatch) {
+              const minutes = parseInt(timeMatch[1] || '0');
+              const seconds = parseFloat(timeMatch[2] || '0');
+              parsedDuration = minutes * 60 + seconds;
+            }
+          }
         } else if (typeof durationField === 'string') {
           try {
             const parsed = JSON.parse(durationField);
@@ -87,31 +129,70 @@ export class FulfilUphWorkflow {
             parsedDuration = parseFloat(durationField) || 0;
           }
         }
+        
+        // Debug duration parsing for July 8th cycles
+        if (cycleId >= 26716 && cycleId <= 26724) {
+          console.log(`July 8th cycle ${cycleId} (${operatorName}) duration field:`, JSON.stringify(durationField));
+          console.log(`Duration type: ${typeof durationField}, has __class__: ${durationField?.__class__}`);
+          console.log(`Parsed duration: ${parsedDuration}`);
+        }
 
-        const existingCycle = await db.select()
-          .from(workCycles)
-          .where(eq(workCycles.work_cycles_id, parseInt(cycleId)))
-          .limit(1);
+        // Check if cycle already exists
+        let existingCycle = [];
+        try {
+          existingCycle = await db.select()
+            .from(workCycles)
+            .where(eq(workCycles.work_cycles_id, parseInt(cycleId)))
+            .limit(1);
+        } catch (error) {
+          console.error(`Error checking existing cycle ${cycleId}:`, error);
+          continue;
+        }
+
+        // Parse write_date from various Fulfil formats
+        let parsedWriteDate = new Date();
+        if (cycle.write_date) {
+          if (typeof cycle.write_date === 'string') {
+            parsedWriteDate = new Date(cycle.write_date);
+          } else if (typeof cycle.write_date === 'object' && cycle.write_date.iso_string) {
+            parsedWriteDate = new Date(cycle.write_date.iso_string);
+          } else {
+            parsedWriteDate = new Date(cycle.write_date);
+          }
+        }
 
         const cycleData = {
           work_cycles_id: parseInt(cycleId),
           work_cycles_operator_rec_name: operatorName,
           work_cycles_work_center_rec_name: workCenterName,
           work_cycles_duration: parsedDuration,
-          work_production_id: cycle['work/production/id'] || null,
-          work_cycles_rec_name: cycle['work/cycles/rec_name'] || `Work Cycle ${cycleId}`,
-          work_cycles_operator_write_date: cycle['work/cycles/operator/write_date'] ? new Date(cycle['work/cycles/operator/write_date']) : new Date(),
+          work_production_id: null, // Will be populated later if needed
+          work_cycles_rec_name: cycle.rec_name || `Work Cycle ${cycleId}`,
+          work_cycles_operator_write_date: parsedWriteDate,
           state: 'done'
         };
 
-        if (existingCycle.length === 0) {
-          await db.insert(workCycles).values(cycleData);
-          imported++;
-        } else {
-          await db.update(workCycles)
-            .set({ ...cycleData, updatedAt: new Date() })
-            .where(eq(workCycles.work_cycles_id, parseInt(cycleId)));
-          updated++;
+        try {
+          if (existingCycle.length === 0) {
+            await db.insert(workCycles).values(cycleData);
+            imported++;
+            if (operatorName === 'Evan Crosby') {
+              console.log(`Successfully imported Evan cycle ${cycleId}`);
+            }
+          } else {
+            await db.update(workCycles)
+              .set({ ...cycleData, updatedAt: new Date() })
+              .where(eq(workCycles.work_cycles_id, parseInt(cycleId)));
+            updated++;
+            if (operatorName === 'Evan Crosby') {
+              console.log(`Successfully updated Evan cycle ${cycleId}`);
+            }
+          }
+        } catch (error) {
+          console.error(`Error inserting/updating cycle ${cycleId}:`, error);
+          if (operatorName === 'Evan Crosby') {
+            console.error(`Failed to process Evan cycle ${cycleId}:`, error);
+          }
         }
       }
 

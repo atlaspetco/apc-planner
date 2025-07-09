@@ -454,31 +454,19 @@ export class FulfilAPIService {
       if (!this.apiKey) return [];
 
       const { state = 'done', limit = 500, offset = 0 } = options;
-      const endpoint = `${this.baseUrl}/api/v2/model/production.work.cycles/search_read`;
+      const endpoint = `${this.baseUrl}/api/v2/model/production.work.cycle/search_read`;
       
-      // Get all work cycles without aggressive state filtering
+      // Get all work cycles - no filtering at all to capture recent data
       const filters: any[] = [];
       
       const requestBody = {
         filters: filters,
         fields: [
-          'work/cycles/id',
-          'work/cycles/rec_name', 
-          'work/cycles/operator/write_date',
-          'work/cycles/operator/rec_name',
-          'work/cycles/work_center/rec_name',
-          'work/production/product/boms/routing/rec_name',
-          'work/cycles/quantity_done',
-          'work/production/number',
-          'work/cycles/operator/id',
-          'work/production/id',
-          'work/cycles/duration',
-          'work/production/product/code',
-          'work/production/product/rec_name'
+          'id', 'rec_name', 'state', 'duration', 'write_date'
         ],
         limit: limit,
         offset: offset,
-        order: [['write_date', 'DESC']]  // Get most recent work cycles first
+        order: [['id', 'DESC']]  // Get most recent work cycles first
       };
 
       console.log(`Fetching work cycles from: ${endpoint}`);
@@ -500,6 +488,20 @@ export class FulfilAPIService {
       const data = await response.json();
       console.log(`Retrieved ${data.length} work cycles`);
       
+      // Debug: Log first few cycles to see the structure
+      if (data.length > 0) {
+        console.log('Sample work cycle data:', JSON.stringify(data[0], null, 2));
+        
+        // Look for Evan Crosby specifically
+        const evanCycles = data.filter(cycle => 
+          cycle.rec_name && cycle.rec_name.includes('Evan Crosby')
+        );
+        console.log(`Found ${evanCycles.length} cycles for Evan Crosby`);
+        if (evanCycles.length > 0) {
+          console.log('Latest Evan cycle:', JSON.stringify(evanCycles[0], null, 2));
+        }
+      }
+      
       // Transform the response to match our interface
       return data.map((cycle: any) => {
         // Parse duration from Fulfil's timedelta format
@@ -515,24 +517,28 @@ export class FulfilAPIService {
           }
         }
 
+        // Parse operator and work center from rec_name (e.g., "Assembly - Rope | Evan Crosby | Rope")
+        const recParts = cycle.rec_name?.split(' | ') || [];
+        const operationName = recParts[0] || '';
+        const operatorName = recParts[1] || '';
+        const workCenterName = recParts[2] || '';
+
         return {
-          id: cycle['work/cycles/id']?.toString() || cycle.id?.toString(),
-          rec_name: cycle['work/cycles/rec_name'] || `Cycle ${cycle['work/cycles/id'] || cycle.id}`,
+          id: cycle.id?.toString(),
+          rec_name: cycle.rec_name || `Cycle ${cycle.id}`,
           state: cycle.state || 'unknown',
           duration: duration,
-          operator: cycle['work/cycles/operator/rec_name'] ? { 
-            rec_name: cycle['work/cycles/operator/rec_name'],
-            write_date: cycle['work/cycles/operator/write_date'] 
+          operator: operatorName ? { 
+            rec_name: operatorName,
+            write_date: cycle.write_date 
           } : undefined,
-          work_center: cycle['work/cycles/work_center/rec_name'] ? { 
-            rec_name: cycle['work/cycles/work_center/rec_name'] 
+          work_center: workCenterName ? { 
+            rec_name: workCenterName 
           } : undefined,
-          production: cycle['work/production/id'] ? { 
-            id: cycle['work/production/id'],
-            number: cycle['work/production/number'],
-            product_code: cycle['work/production/product/code'],
-            routing: cycle['work/production/product/boms/routing/rec_name']
-          } : undefined
+          production: { 
+            id: 0, // Will be populated later if needed
+            rec_name: `Production for ${operationName}`
+          }
         };
       });
     } catch (error) {
