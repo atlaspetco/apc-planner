@@ -25,63 +25,82 @@ export class FulfilUphWorkflow {
     console.log("Importing 'done' work cycles from Fulfil...");
     
     try {
-      // Fetch work cycles with 'done' state - get more recent ones with larger limit
-      const rawCycles = await this.fulfilAPI.getWorkCycles({
-        state: 'done',
-        limit: 5000,  // Increased to 5000 to ensure we get all recent data
-        offset: 0
-      });
-
-      // Process and clean the data from Fulfil API
-      const cycles = rawCycles.map(cycle => {
-        let duration = 0;
+      // Fetch ALL work cycles without state filtering - use proper pagination
+      let allCycles = [];
+      let offset = 0;
+      const batchSize = 500; // API maximum
+      
+      while (true) {
+        const batchCycles = await this.fulfilAPI.getWorkCycles({
+          limit: batchSize,
+          offset: offset
+        });
         
-        // Handle Fulfil's complex duration format
-        if (cycle.duration) {
-          if (typeof cycle.duration === 'number') {
-            duration = cycle.duration;
-          } else if (typeof cycle.duration === 'object' && cycle.duration.seconds) {
-            duration = cycle.duration.seconds;
-          } else if (typeof cycle.duration === 'string') {
-            try {
-              const parsed = JSON.parse(cycle.duration);
-              duration = parsed.seconds || 0;
-            } catch {
-              duration = parseFloat(cycle.duration) || 0;
-            }
-          }
+        if (batchCycles.length === 0) break;
+        
+        allCycles.push(...batchCycles);
+        offset += batchSize;
+        
+        console.log(`Fetched batch: ${batchCycles.length} cycles, total so far: ${allCycles.length}`);
+        
+        // Safety break to prevent infinite loops
+        if (offset >= 50000) break;
+      }
+      
+      const rawCycles = allCycles;
+
+      // Deduplicate by cycle ID first
+      const cycleMap = new Map();
+      for (const cycle of rawCycles) {
+        const cycleId = cycle['work/cycles/id'] || cycle.id;
+        if (cycleId && !cycleMap.has(cycleId.toString())) {
+          cycleMap.set(cycleId.toString(), cycle);
         }
-
-        return {
-          ...cycle,
-          duration: duration  // Override with cleaned number
-        };
-      });
-
-      console.log(`Processed ${cycles.length} work cycles, sample duration: ${cycles[0]?.duration}`);
+      }
+      
+      console.log(`After deduplication: ${cycleMap.size} unique cycles from ${rawCycles.length} total`);
 
       let imported = 0;
       let updated = 0;
 
-      for (const cycle of cycles) {
+      for (const cycle of cycleMap.values()) {
+        const cycleId = cycle['work/cycles/id'] || cycle.id;
+        const operatorName = cycle['work/cycles/operator/rec_name'];
+        const workCenterName = cycle['work/cycles/work_center/rec_name'];
+        const durationField = cycle['work/cycles/duration'] || cycle.duration;
+        
+        if (!operatorName || !workCenterName || !durationField || !cycleId) {
+          continue; // Skip cycles without essential data
+        }
+
+        // Parse duration from various Fulfil formats
+        let parsedDuration = 0;
+        if (typeof durationField === 'number') {
+          parsedDuration = durationField;
+        } else if (typeof durationField === 'object' && durationField.seconds) {
+          parsedDuration = durationField.seconds;
+        } else if (typeof durationField === 'string') {
+          try {
+            const parsed = JSON.parse(durationField);
+            parsedDuration = parsed.seconds || 0;
+          } catch {
+            parsedDuration = parseFloat(durationField) || 0;
+          }
+        }
+
         const existingCycle = await db.select()
           .from(workCycles)
-          .where(eq(workCycles.work_cycles_id, parseInt(cycle.id)))
+          .where(eq(workCycles.work_cycles_id, parseInt(cycleId)))
           .limit(1);
 
-        // Parse duration safely - it might be an object or a number
-        let parsedDuration = 0;
-        // Duration should now be a clean number from API transformation
-        parsedDuration = cycle.duration || 0;
-
         const cycleData = {
-          work_cycles_id: parseInt(cycle.id),
-          work_cycles_operator_rec_name: cycle.operator?.rec_name || 'Unknown',
-          work_cycles_work_center_rec_name: cycle.work_center?.rec_name || 'Unknown',
+          work_cycles_id: parseInt(cycleId),
+          work_cycles_operator_rec_name: operatorName,
+          work_cycles_work_center_rec_name: workCenterName,
           work_cycles_duration: parsedDuration,
-          work_production_id: cycle.production?.id || null,
-          work_cycles_rec_name: cycle.rec_name || `Work Cycle ${cycle.id}`,
-          work_cycles_operator_write_date: cycle.operator?.write_date ? new Date(cycle.operator.write_date) : cycle.write_date ? new Date(cycle.write_date) : new Date(),
+          work_production_id: cycle['work/production/id'] || null,
+          work_cycles_rec_name: cycle['work/cycles/rec_name'] || `Work Cycle ${cycleId}`,
+          work_cycles_operator_write_date: cycle['work/cycles/operator/write_date'] ? new Date(cycle['work/cycles/operator/write_date']) : new Date(),
           state: 'done'
         };
 
@@ -91,7 +110,7 @@ export class FulfilUphWorkflow {
         } else {
           await db.update(workCycles)
             .set({ ...cycleData, updatedAt: new Date() })
-            .where(eq(workCycles.work_cycles_id, parseInt(cycle.id)));
+            .where(eq(workCycles.work_cycles_id, parseInt(cycleId)));
           updated++;
         }
       }

@@ -456,10 +456,8 @@ export class FulfilAPIService {
       const { state = 'done', limit = 500, offset = 0 } = options;
       const endpoint = `${this.baseUrl}/api/v2/model/production.work.cycles/search_read`;
       
-      // Include work cycles with 'done' state OR null state (which appear to be completed cycles)
-      const filters = state === 'done' ? 
-        ['|', ['state', '=', 'done'], ['state', '=', null]] : 
-        state ? [['state', '=', state]] : [];
+      // Get all work cycles without aggressive state filtering
+      const filters: any[] = [];
       
       const requestBody = {
         filters: filters,
