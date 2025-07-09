@@ -224,7 +224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? recentCycles[0].work_cycles_operator_write_date 
           : null;
         
-        // Calculate if operator is inactive (no activity for 30+ days)
+        // Calculate if operator is active (activity within last 30 days)
         const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days in milliseconds
         
@@ -232,6 +232,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (lastActiveDate) {
           const activityDate = new Date(lastActiveDate);
           isRecentlyActive = activityDate >= thirtyDaysAgo;
+          
+          // Debug logging to see what's happening
+          console.log(`Operator ${operator.name}: Last active ${activityDate.toISOString()}, 30 days ago: ${thirtyDaysAgo.toISOString()}, Recently active: ${isRecentlyActive}`);
         }
         
         return {
