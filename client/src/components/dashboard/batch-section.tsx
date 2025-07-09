@@ -39,16 +39,30 @@ export default function BatchSection({
     queryKey: ["/api/work-orders"],
   });
   
-  // Calculate total estimated hours for the batch from local work orders
+  // Calculate total estimated hours for the batch using realistic estimates
   const calculateBatchTotalHours = () => {
     return orders.reduce((batchTotal, order) => {
       const orderWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
         wo.productionOrderId === order.id
       );
-      const orderTotal = orderWorkOrders.reduce((total: number, wo: WorkOrder) => {
-        return total + (wo.estimatedHours || 0);
-      }, 0);
-      return batchTotal + orderTotal;
+      
+      // Group work orders by work center to calculate parallel vs sequential time
+      const workCenterHours: Record<string, number> = {};
+      
+      orderWorkOrders.forEach((wo: WorkOrder) => {
+        const workCenter = wo.workCenter || wo.workCenterName || 'Unknown';
+        if (!workCenterHours[workCenter]) {
+          workCenterHours[workCenter] = 0;
+        }
+        
+        // Use realistic estimation: quantity / 15 UPH average
+        const realisticHours = (order.quantity || 100) / 15;
+        workCenterHours[workCenter] += realisticHours;
+      });
+      
+      // Return the maximum time across work centers (assuming parallel execution)
+      const maxHours = Math.max(...Object.values(workCenterHours), 0);
+      return batchTotal + maxHours;
     }, 0);
   };
   
@@ -319,7 +333,23 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                 </Select>
                 {workOrder.assignedOperatorId && (
                   <div className="text-xs text-gray-500 mt-1">
-                    {workOrder.estimatedHours || 8}h assigned
+                    {(() => {
+                      // Calculate the same way as the dropdown estimation
+                      const assignedOperator = availableOperators.find(op => op.id === workOrder.assignedOperatorId);
+                      if (assignedOperator && assignedOperator.uphData) {
+                        const relevantUph = assignedOperator.uphData.find(uph => 
+                          uph.workCenter === workCenter && 
+                          uph.routing === (order.routingName || order.routing)
+                        );
+                        
+                        if (relevantUph && relevantUph.unitsPerHour > 0) {
+                          return (order.quantity / relevantUph.unitsPerHour).toFixed(1);
+                        }
+                      }
+                      
+                      // Fallback to historical average if no specific data found
+                      return (order.quantity / 15).toFixed(1);
+                    })()}h assigned
                   </div>
                 )}
               </div>
