@@ -292,9 +292,9 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
         );
 
         return (
-          <div key={workCenter} className="col-span-2">
+          <div key={workCenter} className="col-span-2 flex items-center justify-between">
             {workOrder ? (
-              <div className="text-center">
+              <>
                 <Select
                   value={workOrder.assignedOperatorId?.toString() || ""}
                   onValueChange={(operatorIdString) => {
@@ -306,7 +306,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                     }
                   }}
                 >
-                  <SelectTrigger className={`w-full text-xs h-8 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
+                  <SelectTrigger className={`w-32 text-xs h-8 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
                     <SelectValue placeholder="Select Operator">
                       {workOrder.assignedOperatorId && workOrder.operatorName ? workOrder.operatorName : undefined}
                     </SelectValue>
@@ -343,7 +343,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                   </SelectContent>
                 </Select>
                 {workOrder.assignedOperatorId && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-gray-500">
                     {(() => {
                       // Calculate the same way as the dropdown estimation
                       const assignedOperator = availableOperators.find(op => op.id === workOrder.assignedOperatorId);
@@ -363,7 +363,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                     })()}h assigned
                   </div>
                 )}
-              </div>
+              </>
             ) : (
               <div className="text-xs text-gray-400 text-center">No work order</div>
             )}
