@@ -223,8 +223,19 @@ export class FulfilUphWorkflow {
       // Use fallback routing for historical work cycles that don't have production order data
       const aggregatedData = await db.execute(sql`
         SELECT 
-          wc.work_cycles_work_center_rec_name as work_center,
-          COALESCE(po.routing, 'Standard') as routing,
+          CASE 
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Assembly%' THEN 'Assembly'
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Sewing%' AND wc.work_cycles_work_center_rec_name NOT LIKE '%Assembly%' THEN 'Sewing'
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Cutting%' THEN 'Cutting'
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Packaging%' THEN 'Packaging'
+            ELSE wc.work_cycles_work_center_rec_name 
+          END as work_center,
+          COALESCE(po.routing, 
+            CASE 
+              WHEN wc.work_production_routing_rec_name IS NOT NULL THEN wc.work_production_routing_rec_name
+              ELSE 'Standard'
+            END
+          ) as routing,
           wc.work_cycles_operator_rec_name as operator,
           SUM(wc.work_cycles_duration) as total_duration_seconds,
           COUNT(wc.work_cycles_id) * 10 as total_quantity,
@@ -232,11 +243,23 @@ export class FulfilUphWorkflow {
         FROM ${workCycles} wc
         LEFT JOIN ${productionOrders} po ON wc.work_production_id = po.fulfil_id
         WHERE wc.work_cycles_duration > 120
+          AND wc.work_cycles_duration < 28800
           AND wc.work_cycles_operator_rec_name != 'Unknown'
           AND wc.work_cycles_work_center_rec_name != 'Unknown'
         GROUP BY 
-          wc.work_cycles_work_center_rec_name,
-          COALESCE(po.routing, 'Standard'),
+          CASE 
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Assembly%' THEN 'Assembly'
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Sewing%' AND wc.work_cycles_work_center_rec_name NOT LIKE '%Assembly%' THEN 'Sewing'
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Cutting%' THEN 'Cutting'
+            WHEN wc.work_cycles_work_center_rec_name LIKE '%Packaging%' THEN 'Packaging'
+            ELSE wc.work_cycles_work_center_rec_name 
+          END,
+          COALESCE(po.routing, 
+            CASE 
+              WHEN wc.work_production_routing_rec_name IS NOT NULL THEN wc.work_production_routing_rec_name
+              ELSE 'Standard'
+            END
+          ),
           wc.work_cycles_operator_rec_name
         HAVING COUNT(wc.work_cycles_id) >= 3
         ORDER BY total_duration_seconds DESC
@@ -280,8 +303,8 @@ export class FulfilUphWorkflow {
         if (durationHours > 0 && data.totalQuantity > 0) {
           const uph = data.totalQuantity / durationHours;
           
-          // Only store realistic UPH values (between 1 and 500)
-          if (uph >= 1 && uph <= 500) {
+          // Only store realistic UPH values (between 2 and 300) - filter outliers
+          if (uph >= 2 && uph <= 300) {
             await db.insert(uphData).values({
               operatorName: data.operator,
               workCenter: data.workCenter,
