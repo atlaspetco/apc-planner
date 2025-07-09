@@ -58,14 +58,14 @@ export default function OperatorSettings() {
     
     // Find all work centers where this operator has UPH data
     const operatorUphRecords = uphData.filter((record: any) => {
-      // Use correct field name: operator_name instead of operatorName
-      return record.operator_name === operatorName || 
-             (selectedOperatorData && record.operator_id === selectedOperatorData.id);
+      // Use correct field name from uph_data table
+      return record.operatorName === operatorName || 
+             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
     });
     
     // Get work centers and split combined ones like "Sewing / Assembly"
     const allWorkCenters = operatorUphRecords.flatMap((record: any) => {
-      const workCenter = record.work_center;
+      const workCenter = record.workCenter;
       if (!workCenter || workCenter === 'Unknown') return [];
       
       // Split combined work centers like "Sewing / Assembly" into separate centers
@@ -83,8 +83,8 @@ export default function OperatorSettings() {
     
     // Find all operations where this operator has UPH data
     const operatorUphRecords = uphData.filter((record: any) => {
-      return record.operator_name === operatorName || 
-             (selectedOperatorData && record.operator_id === selectedOperatorData.id);
+      return record.operatorName === operatorName || 
+             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
     });
     
     // Extract individual operations from the operation field
@@ -107,11 +107,11 @@ export default function OperatorSettings() {
     
     // Find all routings where this operator has UPH data
     const operatorUphRecords = uphData.filter((record: any) => {
-      return record.operator_name === operatorName || 
-             (selectedOperatorData && record.operator_id === selectedOperatorData.id);
+      return record.operatorName === operatorName || 
+             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
     });
     
-    return [...new Set(operatorUphRecords.map((record: any) => record.product_routing).filter(r => r && r !== 'Unknown'))];
+    return [...new Set(operatorUphRecords.map((record: any) => record.productRouting).filter(r => r && r !== 'Unknown'))];
   };
 
   const updateOperatorMutation = useMutation({
