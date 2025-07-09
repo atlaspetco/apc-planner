@@ -454,7 +454,7 @@ export class FulfilAPIService {
       if (!this.apiKey) return [];
 
       const { state = 'done', limit = 500, offset = 0 } = options;
-      const endpoint = `${this.baseUrl}/api/v2/model/production.work.cycle/search_read`;
+      const endpoint = `${this.baseUrl}/api/v2/model/production.work.cycles/search_read`;
       
       // Include work cycles with 'done' state OR null state (which appear to be completed cycles)
       const filters = state === 'done' ? 
@@ -464,9 +464,19 @@ export class FulfilAPIService {
       const requestBody = {
         filters: filters,
         fields: [
-          'id', 'rec_name', 'state', 'duration',
-          'operator.rec_name', 'operator.write_date', 'work_center.rec_name',
-          'production.id', 'production.rec_name', 'create_date', 'write_date'
+          'work/cycles/id',
+          'work/cycles/rec_name', 
+          'work/cycles/operator/write_date',
+          'work/cycles/operator/rec_name',
+          'work/cycles/work_center/rec_name',
+          'work/production/product/boms/routing/rec_name',
+          'work/cycles/quantity_done',
+          'work/production/number',
+          'work/cycles/operator/id',
+          'work/production/id',
+          'work/cycles/duration',
+          'work/production/product/code',
+          'work/production/product/rec_name'
         ],
         limit: limit,
         offset: offset,
@@ -496,24 +506,35 @@ export class FulfilAPIService {
       return data.map((cycle: any) => {
         // Parse duration from Fulfil's timedelta format
         let duration = 0;
-        if (cycle.duration) {
-          if (typeof cycle.duration === 'number') {
-            duration = cycle.duration;
-          } else if (typeof cycle.duration === 'object' && cycle.duration.seconds) {
-            duration = cycle.duration.seconds;
-          } else if (typeof cycle.duration === 'string') {
-            duration = parseFloat(cycle.duration);
+        const durationField = cycle['work/cycles/duration'];
+        if (durationField) {
+          if (typeof durationField === 'number') {
+            duration = durationField;
+          } else if (typeof durationField === 'object' && durationField.seconds) {
+            duration = durationField.seconds;
+          } else if (typeof durationField === 'string') {
+            duration = parseFloat(durationField);
           }
         }
 
         return {
-          id: cycle.id.toString(),
-          rec_name: cycle.rec_name || `Cycle ${cycle.id}`,
+          id: cycle['work/cycles/id']?.toString() || cycle.id?.toString(),
+          rec_name: cycle['work/cycles/rec_name'] || `Cycle ${cycle['work/cycles/id'] || cycle.id}`,
           state: cycle.state || 'unknown',
           duration: duration,
-          operator: cycle.operator ? { rec_name: cycle.operator.rec_name } : undefined,
-          work_center: cycle.work_center ? { rec_name: cycle.work_center.rec_name } : undefined,
-          production: cycle.production ? { id: cycle.production.id } : undefined
+          operator: cycle['work/cycles/operator/rec_name'] ? { 
+            rec_name: cycle['work/cycles/operator/rec_name'],
+            write_date: cycle['work/cycles/operator/write_date'] 
+          } : undefined,
+          work_center: cycle['work/cycles/work_center/rec_name'] ? { 
+            rec_name: cycle['work/cycles/work_center/rec_name'] 
+          } : undefined,
+          production: cycle['work/production/id'] ? { 
+            id: cycle['work/production/id'],
+            number: cycle['work/production/number'],
+            product_code: cycle['work/production/product/code'],
+            routing: cycle['work/production/product/boms/routing/rec_name']
+          } : undefined
         };
       });
     } catch (error) {

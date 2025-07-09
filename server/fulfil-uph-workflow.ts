@@ -25,10 +25,10 @@ export class FulfilUphWorkflow {
     console.log("Importing 'done' work cycles from Fulfil...");
     
     try {
-      // Fetch work cycles with 'done' state - get more recent ones
+      // Fetch work cycles with 'done' state - get more recent ones with larger limit
       const rawCycles = await this.fulfilAPI.getWorkCycles({
         state: 'done',
-        limit: 2000,  // Increased significantly to get more recent data
+        limit: 5000,  // Increased to 5000 to ensure we get all recent data
         offset: 0
       });
 
