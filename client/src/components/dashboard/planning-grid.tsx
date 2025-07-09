@@ -116,21 +116,19 @@ export default function PlanningGrid({
       {/* Table Header */}
       <div className="overflow-x-auto">
         <div className="min-w-full">
-          <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-700">
+          <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-700">
             <div className="col-span-1 flex items-center justify-center">
               <Checkbox
                 checked={selectedMOs.length === productionOrders.length && productionOrders.length > 0}
                 onCheckedChange={handleSelectAll}
               />
-              <span className="ml-1 text-xs">Select</span>
             </div>
-            <div className="col-span-2 text-left">Production Order</div>
+            <div className="col-span-3 text-left">Production Order</div>
             <div className="col-span-1 text-center">Status</div>
             <div className="col-span-1 text-center">Qty</div>
             <div className="col-span-2 text-center font-medium">Cutting</div>
             <div className="col-span-2 text-center font-medium">Assembly</div>
             <div className="col-span-2 text-center font-medium">Packaging</div>
-            <div className="col-span-1 text-center">Total</div>
           </div>
 
           {/* Routing Sections */}

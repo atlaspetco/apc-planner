@@ -124,7 +124,7 @@ export default function BatchSection({
   return (
     <div className={`batch-section ${isExpanded ? 'batch-expanded' : 'batch-collapsed'}`}>
       {/* Batch Header */}
-      <div className={`grid grid-cols-12 gap-2 px-4 py-3 border-b ${batchHeaderClass}`}>
+      <div className={`grid grid-cols-12 gap-4 px-6 py-4 border-b ${batchHeaderClass}`}>
         <div className="col-span-12 flex items-center justify-between">
           <div className="flex items-center">
             <Button
@@ -253,14 +253,14 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   const rowClass = variant === "unassigned" ? "hover:bg-yellow-50" : "hover:bg-gray-50";
 
   return (
-    <div className={`grid grid-cols-12 gap-2 px-4 py-3 border-b border-gray-100 ${rowClass} items-center`}>
+    <div className={`grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-100 ${rowClass} items-center`}>
       <div className="col-span-1 flex items-center justify-center">
         <Checkbox
           checked={isSelected}
           onCheckedChange={onSelection}
         />
       </div>
-      <div className="col-span-2">
+      <div className="col-span-3">
         <div className="font-medium text-gray-900 text-sm">{order.moNumber}</div>
         <div className="text-xs text-gray-500">{order.product_code || order.productName || 'Unknown Product'}</div>
       </div>
@@ -371,9 +371,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
         );
       })}
 
-      <div className="col-span-1 text-center">
-        <div className="text-xs text-gray-500">{formatHours(totalHours)}</div>
-      </div>
+
     </div>
   );
 }
