@@ -186,10 +186,16 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
     queryKey: ["/api/work-orders"],
   });
   
-  // Filter work orders for this production order
-  const workOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
+  // Filter work orders for this production order from local database
+  const localWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
     wo.productionOrderId === order.id
   );
+  
+  // If no local work orders exist, use Fulfil work orders from the order data
+  const fulfilWorkOrders = order.workOrders || order.work_orders || [];
+  
+  // Use local work orders if they exist, otherwise fallback to Fulfil work orders
+  const workOrders = localWorkOrders.length > 0 ? localWorkOrders : fulfilWorkOrders;
 
   const { data: operators = [] } = useQuery({
     queryKey: ["/api/operators"],
@@ -229,12 +235,18 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
 
       {/* Work Center Columns */}
       {["Cutting", "Assembly", "Packaging"].map((workCenter) => {
-        const workOrder = (workOrders as WorkOrder[]).find((wo: WorkOrder) => 
-          wo.workCenter === workCenter || 
-          wo.workCenterName === workCenter || 
-          wo.work_center === workCenter ||
-          (wo as any).work_center === workCenter
-        );
+        // Handle both local database work orders and Fulfil work orders
+        const workOrder = (workOrders as any[]).find((wo: any) => {
+          // Local database work order fields
+          if (wo.workCenter === workCenter || wo.workCenterName === workCenter) {
+            return true;
+          }
+          // Fulfil work order fields  
+          if (wo.work_center === workCenter) {
+            return true;
+          }
+          return false;
+        });
         const availableOperators = (operators as Operator[]).filter((op: Operator) => 
           op.workCenters?.includes(workCenter)
         );
@@ -248,7 +260,9 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                   onValueChange={(operatorIdString) => {
                     if (operatorIdString) {
                       const operatorId = parseInt(operatorIdString);
-                      onOperatorAssignment(workOrder.fulfilId || workOrder.id, operatorId);
+                      // Use Fulfil ID for Fulfil work orders, local ID for local work orders
+                      const workOrderId = workOrder.fulfilId || workOrder.id;
+                      onOperatorAssignment(workOrderId, operatorId);
                     }
                   }}
                 >
