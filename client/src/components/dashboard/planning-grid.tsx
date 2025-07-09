@@ -100,14 +100,14 @@ export default function PlanningGrid({
       {/* Grid Header */}
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>Production Planning Grid</CardTitle>
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-gray-500">
+          <CardTitle className="text-lg md:text-xl">Production Planning Grid</CardTitle>
+          <div className="flex items-center space-x-2 md:space-x-4">
+            <span className="hidden md:block text-sm text-gray-500">
               Select MOs to organize into batches
             </span>
             <Button variant="outline" size="sm" onClick={expandAll}>
-              <Expand className="w-4 h-4 mr-2" />
-              Expand All
+              <Expand className="w-4 h-4 md:mr-2" />
+              <span className="hidden md:inline">Expand All</span>
             </Button>
           </div>
         </div>
@@ -116,7 +116,8 @@ export default function PlanningGrid({
       {/* Table Header */}
       <div className="overflow-x-auto">
         <div className="min-w-full">
-          <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-700 items-center">
+          {/* Desktop/iPad Header (md+) */}
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-700 items-center">
             <div className="col-span-1 flex items-center justify-center">
               <Checkbox
                 checked={selectedMOs.length === productionOrders.length && productionOrders.length > 0}
@@ -129,6 +130,21 @@ export default function PlanningGrid({
             <div className="col-span-2 text-center">Cutting</div>
             <div className="col-span-2 text-center">Assembly</div>
             <div className="col-span-2 text-center">Packaging</div>
+          </div>
+          
+          {/* Mobile Header (sm and below) */}
+          <div className="md:hidden grid grid-cols-8 gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-700 items-center">
+            <div className="col-span-1 flex items-center justify-center">
+              <Checkbox
+                checked={selectedMOs.length === productionOrders.length && productionOrders.length > 0}
+                onCheckedChange={handleSelectAll}
+              />
+            </div>
+            <div className="col-span-2 text-left">MO</div>
+            <div className="col-span-1 text-center">Qty</div>
+            <div className="col-span-1 text-center">Cut</div>
+            <div className="col-span-1 text-center">Asm</div>
+            <div className="col-span-2 text-center">Pack</div>
           </div>
 
           {/* Routing Sections */}

@@ -253,126 +253,228 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   const rowClass = variant === "unassigned" ? "hover:bg-yellow-50" : "hover:bg-gray-50";
 
   return (
-    <div className={`grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-100 ${rowClass} items-center`}>
-      <div className="col-span-1 flex items-center justify-center">
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={onSelection}
-        />
-      </div>
-      <div className="col-span-3">
-        <div className="font-medium text-gray-900 text-sm">{order.moNumber}</div>
-        <div className="text-xs text-gray-500">{order.product_code || order.productName || 'Unknown Product'}</div>
-      </div>
-      <div className="col-span-1 text-center">
-        <Badge className={`${getStatusColor(order.status)} text-xs`} variant="secondary">
-          {order.status || order.state}
-        </Badge>
-      </div>
-      <div className="col-span-1 text-center">
-        <span className="font-medium text-sm">{order.quantity}</span>
+    <>
+      {/* Desktop/iPad Layout (md+) */}
+      <div className={`hidden md:grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-100 ${rowClass} items-center`}>
+        <div className="col-span-1 flex items-center justify-center">
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={onSelection}
+          />
+        </div>
+        <div className="col-span-3">
+          <div className="font-medium text-gray-900 text-sm">{order.moNumber}</div>
+          <div className="text-xs text-gray-500">{order.product_code || order.productName || 'Unknown Product'}</div>
+        </div>
+        <div className="col-span-1 text-center">
+          <Badge className={`${getStatusColor(order.status)} text-xs`} variant="secondary">
+            {order.status || order.state}
+          </Badge>
+        </div>
+        <div className="col-span-1 text-center">
+          <span className="font-medium text-sm">{order.quantity}</span>
+        </div>
+
+        {/* Work Center Columns - Desktop/iPad */}
+        {["Cutting", "Assembly", "Packaging"].map((workCenter) => {
+          // Handle both local database work orders and Fulfil work orders
+          const workOrder = (workOrders as any[]).find((wo: any) => {
+            // Local database work order fields
+            if (wo.workCenter === workCenter || wo.workCenterName === workCenter) {
+              return true;
+            }
+            // Fulfil work order fields  
+            if (wo.work_center === workCenter) {
+              return true;
+            }
+            return false;
+          });
+          const availableOperators = (operators as Operator[]).filter((op: Operator) => 
+            op.workCenters?.includes(workCenter)
+          );
+
+          return (
+            <div key={workCenter} className="col-span-2 text-center">
+              {workOrder ? (
+                <div className="space-y-1">
+                  <Select
+                    value={workOrder.assignedOperatorId?.toString() || ""}
+                    onValueChange={(operatorIdString) => {
+                      if (operatorIdString) {
+                        const operatorId = parseInt(operatorIdString);
+                        // Use Fulfil ID for Fulfil work orders, local ID for local work orders
+                        const workOrderId = workOrder.fulfilId || workOrder.id;
+                        onOperatorAssignment(workOrderId, operatorId);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className={`w-full text-xs h-8 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
+                      <SelectValue placeholder="Select Operator">
+                        {workOrder.assignedOperatorId && workOrder.operatorName ? workOrder.operatorName : undefined}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableOperators.map((operator: Operator) => {
+                        const calculateExpectedHours = (operatorId: number) => {
+                          // Get actual UPH data for this operator, work center, and routing
+                          const uphData = operator.uphData || [];
+                          const relevantUph = uphData.find(uph => 
+                            uph.workCenter === workCenter && 
+                            uph.routing === (order.routingName || order.routing)
+                          );
+                          
+                          if (relevantUph && relevantUph.unitsPerHour > 0) {
+                            return (order.quantity / relevantUph.unitsPerHour).toFixed(1);
+                          }
+                          
+                          // Fallback to historical average if no specific data found
+                          return (order.quantity / 15).toFixed(1);
+                        };
+                        const expectedHours = calculateExpectedHours(operator.id);
+                        return (
+                          <SelectItem key={`${workCenter}-operator-${operator.id}-${order.id}`} value={operator.id.toString()}>
+                            <div className="flex flex-col text-left">
+                              <div className="font-medium">{operator.name}</div>
+                              <div className="text-xs text-gray-500">
+                                Est: {expectedHours}h
+                              </div>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {workOrder.assignedOperatorId && (
+                    <div className="text-xs text-gray-500">
+                      {(() => {
+                        // Calculate the same way as the dropdown estimation
+                        const assignedOperator = availableOperators.find(op => op.id === workOrder.assignedOperatorId);
+                        if (assignedOperator && assignedOperator.uphData) {
+                          const relevantUph = assignedOperator.uphData.find(uph => 
+                            uph.workCenter === workCenter && 
+                            uph.routing === (order.routingName || order.routing)
+                          );
+                          
+                          if (relevantUph && relevantUph.unitsPerHour > 0) {
+                            return (order.quantity / relevantUph.unitsPerHour).toFixed(1);
+                          }
+                        }
+                        
+                        // Fallback to historical average if no specific data found
+                        return (order.quantity / 15).toFixed(1);
+                      })()}h assigned
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-400 text-center">No work order</div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Work Center Columns */}
-      {["Cutting", "Assembly", "Packaging"].map((workCenter) => {
-        // Handle both local database work orders and Fulfil work orders
-        const workOrder = (workOrders as any[]).find((wo: any) => {
-          // Local database work order fields
-          if (wo.workCenter === workCenter || wo.workCenterName === workCenter) {
-            return true;
-          }
-          // Fulfil work order fields  
-          if (wo.work_center === workCenter) {
-            return true;
-          }
-          return false;
-        });
-        const availableOperators = (operators as Operator[]).filter((op: Operator) => 
-          op.workCenters?.includes(workCenter)
-        );
+      {/* Mobile Layout (sm and below) */}
+      <div className={`md:hidden px-4 py-3 border-b border-gray-100 ${rowClass}`}>
+        <div className="grid grid-cols-8 gap-2 items-center mb-3">
+          <div className="col-span-1 flex items-center justify-center">
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={onSelection}
+            />
+          </div>
+          <div className="col-span-2">
+            <div className="font-medium text-gray-900 text-xs">{order.moNumber}</div>
+            <div className="text-xs text-gray-500 truncate">{order.product_code || order.productName || 'Unknown'}</div>
+          </div>
+          <div className="col-span-1 text-center">
+            <span className="font-medium text-xs">{order.quantity}</span>
+          </div>
+          
+          {/* Abbreviated work centers on mobile */}
+          {["Cutting", "Assembly", "Packaging"].map((workCenter, index) => {
+            const workOrder = (workOrders as any[]).find((wo: any) => {
+              if (wo.workCenter === workCenter || wo.workCenterName === workCenter) {
+                return true;
+              }
+              if (wo.work_center === workCenter) {
+                return true;
+              }
+              return false;
+            });
+            
+            const colSpan = index === 2 ? "col-span-2" : "col-span-1"; // Packaging gets more space
+            
+            return (
+              <div key={workCenter} className={`${colSpan} text-center`}>
+                {workOrder ? (
+                  workOrder.assignedOperatorId ? (
+                    <div className="text-xs text-green-700 font-medium truncate">
+                      {workOrder.operatorName?.split(' ')[0] || 'Assigned'}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-400">-</div>
+                  )
+                ) : (
+                  <div className="text-xs text-gray-300">N/A</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        
+        {/* Expandable work center details on mobile */}
+        <div className="grid grid-cols-1 gap-2 mt-2">
+          {["Cutting", "Assembly", "Packaging"].map((workCenter) => {
+            const workOrder = (workOrders as any[]).find((wo: any) => {
+              if (wo.workCenter === workCenter || wo.workCenterName === workCenter) {
+                return true;
+              }
+              if (wo.work_center === workCenter) {
+                return true;
+              }
+              return false;
+            });
+            
+            if (!workOrder) return null;
+            
+            const availableOperators = (operators as Operator[]).filter((op: Operator) => 
+              op.workCenters?.includes(workCenter)
+            );
 
-        return (
-          <div key={workCenter} className="col-span-2 text-center">
-            {workOrder ? (
-              <div className="space-y-1">
+            return (
+              <div key={`mobile-${workCenter}`} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                <span className="font-medium text-gray-700">{workCenter}:</span>
                 <Select
                   value={workOrder.assignedOperatorId?.toString() || ""}
                   onValueChange={(operatorIdString) => {
                     if (operatorIdString) {
                       const operatorId = parseInt(operatorIdString);
-                      // Use Fulfil ID for Fulfil work orders, local ID for local work orders
                       const workOrderId = workOrder.fulfilId || workOrder.id;
                       onOperatorAssignment(workOrderId, operatorId);
                     }
                   }}
                 >
-                  <SelectTrigger className={`w-full text-xs h-8 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
-                    <SelectValue placeholder="Select Operator">
-                      {workOrder.assignedOperatorId && workOrder.operatorName ? workOrder.operatorName : undefined}
+                  <SelectTrigger className={`w-32 text-xs h-7 ${workOrder.assignedOperatorId ? "text-green-700 font-medium" : ""}`}>
+                    <SelectValue placeholder="Select">
+                      {workOrder.assignedOperatorId && workOrder.operatorName ? 
+                        workOrder.operatorName.split(' ')[0] : undefined}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {availableOperators.map((operator: Operator) => {
-                      const calculateExpectedHours = (operatorId: number) => {
-                        // Get actual UPH data for this operator, work center, and routing
-                        const uphData = operator.uphData || [];
-                        const relevantUph = uphData.find(uph => 
-                          uph.workCenter === workCenter && 
-                          uph.routing === (order.routingName || order.routing)
-                        );
-                        
-                        if (relevantUph && relevantUph.unitsPerHour > 0) {
-                          return (order.quantity / relevantUph.unitsPerHour).toFixed(1);
-                        }
-                        
-                        // Fallback to historical average if no specific data found
-                        return (order.quantity / 15).toFixed(1);
-                      };
-                      const expectedHours = calculateExpectedHours(operator.id);
-                      return (
-                        <SelectItem key={`${workCenter}-operator-${operator.id}-${order.id}`} value={operator.id.toString()}>
-                          <div className="flex flex-col text-left">
-                            <div className="font-medium">{operator.name}</div>
-                            <div className="text-xs text-gray-500">
-                              Est: {expectedHours}h
-                            </div>
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
+                    {availableOperators.map((operator: Operator) => (
+                      <SelectItem key={`mobile-${workCenter}-operator-${operator.id}-${order.id}`} value={operator.id.toString()}>
+                        {operator.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                {workOrder.assignedOperatorId && (
-                  <div className="text-xs text-gray-500">
-                    {(() => {
-                      // Calculate the same way as the dropdown estimation
-                      const assignedOperator = availableOperators.find(op => op.id === workOrder.assignedOperatorId);
-                      if (assignedOperator && assignedOperator.uphData) {
-                        const relevantUph = assignedOperator.uphData.find(uph => 
-                          uph.workCenter === workCenter && 
-                          uph.routing === (order.routingName || order.routing)
-                        );
-                        
-                        if (relevantUph && relevantUph.unitsPerHour > 0) {
-                          return (order.quantity / relevantUph.unitsPerHour).toFixed(1);
-                        }
-                      }
-                      
-                      // Fallback to historical average if no specific data found
-                      return (order.quantity / 15).toFixed(1);
-                    })()}h assigned
-                  </div>
-                )}
               </div>
-            ) : (
-              <div className="text-xs text-gray-400 text-center">No work order</div>
-            )}
-          </div>
-        );
-      })}
-
-
-    </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 }
 

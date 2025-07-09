@@ -15,15 +15,15 @@ interface SummaryCardsProps {
 export default function SummaryCards({ summary, isLoading }: SummaryCardsProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-4 md:mb-6">
         {[...Array(4)].map((_, i) => (
           <Card key={i}>
-            <CardContent className="p-6">
+            <CardContent className="p-3 md:p-6">
               <div className="flex items-center">
-                <Skeleton className="h-8 w-8 rounded" />
-                <div className="ml-4">
-                  <Skeleton className="h-4 w-20 mb-1" />
-                  <Skeleton className="h-8 w-12" />
+                <Skeleton className="h-6 w-6 md:h-8 md:w-8 rounded" />
+                <div className="ml-2 md:ml-4">
+                  <Skeleton className="h-3 md:h-4 w-16 md:w-20 mb-1" />
+                  <Skeleton className="h-6 md:h-8 w-8 md:w-12" />
                 </div>
               </div>
             </CardContent>
@@ -61,17 +61,17 @@ export default function SummaryCards({ summary, isLoading }: SummaryCardsProps) 
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-4 md:mb-6">
       {cards.map((card, index) => (
         <Card key={index}>
-          <CardContent className="p-6">
+          <CardContent className="p-3 md:p-6">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <card.icon className={`${card.color} text-2xl`} />
+                <card.icon className={`${card.color} text-lg md:text-2xl`} />
               </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-500">{card.label}</p>
-                <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+              <div className="ml-2 md:ml-4">
+                <p className="text-xs md:text-sm text-gray-500 truncate">{card.label}</p>
+                <p className="text-lg md:text-2xl font-bold text-gray-900">{card.value}</p>
               </div>
             </div>
           </CardContent>
