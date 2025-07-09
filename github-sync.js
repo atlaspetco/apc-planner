@@ -70,7 +70,12 @@ async function syncProject() {
     'replit.md',
     'server/index.ts',
     'server/routes.ts',
+    'server/fulfil-current.ts',
     'client/src/App.tsx',
+    'client/src/components/dashboard/planning-grid.tsx',
+    'client/src/components/dashboard/batch-section.tsx',
+    'client/src/components/dashboard/operator-summary.tsx',
+    'client/src/pages/uph-analytics.tsx',
     'shared/schema.ts'
   ];
 
