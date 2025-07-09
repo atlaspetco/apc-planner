@@ -123,40 +123,49 @@ export default function UphAnalytics() {
     return uph.toFixed(1);
   };
 
-  // Calculate work center-specific color ranges
-  const getWorkCenterPercentiles = (workCenter: string) => {
-    if (!uphData?.routings) return { high: 50, medium: 25 };
+  // Calculate routing + work center specific color ranges (context-specific conditional formatting)
+  const getRoutingWorkCenterPercentiles = (routingName: string, workCenter: string) => {
+    if (!uphData?.routings) return { p55: 50, p45: 25 };
     
-    const allUphForWorkCenter: number[] = [];
-    uphData.routings.forEach(routing => {
-      routing.operators.forEach(operator => {
-        const uphValue = operator.workCenterPerformance[workCenter];
-        if (uphValue !== null && uphValue !== undefined && uphValue > 0) {
-          allUphForWorkCenter.push(uphValue);
-        }
-      });
+    // Find the specific routing
+    const routing = uphData.routings.find(r => r.routingName === routingName);
+    if (!routing) return { p55: 50, p45: 25 };
+    
+    // Get all UPH values for this specific routing + work center combination
+    const uphValuesForContext: number[] = [];
+    routing.operators.forEach(operator => {
+      const uphValue = operator.workCenterPerformance[workCenter];
+      if (uphValue !== null && uphValue !== undefined && uphValue > 0) {
+        uphValuesForContext.push(uphValue);
+      }
     });
 
-    if (allUphForWorkCenter.length === 0) return { high: 50, medium: 25 };
+    if (uphValuesForContext.length === 0) return { p55: 50, p45: 25 };
     
-    allUphForWorkCenter.sort((a, b) => a - b);
-    const high = allUphForWorkCenter[Math.floor(allUphForWorkCenter.length * 0.75)] || 50; // 75th percentile
-    const medium = allUphForWorkCenter[Math.floor(allUphForWorkCenter.length * 0.5)] || 25; // 50th percentile (median)
+    uphValuesForContext.sort((a, b) => a - b);
     
-    return { high, medium };
+    // Calculate percentiles for red-black-green scale:
+    // Bottom 45% = red, Median ±5% = black, Top 45% = green
+    const p45Index = Math.floor(uphValuesForContext.length * 0.45);
+    const p55Index = Math.floor(uphValuesForContext.length * 0.55);
+    
+    const p45 = uphValuesForContext[p45Index] || 25; // 45th percentile
+    const p55 = uphValuesForContext[p55Index] || 50; // 55th percentile
+    
+    return { p55, p45 };
   };
 
-  const getUphBadgeVariant = (uph: number | null, workCenter?: string) => {
+  const getUphBadgeVariant = (uph: number | null, workCenter?: string, routingName?: string) => {
     if (uph === null || uph === undefined) return "outline";
     
-    if (workCenter) {
-      const { high, medium } = getWorkCenterPercentiles(workCenter);
-      if (uph >= high) return "default"; // Green for top 25%
-      if (uph >= medium) return "secondary"; // Gray for middle 50%
-      return "destructive"; // Red for bottom 25%
+    if (workCenter && routingName) {
+      const { p55, p45 } = getRoutingWorkCenterPercentiles(routingName, workCenter);
+      if (uph >= p55) return "default"; // Green for top 45%
+      if (uph >= p45) return "secondary"; // Black/gray for median ±5%
+      return "destructive"; // Red for bottom 45%
     }
     
-    // Fallback to global thresholds if no work center specified
+    // Fallback to global thresholds if context not specified
     if (uph >= 50) return "default";
     if (uph >= 25) return "secondary";
     return "destructive";
@@ -342,7 +351,7 @@ export default function UphAnalytics() {
                             .map((wc) => (
                             <Badge
                               key={wc}
-                              variant={getUphBadgeVariant(routing.routingAverages[wc], wc)}
+                              variant={getUphBadgeVariant(routing.routingAverages[wc], wc, routing.routingName)}
                             >
                               {wc}: {formatUph(routing.routingAverages[wc])}
                             </Badge>
@@ -376,7 +385,7 @@ export default function UphAnalytics() {
                                     .map((wc) => (
                                     <td key={wc} className="text-center py-2">
                                       <Badge
-                                        variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc)}
+                                        variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
                                         className="min-w-[60px]"
                                       >
                                         {formatUph(operator.workCenterPerformance[wc])}
