@@ -3233,34 +3233,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Clear old data and insert current orders
+      // Upsert current orders (insert or update without deleting existing)
       const { productionOrders } = await import("../shared/schema.js");
       const { db } = await import("./db.js");
+      const { eq } = await import("drizzle-orm");
       
-      // Clear old production orders
-      await db.delete(productionOrders);
-      
-      // Insert current orders
+      // Insert or update current orders without clearing existing data
       let imported = 0;
       for (const order of currentOrders) {
         try {
-          await db.insert(productionOrders).values({
-            moNumber: order.rec_name,
-            productName: order.product_name,
-            quantity: order.quantity,
-            status: order.state,
-            routing: "Standard",
-            priority: "Normal",
-            fulfilId: parseInt(order.id),
-            product_code: order.product_code,
-            rec_name: order.rec_name,
-            state: order.state,
-            planned_date: order.planned_date,
-            createdAt: new Date(),
-          });
-          imported++;
+          // Check if production order already exists by moNumber
+          const existing = await db
+            .select()
+            .from(productionOrders)
+            .where(eq(productionOrders.moNumber, order.rec_name))
+            .limit(1);
+          
+          if (existing.length === 0) {
+            // Insert new production order
+            await db.insert(productionOrders).values({
+              moNumber: order.rec_name,
+              productName: order.product_name,
+              quantity: order.quantity,
+              status: order.state,
+              routing: "Standard",
+              priority: "Normal",
+              fulfilId: parseInt(order.id),
+              product_code: order.product_code,
+              rec_name: order.rec_name,
+              state: order.state,
+              planned_date: order.planned_date,
+              createdAt: new Date(),
+            });
+            imported++;
+          } else {
+            // Update existing production order
+            await db
+              .update(productionOrders)
+              .set({
+                productName: order.product_name,
+                quantity: order.quantity,
+                status: order.state,
+                product_code: order.product_code,
+                state: order.state,
+                planned_date: order.planned_date,
+              })
+              .where(eq(productionOrders.moNumber, order.rec_name));
+          }
         } catch (error) {
-          console.error(`Error inserting MO ${order.rec_name}:`, error);
+          console.error(`Error upserting MO ${order.rec_name}:`, error);
         }
       }
 
