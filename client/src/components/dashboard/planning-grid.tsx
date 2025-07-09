@@ -96,7 +96,7 @@ export default function PlanningGrid({
   }
 
   return (
-    <Card className="mb-6">
+    <Card className="mb-6 planning-grid">
       {/* Grid Header */}
       <CardHeader>
         <div className="flex items-center justify-between">

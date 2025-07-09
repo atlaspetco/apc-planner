@@ -345,18 +345,19 @@ export default function OperatorSettings() {
                       <div className="mt-2 space-y-2">
                         {(workCenterData as any[]).map((wc: any) => {
                           const hasData = getOperatorWorkCentersWithData(selectedOperatorData.name).includes(wc.workCenter);
-                          const isChecked = selectedOperatorData.workCenters?.includes(wc.workCenter) || hasData;
+                          const isManuallyChecked = selectedOperatorData.workCenters?.includes(wc.workCenter) || false;
+                          const isChecked = isManuallyChecked || hasData;
                           
                           return (
                             <div key={`${selectedOperatorData.id}-wc-${wc.workCenter}`} className="flex items-center space-x-2">
                               <Switch
                                 id={`wc-${wc.workCenter}-${selectedOperatorData.id}`}
-                                key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}`}
+                                key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}-${selectedOperatorData.workCenters?.length || 0}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
                                   const currentWorkCenters = selectedOperatorData.workCenters || [];
                                   const newWorkCenters = checked
-                                    ? [...currentWorkCenters, wc.workCenter]
+                                    ? [...new Set([...currentWorkCenters, wc.workCenter])]
                                     : currentWorkCenters.filter((center: string) => center !== wc.workCenter);
                                   handleUpdateOperator({ workCenters: newWorkCenters });
                                 }}
@@ -401,7 +402,8 @@ export default function OperatorSettings() {
                           
                           return relevantOperations.map((operation: string, index: number) => {
                             const hasData = operatorOperationsWithData.includes(operation);
-                            const isChecked = selectedOperatorData.operations?.includes(operation) || hasData;
+                            const isManuallyChecked = selectedOperatorData.operations?.includes(operation) || false;
+                            const isChecked = isManuallyChecked || hasData;
                             // Create truly unique key combining operator ID, operation, and index
                             const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
                             
@@ -409,11 +411,12 @@ export default function OperatorSettings() {
                               <div key={stableKey} className="flex items-center space-x-2">
                                 <Switch
                                   id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
+                                  key={`switch-op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${selectedOperatorData.operations?.length || 0}`}
                                   checked={isChecked}
                                   onCheckedChange={(checked) => {
                                     const currentOperations = selectedOperatorData.operations || [];
                                     const newOperations = checked
-                                      ? [...currentOperations, operation]
+                                      ? [...new Set([...currentOperations, operation])]
                                       : currentOperations.filter((op: string) => op !== operation);
                                     handleUpdateOperator({ operations: newOperations });
                                   }}
@@ -461,18 +464,20 @@ export default function OperatorSettings() {
                         
                         return relevantRoutings.map((routing: string) => {
                           const hasData = operatorRoutingsWithData.includes(routing);
-                          const isChecked = selectedOperatorData.routings?.includes(routing) || hasData;
+                          const isManuallyChecked = selectedOperatorData.routings?.includes(routing) || false;
+                          const isChecked = isManuallyChecked || hasData;
                           const stableKey = `routing-${selectedOperatorData.id}-${routing.replace(/\s+/g, '-')}`;
                           
                           return (
                             <div key={stableKey} className="flex items-center space-x-2">
                               <Switch
                                 id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
+                                key={`switch-rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}-${selectedOperatorData.routings?.length || 0}`}
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
                                   const currentRoutings = selectedOperatorData.routings || [];
                                   const newRoutings = checked
-                                    ? [...currentRoutings, routing]
+                                    ? [...new Set([...currentRoutings, routing])]
                                     : currentRoutings.filter((rt: string) => rt !== routing);
                                   handleUpdateOperator({ routings: newRoutings });
                                 }}
