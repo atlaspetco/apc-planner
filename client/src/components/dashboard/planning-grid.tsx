@@ -22,7 +22,7 @@ export default function PlanningGrid({
   selectedMOs, 
   onMOSelection 
 }: PlanningGridProps) {
-  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set(["batch-a", "unassigned"]));
+  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -42,24 +42,39 @@ export default function PlanningGrid({
     setExpandedBatches(newExpanded);
   };
 
-  const expandAll = () => {
-    const allBatches = new Set([
-      "batch-a",
-      "unassigned",
-      ...Array.from(new Set(productionOrders.map(po => po.batchId).filter(Boolean)))
-    ]);
-    setExpandedBatches(allBatches);
+  // Helper function to extract routing from product code
+  const getRoutingFromProductCode = (productCode: string): string => {
+    if (!productCode) return "Unknown";
+    
+    // Extract routing patterns based on product codes
+    if (productCode.startsWith("LP-")) return "Lifetime Pouch";
+    if (productCode.startsWith("F3-")) return "Fi Snap";
+    if (productCode.startsWith("LHP-")) return "Lifetime Handle";
+    if (productCode.startsWith("PB-")) return "PB Series";
+    if (productCode.startsWith("LB-")) return "LB Series";
+    if (productCode.startsWith("LC-")) return "Lifetime Collar";
+    if (productCode.startsWith("LL-")) return "Lifetime Leash";
+    
+    return "Other";
   };
 
-  // Group production orders by batch
-  const batchedOrders = productionOrders.reduce((acc, po) => {
-    const batchKey = po.batchId || "unassigned";
-    if (!acc[batchKey]) {
-      acc[batchKey] = [];
+  // Group production orders by routing instead of batch
+  const routingGroups = productionOrders.reduce((acc, po) => {
+    const routing = getRoutingFromProductCode(po.product_code || po.productName || "");
+    if (!acc[routing]) {
+      acc[routing] = [];
     }
-    acc[batchKey].push(po);
+    acc[routing].push(po);
     return acc;
   }, {} as Record<string, ProductionOrder[]>);
+
+  const expandAll = () => {
+    // Get all routing group keys
+    const allRoutingKeys = Object.keys(routingGroups).map(routing => 
+      routing.toLowerCase().replace(/\s+/g, '-')
+    );
+    setExpandedBatches(new Set(allRoutingKeys));
+  };
 
   if (isLoading) {
     return (
@@ -116,38 +131,29 @@ export default function PlanningGrid({
             <div className="col-span-1 text-center">Total</div>
           </div>
 
-          {/* Batch Sections */}
+          {/* Routing Sections */}
           <div>
-            {/* Named Batches */}
-            {Object.entries(batchedOrders)
-              .filter(([batchId]) => batchId !== "unassigned")
-              .map(([batchId, orders]) => (
+            {/* All Routing Groups */}
+            {Object.entries(routingGroups)
+              .sort(([a], [b]) => {
+                // Sort "Other" and "Unknown" to the end
+                if (a === "Other" || a === "Unknown") return 1;
+                if (b === "Other" || b === "Unknown") return -1;
+                return a.localeCompare(b);
+              })
+              .map(([routing, orders]) => (
                 <BatchSection
-                  key={batchId}
-                  batchId={batchId}
-                  batchName={getBatchName(batchId)}
+                  key={routing}
+                  batchId={routing.toLowerCase().replace(/\s+/g, '-')}
+                  batchName={`${routing} (${orders.length} MO${orders.length !== 1 ? 's' : ''})`}
                   orders={orders}
-                  isExpanded={expandedBatches.has(batchId)}
-                  onToggle={() => toggleBatch(batchId)}
+                  isExpanded={expandedBatches.has(routing.toLowerCase().replace(/\s+/g, '-'))}
+                  onToggle={() => toggleBatch(routing.toLowerCase().replace(/\s+/g, '-'))}
                   selectedMOs={selectedMOs}
                   onMOSelection={onMOSelection}
-                  variant="named"
+                  variant={routing === "Other" || routing === "Unknown" ? "unassigned" : "named"}
                 />
               ))}
-
-            {/* Unassigned MOs */}
-            {batchedOrders.unassigned && (
-              <BatchSection
-                batchId="unassigned"
-                batchName="Unassigned MOs"
-                orders={batchedOrders.unassigned}
-                isExpanded={expandedBatches.has("unassigned")}
-                onToggle={() => toggleBatch("unassigned")}
-                selectedMOs={selectedMOs}
-                onMOSelection={onMOSelection}
-                variant="unassigned"
-              />
-            )}
           </div>
         </div>
       </div>
