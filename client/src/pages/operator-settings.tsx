@@ -289,14 +289,18 @@ export default function OperatorSettings() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="slackUserId">Slack User ID</Label>
                     <Input
-                      id="email"
-                      type="email"
-                      key={`email-${selectedOperatorData.id}`}
-                      defaultValue={selectedOperatorData.email || ""}
-                      onBlur={(e) => handleUpdateOperator({ email: e.target.value })}
+                      id="slackUserId"
+                      type="text"
+                      placeholder="U1234567890"
+                      key={`slackUserId-${selectedOperatorData.id}`}
+                      defaultValue={selectedOperatorData.slackUserId || ""}
+                      onBlur={(e) => handleUpdateOperator({ slackUserId: e.target.value })}
                     />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Find Slack User ID: In Slack, click on user profile → More → Copy member ID
+                    </p>
                   </div>
                 </div>
 

@@ -95,7 +95,7 @@ export class MemStorage implements IStorage {
     ];
 
     testOperators.forEach(op => {
-      const operator = { ...op, id: this.currentId++, isActive: true, uphCalculationWindow: 30, email: null, lastActiveDate: new Date() };
+      const operator = { ...op, id: this.currentId++, isActive: true, uphCalculationWindow: 30, slackUserId: null, lastActiveDate: new Date() };
       this.operators.set(operator.id, operator);
     });
 

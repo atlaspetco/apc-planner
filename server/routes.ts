@@ -1127,7 +1127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Create new operator
             await storage.createOperator({
               name: op.name,
-              email: null,
+              slackUserId: null,
               availableHours: 40,
               workCenters: op.workCenters || [],
               routings: ['Standard'],
@@ -1759,11 +1759,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         for (let i = 0; i < operatorCount && nameIndex < operatorNames.length; i++) {
           const name = operatorNames[nameIndex++];
-          const email = `${name.toLowerCase().replace(' ', '.')}@company.com`;
+          const slackUserId = null; // Will be set manually for Slack integration
           
           operators.push({
             name,
-            email,
+            slackUserId,
             workCenters: [workCenter],
             operations: Array.from(operations) as string[],
             routings: ["Standard"],

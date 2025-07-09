@@ -64,7 +64,7 @@ export const workOrders = pgTable("work_orders", {
 export const operators = pgTable("operators", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  email: text("email"),
+  slackUserId: text("slack_user_id"),
   availableHours: integer("available_hours").default(40),
   workCenters: text("work_centers").array(), // Array of work centers they're trained in
   routings: text("routings").array(), // Array of routings they know
