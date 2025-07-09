@@ -339,9 +339,7 @@ export default function UphAnalytics() {
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          {getOrderedWorkCenters(uphData.workCenters)
-                            .filter((wc) => routing.routingAverages[wc] !== null && routing.routingAverages[wc] !== undefined)
-                            .map((wc) => (
+                          {getOrderedWorkCenters(uphData.workCenters).map((wc) => (
                             <Badge
                               key={wc}
                               variant="outline"
@@ -360,9 +358,7 @@ export default function UphAnalytics() {
                             <thead>
                               <tr className="border-b">
                                 <th className="text-left py-2 font-medium">Operator</th>
-                                {getOrderedWorkCenters(uphData.workCenters)
-                                  .filter((wc) => routing.routingAverages[wc] !== null && routing.routingAverages[wc] !== undefined)
-                                  .map((wc) => (
+                                {getOrderedWorkCenters(uphData.workCenters).map((wc) => (
                                   <th key={wc} className="text-center py-2 font-medium">
                                     {wc}
                                   </th>
@@ -374,9 +370,7 @@ export default function UphAnalytics() {
                               {routing.operators.map((operator) => (
                                 <tr key={operator.operatorId} className="border-b">
                                   <td className="py-2 font-medium">{operator.operatorName}</td>
-                                  {getOrderedWorkCenters(uphData.workCenters)
-                                    .filter((wc) => routing.routingAverages[wc] !== null && routing.routingAverages[wc] !== undefined)
-                                    .map((wc) => (
+                                  {getOrderedWorkCenters(uphData.workCenters).map((wc) => (
                                     <td key={wc} className="text-center py-2">
                                       <Badge
                                         variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
