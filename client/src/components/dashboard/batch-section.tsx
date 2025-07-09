@@ -343,7 +343,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                   </SelectContent>
                 </Select>
                 {workOrder.assignedOperatorId && (
-                  <div className="text-sm text-blue-600 mt-1 font-medium bg-blue-50 px-2 py-1 rounded text-center">
+                  <div className="text-xs text-gray-500 mt-1">
                     {(() => {
                       // Calculate the same way as the dropdown estimation
                       const assignedOperator = availableOperators.find(op => op.id === workOrder.assignedOperatorId);
@@ -360,7 +360,7 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                       
                       // Fallback to historical average if no specific data found
                       return (order.quantity / 15).toFixed(1);
-                    })()}h
+                    })()}h assigned
                   </div>
                 )}
               </div>

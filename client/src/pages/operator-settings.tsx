@@ -225,17 +225,19 @@ export default function OperatorSettings() {
                 </div>
               )}
               
-              {/* All Operators - Sorted by Last Active */}
+              {/* All Operators - Sorted by Activity Status, then by Complications */}
               {(allOperators as any[])
                 .sort((a: any, b: any) => {
-                  // Sort by activity status first (active at top), then by last active date
+                  // Sort by activity status first (active at top)
                   if (a.isRecentlyActive && !b.isRecentlyActive) return -1;
                   if (!a.isRecentlyActive && b.isRecentlyActive) return 1;
                   
-                  // Both same activity status, sort by last active date (most recent first)
-                  const aDate = a.lastActiveDate ? new Date(a.lastActiveDate).getTime() : 0;
-                  const bDate = b.lastActiveDate ? new Date(b.lastActiveDate).getTime() : 0;
-                  return bDate - aDate;
+                  // Within same activity status, sort by total complications (UPH record count)
+                  const aComplications = uphData ? uphData.filter((record: any) => record.operatorName === a.name).length : 0;
+                  const bComplications = uphData ? uphData.filter((record: any) => record.operatorName === b.name).length : 0;
+                  
+                  // More complications = higher versatility, so sort descending
+                  return bComplications - aComplications;
                 })
                 .map((operator: any) => (
                 <Button
