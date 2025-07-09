@@ -1,0 +1,17 @@
+ID,Operation,Work Center Category,Aggregated Work Center
+37,Assembly - Webbing,Sewing,Assembly
+46,Grommet - LP,Packaging,Packaging
+48,Zipper Pull - LP,Packaging,Packaging
+51,Assembly/Fusing - LC,Cutting,Cutting
+69,Sewing,Sewing,Assembly
+70,Packaging,Packaging,Packaging
+76,Cutting - Rope,Cutting,Cutting
+77,Cutting - Webbing,Cutting,Cutting
+78,Cutting - Fabric,Cutting,Cutting
+80,Assembly - Rope,Rope,Assembly
+81,Engrave - Laser,Cutting,Cutting
+82,Cutting - Biothane,Cutting,Cutting
+83,Punching - Biothane,Cutting,Cutting
+84,Assembly - Biothane,Rope,Assembly
+85,Grommet - Snap,Packaging,Packaging
+86,Bartack - Rope,Rope,Assembly

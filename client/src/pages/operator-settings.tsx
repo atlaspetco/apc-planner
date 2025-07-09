@@ -373,15 +373,16 @@ export default function OperatorSettings() {
                         );
                       }
                       
-                      return relevantOperations.map((operation: string) => {
+                      return relevantOperations.map((operation: string, index: number) => {
                         const hasData = operatorOperationsWithData.includes(operation);
                         const isChecked = selectedOperatorData.operations?.includes(operation) || hasData;
-                        const stableKey = `operation-${selectedOperatorData.id}-${operation.replace(/\s+/g, '-')}`;
+                        // Create truly unique key combining operator ID, operation, and index
+                        const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
                         
                         return (
                           <div key={stableKey} className="flex items-center space-x-2">
                             <Switch
-                              id={`op-${operation.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
+                              id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
                               checked={isChecked}
                               onCheckedChange={(checked) => {
                                 const currentOperations = selectedOperatorData.operations || [];
@@ -391,8 +392,8 @@ export default function OperatorSettings() {
                                 handleUpdateOperator({ operations: newOperations });
                               }}
                             />
-                            <Label htmlFor={`op-${operation.replace(/\s+/g, '-')}-${selectedOperatorData.id}`} className="flex items-center space-x-2">
-                              <span>{operation}</span>
+                            <Label htmlFor={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`} className="flex items-center space-x-2">
+                              <span className="text-sm">{operation}</span>
                               {hasData && (
                                 <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Has Data</span>
                               )}
