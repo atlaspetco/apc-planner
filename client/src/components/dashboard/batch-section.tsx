@@ -185,6 +185,8 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   // Get local database work orders which contain assignments
   const { data: allLocalWorkOrders = [] } = useQuery({
     queryKey: ["/api/work-orders"],
+    staleTime: 0, // Force fresh data every time
+    cacheTime: 0, // Don't cache results
   });
   
   // Filter work orders for this production order from local database
