@@ -46,6 +46,11 @@ export default function BatchSection({
         wo.productionOrderId === order.id
       );
       
+      // If no work orders, use basic estimate
+      if (orderWorkOrders.length === 0) {
+        return batchTotal + ((order.quantity || 100) / 15);
+      }
+      
       // Group work orders by work center to calculate parallel vs sequential time
       const workCenterHours: Record<string, number> = {};
       
@@ -55,9 +60,9 @@ export default function BatchSection({
           workCenterHours[workCenter] = 0;
         }
         
-        // Use realistic estimation: quantity / 15 UPH average
+        // Use realistic estimation: quantity / 15 UPH average (calculated once per order, not per work order)
         const realisticHours = (order.quantity || 100) / 15;
-        workCenterHours[workCenter] += realisticHours;
+        workCenterHours[workCenter] = realisticHours;  // Assign, don't accumulate
       });
       
       // Return the maximum time across work centers (assuming parallel execution)
