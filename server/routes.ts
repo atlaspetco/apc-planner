@@ -3719,6 +3719,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Auto-sync operator last active dates when work cycles are imported  
+  app.post("/api/operators/sync-last-active", async (req, res) => {
+    try {
+      console.log("Syncing operator last active dates from work cycles...");
+      
+      // Update all operators' last_active_date based on their most recent work cycle activity
+      const result = await db.execute(sql`
+        UPDATE operators 
+        SET last_active_date = (
+          SELECT MAX(work_cycles_operator_write_date) 
+          FROM work_cycles 
+          WHERE work_cycles_operator_rec_name = operators.name
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM work_cycles 
+          WHERE work_cycles_operator_rec_name = operators.name
+        )
+      `);
+      
+      console.log(`Updated last active dates for ${result.rowCount || 0} operators`);
+      
+      res.json({
+        success: true,
+        message: `Updated last active dates for ${result.rowCount || 0} operators`,
+        updatedCount: result.rowCount || 0
+      });
+      
+    } catch (error) {
+      console.error("Error syncing operator last active dates:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to sync operator last active dates",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Helper function to update import status
   global.updateImportStatus = (update: any) => {
     importStatus = { ...importStatus, ...update, lastUpdate: new Date() };
