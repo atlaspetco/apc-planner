@@ -224,6 +224,11 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   });
 
   const calculateTotalHours = () => {
+    // If no work orders exist, use basic calculation
+    if (workOrders.length === 0) {
+      return (order.quantity || 100) / 15;
+    }
+    
     // Group work orders by work center to calculate parallel vs sequential time
     const workCenterHours: Record<string, number> = {};
     
@@ -232,11 +237,12 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
       if (!workCenterHours[workCenter]) {
         workCenterHours[workCenter] = 0;
       }
-      workCenterHours[workCenter] += (wo.estimatedHours || 0);
+      // Use realistic estimation: quantity / 15 UPH average (same as batch calculation)
+      const realisticHours = (order.quantity || 100) / 15;
+      workCenterHours[workCenter] = realisticHours;  // Assign, don't accumulate
     });
     
     // Return the maximum time across work centers (assuming parallel execution)
-    // This gives a more realistic total time for the production order
     const maxHours = Math.max(...Object.values(workCenterHours), 0);
     return maxHours;
   };

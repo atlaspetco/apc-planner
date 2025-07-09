@@ -84,8 +84,21 @@ function OperatorCard({ operator }: OperatorCardProps) {
   const capacityPercentage = calculateCapacityPercentage(scheduledHours, availableHours);
   const capacityColor = getCapacityColor(capacityPercentage);
 
-  // Get primary work center
-  const primaryWorkCenter = operator.workCenters?.[0] || "Unknown";
+  // Get UPH data to calculate total observations
+  const { data: uphData = [] } = useQuery({
+    queryKey: ["/api/uph/table-data"],
+    select: (data) => data?.routings || []
+  });
+
+  // Calculate total observations for this operator across all routings
+  const totalObservations = uphData.reduce((total: number, routing: any) => {
+    return total + routing.operators.reduce((routingTotal: number, op: any) => {
+      if (op.operatorName === operator.name) {
+        return routingTotal + (op.totalObservations || 0);
+      }
+      return routingTotal;
+    }, 0);
+  }, 0);
 
   // Calculate estimated completion (simplified)
   const estimatedCompletionDate = new Date();
@@ -102,7 +115,7 @@ function OperatorCard({ operator }: OperatorCardProps) {
           </div>
           <div className="ml-3">
             <p className="font-medium text-gray-900">{operator.name}</p>
-            <p className="text-sm text-gray-500">{primaryWorkCenter}</p>
+            <p className="text-sm text-gray-500">{totalObservations} observations</p>
           </div>
         </div>
         <div className="text-right">
