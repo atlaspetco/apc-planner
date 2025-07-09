@@ -1,0 +1,59 @@
+Repository Summary
+
+This project is a manufacturing planning dashboard with a React frontend and an Express/TypeScript backend. The README outlines key features including a real‑time production dashboard, Fulfil.io integration and UPH analytics. The database schema defines tables for production orders, work orders, operators and UPH data.
+
+Backend routes provide endpoints to retrieve and modify production orders, work orders and operators. For example, /api/work-orders/assign-operator assigns an operator to a work order using UPH data when available. Automatic syncing with Fulfil.io is managed in auto-sync.ts, which imports completed orders and calculates UPH metrics. Work cycle aggregation and UPH calculation are handled in aggregate-work-cycles.ts.
+
+On the frontend, the dashboard page uses the planning grid component to display production orders and allow operator assignment. Operator settings include toggles for work centers, operations and routings with hints about available UPH data. The Fulfil settings page supports CSV uploads of historical data and enhanced import operations.
+
+Issues & Suggestions
+Incorrect column reference for active production orders
+
+The endpoint /api/fulfil/mo-time-estimates queries productionOrders.isActive, but the production orders table does not define this column. This likely causes a runtime error.
+
+Excerpt
+
+const activeMOs = await db.select()
+  .from(productionOrders)
+  .where(eq(productionOrders.isActive, true));
+
+Suggested task
+Fix active MO query
+
+Start task
+Placeholder UPH values in operator assignment
+
+In the planning grid, expected hours per operator are calculated using a fixed value (const mockUph = 15) instead of real UPH data.
+
+Excerpt
+
+const calculateExpectedHours = (operatorId: number) => {
+  const mockUph = 15; // Placeholder
+  return (order.quantity / mockUph).toFixed(1);
+};
+
+Suggested task
+Use real UPH data for expected hours
+
+Start task
+Operator assignment and work center addition marked as TODO
+
+The dashboard page has TODO comments indicating missing functionality for assigning operators and adding work centers.
+
+Excerpt
+
+const handleAddWorkCenter = (moId: string, workCenter: string) => {
+  console.log(`Adding work center ${workCenter} to MO ${moId}`);
+  // TODO: Implement work center assignment API
+};
+
+const handleAssignOperator = (workOrderId: string, operatorId: string) => {
+  console.log(`Assigning operator ${operatorId} to work order ${workOrderId}`);
+  // TODO: Implement operator assignment API
+};
+
+Suggested task
+Implement dashboard assignment actions
+
+Start task
+These adjustments will align the implementation with the repository’s intended functionality and provide accurate scheduling based on real UPH data.

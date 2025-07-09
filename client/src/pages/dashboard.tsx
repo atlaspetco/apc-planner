@@ -87,10 +87,7 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold text-gray-900">Production Planning Dashboard</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <Button onClick={handleRefresh} variant="outline" size="sm">
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh
-              </Button>
+
               <Button 
                 className="bg-blue-600 hover:bg-blue-700"
                 onClick={() => window.location.href = '/operator-settings'}
@@ -119,23 +116,11 @@ export default function Dashboard() {
         {/* Summary Cards */}
         <SummaryCards summary={summary} isLoading={isLoadingSummary} />
 
-        {/* Refresh Button for Fulfil Data */}
-        <div className="mb-4 flex justify-between items-center">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Latest data from Fulfil API - {currentPOs.orders?.length || 0} production orders loaded
-            </p>
-          </div>
-          <Button
-            onClick={refetchCurrentPOs}
-            variant="outline"
-            size="sm"
-            className="flex items-center gap-2"
-            disabled={isLoadingCurrentPOs}
-          >
-            <Download className="h-4 w-4" />
-            Refresh from Fulfil
-          </Button>
+        {/* Status Info */}
+        <div className="mb-4">
+          <p className="text-sm text-muted-foreground">
+            Latest data from Fulfil API - {currentPOs.orders?.length || 0} production orders loaded
+          </p>
         </div>
 
         {/* Main Planning Grid */}

@@ -39,6 +39,16 @@ interface FulfilWorkOrder {
   'operator.name'?: string;
 }
 
+interface FulfilWorkCycle {
+  id: string;
+  rec_name: string;
+  state: string;
+  duration: number;
+  operator?: { rec_name: string };
+  work_center?: { rec_name: string };
+  production?: { id: number };
+}
+
 export class FulfilAPIService {
   private baseUrl: string;
   private apiKey: string | null = null;
@@ -435,6 +445,60 @@ export class FulfilAPIService {
       return Array.isArray(data) ? data : [];
     } catch (error) {
       console.error("Error fetching work orders:", error);
+      return [];
+    }
+  }
+
+  async getWorkCycles(options: { state?: string; limit?: number; offset?: number } = {}): Promise<FulfilWorkCycle[]> {
+    try {
+      if (!this.apiKey) return [];
+
+      const { state = 'done', limit = 500, offset = 0 } = options;
+      const endpoint = `${this.baseUrl}/api/v2/model/production.work.cycle/search_read`;
+      
+      const filters = state ? [['state', '=', state]] : [];
+      
+      const requestBody = {
+        filters: filters,
+        fields: [
+          'id', 'rec_name', 'state', 'duration',
+          'operator.rec_name', 'work_center.rec_name', 'production.id'
+        ],
+        limit: limit,
+        offset: offset
+      };
+
+      console.log(`Fetching work cycles from: ${endpoint}`);
+      console.log("Request body:", JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: this.headers,
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(30000)
+      });
+
+      if (response.status !== 200) {
+        const errorText = await response.text();
+        console.error(`Error fetching work cycles: ${response.status} - ${errorText}`);
+        return [];
+      }
+
+      const data = await response.json();
+      console.log(`Retrieved ${data.length} work cycles`);
+      
+      // Transform the response to match our interface
+      return data.map((cycle: any) => ({
+        id: cycle.id.toString(),
+        rec_name: cycle.rec_name || `Cycle ${cycle.id}`,
+        state: cycle.state || 'unknown',
+        duration: cycle.duration || 0,
+        operator: cycle.operator ? { rec_name: cycle.operator.rec_name } : undefined,
+        work_center: cycle.work_center ? { rec_name: cycle.work_center.rec_name } : undefined,
+        production: cycle.production ? { id: cycle.production.id } : undefined
+      }));
+    } catch (error) {
+      console.error("Error fetching work cycles:", error);
       return [];
     }
   }

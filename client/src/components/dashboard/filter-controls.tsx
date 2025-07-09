@@ -29,21 +29,31 @@ export default function FilterControls({
   const { toast } = useToast();
 
   const refreshMutation = useMutation({
-    mutationFn: () => apiRequest('GET', '/api/fulfil/current-production-orders'),
+    mutationFn: async () => {
+      // Step 1: Pull new 'done' work cycles from Fulfil
+      await apiRequest('POST', '/api/fulfil/import-work-cycles');
+      
+      // Step 2: Aggregate durations and calculate UPH
+      await apiRequest('POST', '/api/fulfil/calculate-uph-from-cycles');
+      
+      // Step 3: Refresh production orders
+      return apiRequest('GET', '/api/fulfil/current-production-orders');
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
       queryClient.invalidateQueries({ queryKey: ['/api/work-orders'] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard/summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/uph-data'] });
       toast({
-        title: "Data Refreshed",
-        description: "Recent production orders have been updated successfully.",
+        title: "Complete Refresh Successful",
+        description: "Updated work cycles, calculated fresh UPH data, and refreshed production orders.",
       });
       onRefreshData?.();
     },
     onError: (error: any) => {
       toast({
         title: "Refresh Failed",
-        description: error.message || "Failed to refresh data from Fulfil API.",
+        description: error.message || "Failed to complete comprehensive refresh from Fulfil API.",
         variant: "destructive",
       });
     },
@@ -72,7 +82,7 @@ export default function FilterControls({
             disabled={refreshMutation.isPending}
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
-            {refreshMutation.isPending ? 'Refreshing...' : 'Refresh Data'}
+            {refreshMutation.isPending ? 'Processing...' : 'Refresh from Fulfil'}
           </Button>
         </div>
       </CardHeader>

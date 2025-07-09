@@ -3346,6 +3346,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Comprehensive refresh endpoints for UPH workflow
+  app.post("/api/fulfil/import-work-cycles", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { FulfilUphWorkflow } = await import("./fulfil-uph-workflow.js");
+      const workflow = new FulfilUphWorkflow();
+      
+      const result = await workflow.importDoneWorkCycles();
+      
+      res.json({
+        success: true,
+        message: `Imported ${result.imported} new work cycles, updated ${result.updated}`,
+        imported: result.imported,
+        updated: result.updated
+      });
+    } catch (error) {
+      console.error("Error importing work cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to import work cycles",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.post("/api/fulfil/calculate-uph-from-cycles", async (req: Request, res: Response) => {
+    try {
+      const { FulfilUphWorkflow } = await import("./fulfil-uph-workflow.js");
+      const workflow = new FulfilUphWorkflow();
+      
+      const result = await workflow.calculateUphFromAggregatedData();
+      
+      res.json({
+        success: true,
+        message: `Calculated UPH for ${result.calculated} operator/work center combinations`,
+        calculated: result.calculated,
+        skipped: result.skipped
+      });
+    } catch (error) {
+      console.error("Error calculating UPH from cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to calculate UPH from work cycles",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.post("/api/fulfil/complete-refresh", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { FulfilUphWorkflow } = await import("./fulfil-uph-workflow.js");
+      const workflow = new FulfilUphWorkflow();
+      
+      const result = await workflow.executeCompleteWorkflow();
+      
+      res.json({
+        success: true,
+        message: `Complete refresh successful: ${result.workCycles.imported} work cycles imported, ${result.uphData.calculated} UPH calculations completed`,
+        workCycles: result.workCycles,
+        uphData: result.uphData,
+        processingTimeMs: result.totalProcessingTime
+      });
+    } catch (error) {
+      console.error("Error in complete refresh:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to complete refresh workflow",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Helper function to update import status
   global.updateImportStatus = (update: any) => {
     importStatus = { ...importStatus, ...update, lastUpdate: new Date() };
