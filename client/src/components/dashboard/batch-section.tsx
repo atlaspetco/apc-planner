@@ -67,6 +67,7 @@ export default function BatchSection({
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/operators"] });
       queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fulfil/current-production-orders"] });
       
       toast({
         title: "Success",
