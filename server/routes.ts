@@ -195,19 +195,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let syncedWorkOrders = 0;
       
+      console.log(`Processing ${fulfilData.orders.length} production orders from Fulfil`);
+      
       // Process each production order and its work orders
       for (const order of fulfilData.orders) {
-        // Find local production order by fulfilId
+        console.log(`Processing order ${order.moNumber} with ${order.work_orders?.length || 0} work orders`);
+        
+        // Find local production order by moNumber
         const localPO = await db
           .select()
           .from(productionOrders)
-          .where(eq(productionOrders.fulfilId, order.fulfilId || 0))
+          .where(eq(productionOrders.moNumber, order.moNumber))
           .limit(1);
         
         if (localPO.length === 0) {
-          console.log(`No local production order found for Fulfil ID: ${order.fulfilId}`);
+          console.log(`No local production order found for MO: ${order.moNumber}`);
           continue;
         }
+        
+        console.log(`Found local production order for ${order.moNumber}: ID ${localPO[0].id}`);
         
         const localProductionOrderId = localPO[0].id;
         
@@ -229,10 +235,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 operation: wo.operation,
                 routing: order.routingName || "Standard",
                 fulfilId: parseInt(wo.id),
+                quantityRequired: order.quantity || 100,
                 quantityDone: wo.quantity_done || 0,
                 status: wo.state === "request" ? "Pending" : wo.state,
                 sequence: 1, // Default sequence
                 estimatedHours: 8, // Default estimated hours
+                actualHours: null,
+                operatorId: null,
+                operatorName: null,
+                startTime: null,
+                endTime: null,
+                createdAt: new Date(),
                 // Store Fulfil field mapping
                 state: wo.state,
                 rec_name: `WO${wo.id}`,
