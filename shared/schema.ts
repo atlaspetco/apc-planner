@@ -64,7 +64,7 @@ export const workOrders = pgTable("work_orders", {
 export const operators = pgTable("operators", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  email: text("email"),
+  slackUserId: text("slack_user_id"), // Slack user ID for notifications
   availableHours: integer("available_hours").default(40),
   workCenters: text("work_centers").array(), // Array of work centers they're trained in
   routings: text("routings").array(), // Array of routings they know
@@ -73,6 +73,8 @@ export const operators = pgTable("operators", {
   lastActiveDate: timestamp("last_active_date"),
   uphCalculationWindow: integer("uph_calculation_window").default(30), // days
   fulfilId: integer("fulfil_id"), // Reference to Fulfil.io employee ID
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const uphData = pgTable("uph_data", {

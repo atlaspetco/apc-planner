@@ -265,7 +265,15 @@ export default function OperatorSettings() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>{selectedOperatorData.name}</CardTitle>
+                  <div>
+                    <CardTitle>{selectedOperatorData.name}</CardTitle>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Last updated: {selectedOperatorData.updatedAt 
+                        ? new Date(selectedOperatorData.updatedAt).toLocaleString()
+                        : 'Never'
+                      }
+                    </p>
+                  </div>
                   <div className="flex items-center space-x-2">
                     <CustomToggle
                       id="isActive"
@@ -289,13 +297,13 @@ export default function OperatorSettings() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="slackUserId">Slack User ID</Label>
                     <Input
-                      id="email"
-                      type="email"
-                      key={`email-${selectedOperatorData.id}`}
-                      defaultValue={selectedOperatorData.email || ""}
-                      onBlur={(e) => handleUpdateOperator({ email: e.target.value })}
+                      id="slackUserId"
+                      placeholder="e.g., U01234ABCDE"
+                      key={`slackUserId-${selectedOperatorData.id}`}
+                      defaultValue={selectedOperatorData.slackUserId || ""}
+                      onBlur={(e) => handleUpdateOperator({ slackUserId: e.target.value })}
                     />
                   </div>
                 </div>

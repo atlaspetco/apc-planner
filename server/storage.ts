@@ -488,7 +488,7 @@ export class DatabaseStorage implements IStorage {
   async updateOperator(id: number, updates: Partial<Operator>): Promise<Operator | undefined> {
     const [operator] = await db
       .update(operators)
-      .set(updates)
+      .set({ ...updates, updatedAt: new Date() })
       .where(eq(operators.id, id))
       .returning();
     return operator || undefined;
