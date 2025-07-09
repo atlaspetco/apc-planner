@@ -456,16 +456,21 @@ export class FulfilAPIService {
       const { state = 'done', limit = 500, offset = 0 } = options;
       const endpoint = `${this.baseUrl}/api/v2/model/production.work.cycle/search_read`;
       
-      const filters = state ? [['state', '=', state]] : [];
+      // Include work cycles with 'done' state OR null state (which appear to be completed cycles)
+      const filters = state === 'done' ? 
+        ['|', ['state', '=', 'done'], ['state', '=', null]] : 
+        state ? [['state', '=', state]] : [];
       
       const requestBody = {
         filters: filters,
         fields: [
           'id', 'rec_name', 'state', 'duration',
-          'operator.rec_name', 'work_center.rec_name'
+          'operator.rec_name', 'operator.write_date', 'work_center.rec_name',
+          'production.id', 'production.rec_name', 'create_date', 'write_date'
         ],
         limit: limit,
-        offset: offset
+        offset: offset,
+        order: [['write_date', 'DESC']]  // Get most recent work cycles first
       };
 
       console.log(`Fetching work cycles from: ${endpoint}`);
