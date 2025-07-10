@@ -214,6 +214,11 @@ export async function calculateUphFromFulfilFields() {
       if (totalHours > 0.01 && moGroup.observations >= 1 && moQuantity > 0) {
         const moUph = moQuantity / totalHours;
         
+        // Debug specific MO118610 processing
+        if (moGroup.moNumber === 'MO118610') {
+          console.log(`DEBUG MO118610: operator=${moGroup.operatorName}, workCenter=${moGroup.transformedWorkCenter}, routing=${moGroup.routing}, hours=${totalHours}, quantity=${moQuantity}, UPH=${moUph}`);
+        }
+        
         // Only include realistic UPH values for this MO
         if (moUph > 0 && moUph < 500) {
           const groupKey = `${moGroup.operatorName}|${moGroup.transformedWorkCenter}|${moGroup.routing}`;
