@@ -133,14 +133,14 @@ export default function Dashboard() {
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
             {fulfilResponse?.success ? 
-              `Fulfil API connection restored ✓ - Showing ${allProductionOrders?.length || 0} local production orders (API returned ${fulfilResponse?.productionOrders || 0} current orders)` : 
-              `Database mode - ${allProductionOrders?.length || 0} production orders loaded (Fulfil API: ${fulfilResponse?.message || 'checking...'})`}
+              `Fulfil API connection restored ✓ - Showing ${productionOrders?.length || 0} of ${allProductionOrders?.length || 0} production orders after filtering (API returned ${fulfilResponse?.productionOrders || 0} current orders)` : 
+              `Showing ${productionOrders?.length || 0} of ${allProductionOrders?.length || 0} production orders after status filtering (Database: assigned=${allProductionOrders?.filter(po => po.status === 'assigned').length || 0})`}
           </p>
         </div>
 
         {/* Main Planning Grid */}
         <PlanningGrid 
-          productionOrders={allProductionOrders || []}
+          productionOrders={productionOrders || []}
           isLoading={isLoadingPOs}
           selectedMOs={selectedMOs}
           onMOSelection={handleMOSelection}

@@ -388,10 +388,10 @@ export class DatabaseStorage implements IStorage {
     if (statusFilter && statusFilter.length > 0) {
       return db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
     } else if (excludeCompleted) {
-      // Show only active production statuses for planning dashboard
-      const activeStates = ['draft', 'waiting', 'assigned', 'running'];
+      // Exclude only completed/cancelled orders - show ALL other statuses for planning dashboard
+      const completedStates = ['done', 'cancelled', 'completed'];
       return db.select().from(productionOrders).where(
-        inArray(productionOrders.status, activeStates)
+        not(inArray(productionOrders.status, completedStates))
       );
     }
     
