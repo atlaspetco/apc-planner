@@ -2429,6 +2429,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fix UPH using correct formula: UPH = Work Order Quantity / Total Duration Hours
+  app.post("/api/uph/fix-correct-formula", async (req, res) => {
+    try {
+      const { fixUphCorrectFormula } = await import("./fix-uph-correct-formula.js");
+      const result = await fixUphCorrectFormula();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH with correct formula:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH with correct formula: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
   // Calculate UPH from existing work cycles data (no API calls needed)
   app.post("/api/uph/calculate-simple", async (req, res) => {
     try {
