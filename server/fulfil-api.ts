@@ -228,9 +228,125 @@ export class FulfilAPIService {
         routing: po.routing || {},
         create_date: po.create_date
       }));
+    } catch (error) {
+      console.error("Error fetching recent production orders:", error);
+      return [];
+    }
+  }
+
+  async fetchProductionOrders(limit: number = 1000, state?: string): Promise<FulfilProductionOrder[]> {
+    try {
+      if (!this.apiKey) return [];
+
+      // Use correct GET endpoint with state parameter as per API schema
+      let endpoint = `${this.baseUrl}/api/v2/model/production`;
+      
+      const params = new URLSearchParams();
+      params.append('per_page', limit.toString());
+      if (state) {
+        params.append('state', state);
+      }
+      
+      endpoint += `?${params.toString()}`;
+
+      console.log(`Fetching ${limit} production orders with state: ${state || 'all'} from: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: this.headers,
+        signal: AbortSignal.timeout(30000)
+      });
+
+      if (response.status !== 200) {
+        console.error(`Error fetching production orders: ${response.status} - ${await response.text()}`);
+        return [];
+      }
+
+      const productionOrders = await response.json();
+      console.log(`Fetched ${Array.isArray(productionOrders) ? productionOrders.length : 'unknown'} production orders`);
+      
+      if (!Array.isArray(productionOrders)) {
+        console.error("Unexpected response format:", productionOrders);
+        return [];
+      }
+
+      // Show a sample for debugging
+      if (productionOrders.length > 0) {
+        console.log("=== PRODUCTION ORDER SAMPLE ===");
+        console.log(JSON.stringify(productionOrders[0], null, 2));
+        console.log("=== END SAMPLE ===");
+      }
+
+      // Transform to expected format (API should already be filtered by state)
+      return productionOrders.map((po: any) => ({
+        id: po.id,
+        rec_name: po.rec_name || `MO${po.id}`,
+        state: po.state || 'unknown',
+        quantity: po.quantity || 0,
+        planned_date: po.planned_date,
+        'product.code': po['product.code'],
+        'routing.name': po['routing.name'],
+        product: po.product || {},
+        routing: po.routing || {},
+        create_date: po.create_date
+      }));
 
     } catch (error) {
-      console.error('Error fetching recent manufacturing orders:', error);
+      console.error("Error fetching production orders:", error);
+      return [];
+    }
+  }
+
+  async fetchWorkOrders(params: { production?: number } = {}): Promise<FulfilWorkOrder[]> {
+    try {
+      if (!this.apiKey) return [];
+
+      let endpoint = `${this.baseUrl}/api/v2/model/production.work`;
+      
+      const urlParams = new URLSearchParams();
+      urlParams.append('per_page', '100');
+      if (params.production) {
+        urlParams.append('production', params.production.toString());
+      }
+      
+      endpoint += `?${urlParams.toString()}`;
+
+      console.log(`Fetching work orders from: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: this.headers,
+        signal: AbortSignal.timeout(30000)
+      });
+
+      if (response.status !== 200) {
+        console.error(`Error fetching work orders: ${response.status} - ${await response.text()}`);
+        return [];
+      }
+
+      const workOrders = await response.json();
+      
+      if (!Array.isArray(workOrders)) {
+        console.error("Unexpected work orders response format:", workOrders);
+        return [];
+      }
+
+      return workOrders.map((wo: any) => ({
+        id: wo.id,
+        production: wo.production || params.production || 0,
+        rec_name: wo.rec_name || `WO${wo.id}`,
+        state: wo.state || 'unknown',
+        work_center: wo.work_center,
+        operation: wo.operation,
+        'work_center.name': wo['work_center.name'],
+        'operation.name': wo['operation.name'],
+        'operator.name': wo['operator.name'],
+        quantity_done: wo.quantity_done || 0,
+        planned_date: wo.planned_date,
+        create_date: wo.create_date
+      }));
+    } catch (error) {
+      console.error("Error fetching work orders:", error);
       return [];
     }
   }

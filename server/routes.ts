@@ -2808,17 +2808,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Import recent 500 work orders for testing calculation logic
+  // Import recent production orders from Fulfil
   app.post("/api/fulfil/import-recent", async (req: Request, res: Response) => {
     try {
-      const { importRecentFulfilData } = await import("./import-recent-data.js");
+      const { limit = 2500, state = "done" } = req.body;
       
-      console.log("Starting import of recent 500 work orders...");
-      const results = await importRecentFulfilData();
+      // Reset import status for progress tracking
+      global.updateImportStatus?.({
+        isImporting: true,
+        currentOperation: `Importing ${limit} recent ${state} production orders from Fulfil...`,
+        progress: 0,
+        totalItems: limit,
+        processedItems: 0,
+        errors: [],
+        lastError: null,
+        startTime: Date.now()
+      });
+
+      const { importRecentProductionOrders } = await import("./import-recent-fulfil.js");
       
-      res.json(results);
+      console.log(`Starting import of recent ${limit} ${state} production orders...`);
+      const results = await importRecentProductionOrders(limit, state, (current, total, message) => {
+        global.updateImportStatus?.({
+          isImporting: true,
+          currentOperation: message,
+          progress: Math.round((current / total) * 90) + 5,
+          totalItems: total,
+          processedItems: current
+        });
+      });
+      
+      // Complete progress
+      global.updateImportStatus?.({
+        isImporting: false,
+        currentOperation: 'Recent Fulfil import complete',
+        progress: 100,
+        processedItems: results.productionOrdersImported + results.workOrdersImported
+      });
+      
+      res.json({
+        success: true,
+        message: `Successfully imported ${results.productionOrdersImported} production orders and ${results.workOrdersImported} work orders`,
+        productionOrdersImported: results.productionOrdersImported,
+        workOrdersImported: results.workOrdersImported,
+        skipped: results.skipped,
+        errors: results.errors,
+        note: "Recent Fulfil import completed successfully"
+      });
     } catch (error) {
       console.error("Error importing recent Fulfil data:", error);
+      
+      global.updateImportStatus?.({
+        isImporting: false,
+        lastError: error instanceof Error ? error.message : "Unknown error"
+      });
+      
       res.status(500).json({
         success: false,
         message: "Failed to import recent Fulfil data",
