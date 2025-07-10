@@ -2957,17 +2957,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         progress: 10
       });
 
-      // Import CSV data using correct import function with progress tracking
-      const { correctCSVImport } = await import("./correct-csv-import.js");
-      const result = await correctCSVImport(csvData, (current, total, message) => {
-        global.updateImportStatus?.({
-          isImporting: true,
-          currentOperation: message,
-          progress: Math.round((current / total) * 90) + 10,
-          totalItems: total,
-          processedItems: current
-        });
-      });
+      // Process CSV data directly - simplified import for production orders
+      let productionOrdersImported = 0;
+      let workOrdersImported = 0;
+      const errors: string[] = [];
+      
+      for (let i = 0; i < csvData.length; i++) {
+        try {
+          const record = csvData[i];
+          
+          // Update progress
+          if (i % 100 === 0) {
+            global.updateImportStatus?.({
+              currentOperation: `Processing record ${i + 1} of ${csvData.length}`,
+              progress: Math.round((i / csvData.length) * 90) + 10,
+              processedItems: i
+            });
+          }
+          
+          // Skip empty records
+          if (!record.rec_name || !record.id) continue;
+          
+          // Create production order if it has MO number
+          if (record.rec_name && record.rec_name.includes('MO')) {
+            const moNumber = record.rec_name.match(/MO\d+/)?.[0];
+            if (moNumber && record.quantity_done) {
+              
+              // Insert into production_orders table
+              await db.execute(sql`
+                INSERT INTO production_orders (
+                  mo_number, product_name, routing, status, 
+                  quantity, due_date, fulfil_id, product_code
+                ) VALUES (
+                  ${moNumber},
+                  ${record.product_code || 'Unknown Product'},
+                  ${record['routing/rec_name'] || 'Unknown Routing'},
+                  'assigned',
+                  ${parseInt(record.quantity_done) || 0},
+                  ${record.planned_date || null},
+                  ${parseInt(record.id) || null},
+                  ${record.product_code || null}
+                )
+                ON CONFLICT (mo_number) DO UPDATE SET
+                  quantity = EXCLUDED.quantity,
+                  product_code = EXCLUDED.product_code,
+                  routing = EXCLUDED.routing
+              `);
+              
+              productionOrdersImported++;
+            }
+          }
+          
+        } catch (recordError) {
+          const errorMsg = `Record ${i}: ${recordError instanceof Error ? recordError.message : 'Unknown error'}`;
+          errors.push(errorMsg);
+          console.warn(errorMsg);
+        }
+      }
+      
+      const result = {
+        productionOrdersImported,
+        workOrdersImported,
+        errors
+      };
       
       // Complete progress
       global.updateImportStatus?.({
