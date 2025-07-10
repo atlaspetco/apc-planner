@@ -37,25 +37,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sort by newest first (highest ID = most recent in database)
       productionOrders = productionOrders.sort((a, b) => b.id - a.id);
       
-      // Quick routing enhancement without individual database queries
+      // Use authentic routing data from database - no synthetic mapping
       const enrichedOrders = productionOrders.map(po => {
-        let routingFromProductCode = null;
-        if (po.product_code) {
-          if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
-          else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
-          else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
-          else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
-          else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
-          else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
-          else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
-          else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
-          else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
-        }
-        
         return {
           ...po,
           productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
-          routingName: routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
+          routingName: po.routing // Use authentic routing from database
         };
       });
       
