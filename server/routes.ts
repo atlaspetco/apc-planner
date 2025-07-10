@@ -3327,10 +3327,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const { FulfilCurrentService } = await import("./fulfil-current.js");
-      const fulfilService = new FulfilCurrentService();
+      const { FulfilAPIService } = await import("./fulfil-api.js");
+      const fulfilAPI = new FulfilAPIService();
+      fulfilAPI.setApiKey(process.env.FULFIL_ACCESS_TOKEN);
+
+      // Test connection first  
+      const connectionTest = await fulfilAPI.testConnection();
+      if (!connectionTest.connected) {
+        return res.status(500).json({
+          success: false,
+          message: `Fulfil API connection failed: ${connectionTest.message}`
+        });
+      }
+
+      console.log("Fetching current production orders using working API service...");
       
-      const currentOrders = await fulfilService.getCurrentProductionOrders();
+      // Use the working method that was successful before UPH rebuild
+      const currentOrders = await fulfilAPI.getRecentManufacturingOrders(30, 200);
+      
+      console.log(`✓ Successfully fetched ${currentOrders.length} production orders from Fulfil API`);
       
       if (currentOrders.length === 0) {
         return res.json({

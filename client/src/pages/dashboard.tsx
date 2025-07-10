@@ -132,7 +132,9 @@ export default function Dashboard() {
         {/* Status Info */}
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
-            Latest database data - {allProductionOrders?.length || 0} production orders loaded (Fulfil API connectivity being resolved)
+            {fulfilResponse?.success ? 
+              `Fulfil API connection restored ✓ - Showing ${allProductionOrders?.length || 0} local production orders (API returned ${fulfilResponse?.productionOrders || 0} current orders)` : 
+              `Database mode - ${allProductionOrders?.length || 0} production orders loaded (Fulfil API: ${fulfilResponse?.message || 'checking...'})`}
           </p>
         </div>
 
