@@ -180,9 +180,9 @@ export async function calculateUphFromFulfilFields() {
         work_production_number as mo_number,
         MAX(work_cycles_quantity_done) as max_quantity
       FROM work_cycles 
-      WHERE work_cycles_quantity_done > 0
-        AND work_production_number IS NOT NULL
+      WHERE work_production_number IS NOT NULL
       GROUP BY work_production_number
+      HAVING MAX(work_cycles_quantity_done) > 0
     `);
     
     for (const row of quantityResult.rows) {
