@@ -45,7 +45,7 @@ export default function OperatorSettings() {
 
   // Get UPH data to identify which work centers and operations have actual data
   const { data: uphData, refetch: refetchUphData } = useQuery({
-    queryKey: ["/api/uph-data"],
+    queryKey: ["/api/uph/table-data"],
   });
 
   const handleRefresh = () => {
@@ -57,84 +57,77 @@ export default function OperatorSettings() {
 
   // Helper functions to determine auto-enabled settings based on UPH data
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
-    if (!uphData || !Array.isArray(uphData)) return [];
+    if (!uphData || !uphData.routings) return [];
+    
+    // Flatten all work center data from the table-data structure
+    const allWorkCenterRecords = uphData.routings.flatMap((routing: any) => 
+      routing.workCenters.flatMap((wc: any) => 
+        wc.operators.map((op: any) => ({
+          operatorName: op.operatorName,
+          workCenter: wc.workCenterName
+        }))
+      )
+    );
     
     // Find all work centers where this operator has UPH data
-    const operatorUphRecords = uphData.filter((record: any) => {
-      // Use correct field name from uph_data table
-      return record.operatorName === operatorName || 
-             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
-    });
+    const operatorWorkCenters = allWorkCenterRecords
+      .filter((record: any) => record.operatorName === operatorName)
+      .map((record: any) => record.workCenter);
     
-    // Get work centers and split combined ones like "Sewing / Assembly"
-    const allWorkCenters = operatorUphRecords.flatMap((record: any) => {
-      const workCenter = record.workCenter;
-      if (!workCenter || workCenter === 'Unknown') return [];
-      
-      // Split combined work centers like "Sewing / Assembly" into separate centers
-      if (workCenter.includes(' / ')) {
-        return workCenter.split(' / ').map((wc: string) => wc.trim());
-      }
-      return [workCenter];
-    });
-    
-    return [...new Set(allWorkCenters)];
+    return [...new Set(operatorWorkCenters)];
   };
 
   const getOperatorOperationsWithData = (operatorName: string): string[] => {
-    if (!uphData || !Array.isArray(uphData)) return [];
+    if (!uphData || !uphData.routings) return [];
     
-    // Find all operations where this operator has UPH data
-    const operatorUphRecords = uphData.filter((record: any) => {
-      return record.operatorName === operatorName || 
-             (selectedOperatorData && record.operatorId === selectedOperatorData.id);
-    });
+    // Since operations aren't directly tracked in historical UPH data,
+    // we'll derive them from work centers that have data
+    const operatorWorkCenters = getOperatorWorkCentersWithData(operatorName);
     
-    // Extract individual operations from the operation field
-    const allOperations = operatorUphRecords.flatMap((record: any) => {
-      if (!record.operation) return [];
-      
-      // Handle operations like "Sewing / Assembly Operations" -> extract base operations
-      const operation = record.operation.replace(' Operations', '');
-      if (operation.includes(' / ')) {
-        return operation.split(' / ').map((op: string) => op.trim());
-      }
-      return [operation];
-    });
+    // Map work centers to their typical operations
+    const workCenterOperations: { [key: string]: string[] } = {
+      'Assembly': ['Assembly', 'Sewing', 'Rope Assembly'],
+      'Cutting': ['Cutting', 'Laser Cutting', 'Fabric Cutting', 'Webbing Cutting'],
+      'Packaging': ['Packaging', 'Final Assembly', 'Quality Check']
+    };
     
-    return [...new Set(allOperations.filter(op => op && op !== 'Unknown'))];
+    const allOperations = operatorWorkCenters.flatMap(wc => 
+      workCenterOperations[wc] || [wc]
+    );
+    
+    return [...new Set(allOperations)];
   };
 
   const getOperatorRoutingsWithData = (operatorName: string): string[] => {
-    if (!uphData || !Array.isArray(uphData)) {
-      console.log("Debug: uphData is empty or not array:", uphData);
+    if (!uphData || !uphData.routings) {
+      console.log("Debug: uphData is empty or missing routings:", uphData);
       return [];
     }
     
     console.log("Debug: Searching for operator:", operatorName);
-    console.log("Debug: Total UPH records:", uphData.length);
+    console.log("Debug: Total UPH records:", uphData.routings?.length);
     
     // Find all routings where this operator has UPH data
-    const operatorUphRecords = uphData.filter((record: any) => {
-      const nameMatch = record.operatorName === operatorName;
-      const idMatch = selectedOperatorData && record.operatorId === selectedOperatorData.id;
+    const operatorRoutings: string[] = [];
+    
+    uphData.routings.forEach((routing: any) => {
+      const hasOperatorData = routing.workCenters.some((wc: any) =>
+        wc.operators.some((op: any) => op.operatorName === operatorName)
+      );
       
-      if (nameMatch || idMatch) {
+      if (hasOperatorData) {
+        operatorRoutings.push(routing.routingName);
         console.log("Debug: Found matching record:", {
-          operatorName: record.operatorName,
-          operatorId: record.operatorId,
-          routing: record.routing,
-          workCenter: record.workCenter
+          operatorName: operatorName,
+          operatorId: selectedOperatorData?.id,
+          routing: routing.routingName,
+          workCenter: routing.workCenters.map((wc: any) => wc.workCenterName).join(', ')
         });
       }
-      
-      return nameMatch || idMatch;
     });
     
-    const routings = [...new Set(operatorUphRecords.map((record: any) => record.routing).filter(r => r && r !== 'Unknown'))];
-    console.log("Debug: Final routings found:", routings);
-    
-    return routings;
+    console.log("Debug: Final routings found:", operatorRoutings);
+    return operatorRoutings;
   };
 
   const updateOperatorMutation = useMutation({
