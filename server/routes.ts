@@ -2808,6 +2808,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Import work orders (and extract production orders) from Fulfil - more efficient approach
+  app.post("/api/fulfil/import-work-orders", async (req: Request, res: Response) => {
+    try {
+      const { limit = 1000, state = "done" } = req.body;
+      
+      // Reset import status for progress tracking
+      global.updateImportStatus?.({
+        isImporting: true,
+        currentOperation: `Importing ${limit} ${state} work orders from Fulfil...`,
+        progress: 0,
+        totalItems: limit,
+        processedItems: 0,
+        errors: [],
+        lastError: null,
+        startTime: Date.now()
+      });
+
+      const { importWorkOrdersFromFulfil } = await import("./import-work-orders-fulfil.js");
+      
+      console.log(`Starting import of ${limit} ${state} work orders...`);
+      const results = await importWorkOrdersFromFulfil(limit, state, (current, total, message) => {
+        global.updateImportStatus?.({
+          isImporting: true,
+          currentOperation: message,
+          progress: Math.round((current / total) * 90) + 5,
+          totalItems: total,
+          processedItems: current
+        });
+      });
+      
+      // Complete progress
+      global.updateImportStatus?.({
+        isImporting: false,
+        currentOperation: 'Work orders import complete',
+        progress: 100,
+        processedItems: results.productionOrdersImported + results.workOrdersImported
+      });
+      
+      res.json({
+        success: true,
+        message: `Successfully imported ${results.productionOrdersImported} production orders and ${results.workOrdersImported} work orders from work orders endpoint`,
+        productionOrdersImported: results.productionOrdersImported,
+        workOrdersImported: results.workOrdersImported,
+        skipped: results.skipped,
+        errors: results.errors,
+        note: "Work orders import completed successfully"
+      });
+    } catch (error) {
+      console.error("Error importing work orders from Fulfil:", error);
+      
+      global.updateImportStatus?.({
+        isImporting: false,
+        lastError: error instanceof Error ? error.message : "Unknown error"
+      });
+      
+      res.status(500).json({
+        success: false,
+        message: "Failed to import work orders from Fulfil",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Import recent production orders from Fulfil
   app.post("/api/fulfil/import-recent", async (req: Request, res: Response) => {
     try {
