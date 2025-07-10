@@ -29,87 +29,167 @@ export async function calculateCorrectedUPH(): Promise<{
   console.log('Starting UPH calculation without filtering...');
   
   try {
-    // Get all work cycles data with only basic requirement checks
+    // Get all work cycles data with valid duration (include both production and setup cycles)
     const rawCycles = await db
       .select()
       .from(workCycles)
       .where(
         and(
           gt(workCycles.work_cycles_duration, 0), // Must have duration > 0
-          gt(workCycles.work_cycles_quantity_done, 0) // Must have quantity done
+          // Note: NOT filtering by quantity here - we need all cycles for proper MO aggregation
         )
       );
 
     console.log(`Found ${rawCycles.length} work cycles with valid duration and quantity`);
 
-    // Group cycles by operator, work center, and routing (NOT by operation)
-    // This will aggregate all operations within the same work center
-    const groupedCycles = new Map<string, {
+    // Step 1: Aggregate cycles by MO + Operation first to handle one-to-many relationship
+    const moOperationAggregates = new Map<string, {
       operator: string;
       workCenter: string;
       productRouting: string;
-      operations: Set<string>;
-      cycles: typeof rawCycles;
+      moNumber: string;
+      operation: string;
+      totalQuantity: number;
+      totalDuration: number;
+      cycleCount: number;
     }>();
 
     for (const cycle of rawCycles) {
-      // Skip cycles with missing critical data first
+      // Skip cycles with missing critical data
       if (!cycle.work_cycles_operator_rec_name || 
           !cycle.work_production_routing_rec_name || 
-          !cycle.work_operation_rec_name) {
+          !cycle.work_operation_rec_name ||
+          !cycle.work_production_number) {
         continue;
       }
 
-      // Clean up work center names (consolidate variations)
+      // Clean up work center names
       let workCenter = cycle.work_cycles_work_center_rec_name || 'Unknown';
       if (workCenter.includes('Assembly')) workCenter = 'Assembly';
       else if (workCenter.includes('Cutting')) workCenter = 'Cutting';
       else if (workCenter.includes('Packaging')) workCenter = 'Packaging';
-      else if (workCenter.includes('Sewing')) workCenter = 'Assembly'; // Sewing is Assembly
+      else if (workCenter.includes('Sewing')) workCenter = 'Assembly';
 
-      // Key by operator + work center + routing (aggregate all operations within work center)
-      const key = `${cycle.work_cycles_operator_rec_name}|${workCenter}|${cycle.work_production_routing_rec_name}`;
+      const key = `${cycle.work_cycles_operator_rec_name}|${workCenter}|${cycle.work_production_routing_rec_name}|${cycle.work_production_number}|${cycle.work_operation_rec_name}`;
       
-      if (!groupedCycles.has(key)) {
-        groupedCycles.set(key, {
+      if (!moOperationAggregates.has(key)) {
+        moOperationAggregates.set(key, {
           operator: cycle.work_cycles_operator_rec_name,
           workCenter,
           productRouting: cycle.work_production_routing_rec_name,
-          operations: new Set(),
-          cycles: []
+          moNumber: cycle.work_production_number,
+          operation: cycle.work_operation_rec_name,
+          totalQuantity: 0,
+          totalDuration: 0,
+          cycleCount: 0
         });
       }
       
-      groupedCycles.get(key)!.operations.add(cycle.work_operation_rec_name);
-      groupedCycles.get(key)!.cycles.push(cycle);
+      const aggregate = moOperationAggregates.get(key)!;
+      aggregate.totalQuantity += cycle.work_cycles_quantity_done;
+      aggregate.totalDuration += cycle.work_cycles_duration;
+      aggregate.cycleCount++;
     }
 
-    console.log(`Grouped into ${groupedCycles.size} operator/work center/routing combinations`);
+    console.log(`Aggregated ${moOperationAggregates.size} MO+Operation combinations`);
 
-    // Calculate UPH for each group using all cycles (aggregated by work center)
+    // Step 2: Group by operator + work center + routing, but only include operations with actual production
+    const groupedResults = new Map<string, {
+      operator: string;
+      workCenter: string;
+      productRouting: string;
+      operations: Set<string>;
+      totalQuantity: number;
+      totalDuration: number;
+      cycleCount: number;
+    }>();
+
+    // Step 3: Now aggregate by MO to get the actual produced quantity vs total time per MO
+    const moResults = new Map<string, {
+      operator: string;
+      workCenter: string;
+      productRouting: string;
+      moNumber: string;
+      operations: Set<string>;
+      totalQuantity: number;
+      totalDuration: number;
+      cycleCount: number;
+    }>();
+
+    for (const [key, aggregate] of moOperationAggregates) {
+      const moKey = `${aggregate.operator}|${aggregate.workCenter}|${aggregate.productRouting}|${aggregate.moNumber}`;
+      
+      if (!moResults.has(moKey)) {
+        moResults.set(moKey, {
+          operator: aggregate.operator,
+          workCenter: aggregate.workCenter,
+          productRouting: aggregate.productRouting,
+          moNumber: aggregate.moNumber,
+          operations: new Set(),
+          totalQuantity: 0,
+          totalDuration: 0,
+          cycleCount: 0
+        });
+      }
+      
+      const moResult = moResults.get(moKey)!;
+      moResult.operations.add(aggregate.operation);
+      moResult.totalQuantity += aggregate.totalQuantity; // Sum all quantities for this MO
+      moResult.totalDuration += aggregate.totalDuration; // Sum ALL time (including setup)
+      moResult.cycleCount += aggregate.cycleCount;
+    }
+
+    console.log(`Aggregated ${moResults.size} MO-level results`);
+
+    // Step 4: Group by operator + work center + routing across all MOs
+    for (const [key, moResult] of moResults) {
+      // Only include MOs that actually produced units
+      if (moResult.totalQuantity === 0) continue;
+
+      const groupKey = `${moResult.operator}|${moResult.workCenter}|${moResult.productRouting}`;
+      
+      if (!groupedResults.has(groupKey)) {
+        groupedResults.set(groupKey, {
+          operator: moResult.operator,
+          workCenter: moResult.workCenter,
+          productRouting: moResult.productRouting,
+          operations: new Set(),
+          totalQuantity: 0,
+          totalDuration: 0,
+          cycleCount: 0
+        });
+      }
+      
+      const group = groupedResults.get(groupKey)!;
+      moResult.operations.forEach(op => group.operations.add(op));
+      group.totalQuantity += moResult.totalQuantity;
+      group.totalDuration += moResult.totalDuration;
+      group.cycleCount += moResult.cycleCount;
+    }
+
+    console.log(`Grouped into ${groupedResults.size} operator/work center/routing combinations`);
+
+    // Calculate UPH for each group using properly aggregated MO data
     const results: UPHCalculationResult[] = [];
     let totalFiltered = 0; // No filtering, so this will be 0
 
-    for (const [key, group] of groupedCycles) {
-      if (group.cycles.length === 0) continue;
+    for (const [key, group] of groupedResults) {
+      if (group.cycleCount === 0) continue;
 
-      // Sum ALL durations and quantities across all operations within this work center
-      const totalDurationSeconds = group.cycles.reduce((sum, cycle) => sum + cycle.work_cycles_duration, 0);
-      const totalQuantity = group.cycles.reduce((sum, cycle) => sum + cycle.work_cycles_quantity_done, 0);
-      const totalDurationHours = totalDurationSeconds / 3600;
-      const uph = totalQuantity / totalDurationHours;
+      const totalDurationHours = group.totalDuration / 3600;
+      const uph = group.totalQuantity / totalDurationHours;
 
       results.push({
         operator: group.operator,
         workCenter: group.workCenter,
         productRouting: group.productRouting,
         operations: Array.from(group.operations).sort(), // All operations aggregated
-        cycleCount: group.cycles.length,
-        totalDurationSeconds,
+        cycleCount: group.cycleCount,
+        totalDurationSeconds: group.totalDuration,
         totalDurationHours,
-        totalQuantity,
+        totalQuantity: group.totalQuantity,
         uph,
-        validCycles: group.cycles.length, // All cycles are considered valid
+        validCycles: group.cycleCount,
         filteredCycles: 0 // No filtering applied
       });
     }
