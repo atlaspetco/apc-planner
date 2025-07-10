@@ -251,11 +251,13 @@ export class FulfilAPIService {
     try {
       if (!this.apiKey) return { productionOrders: [], workOrders: [] };
 
-      // Use production.work GET endpoint that works
+      // Use production.work GET endpoint with state filtering for active work orders
       let endpoint = `${this.baseUrl}/api/v2/model/production.work`;
       
       const params = new URLSearchParams();
       params.append('per_page', limit.toString());
+      // Filter for active work order states only (not completed work cycles)
+      params.append('state', 'request,draft,waiting,assigned,running');
       if (offset > 0) {
         params.append('page', Math.floor(offset / limit + 1).toString());
       }

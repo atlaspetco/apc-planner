@@ -257,7 +257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 productionOrderId: localProductionOrderId,
                 workCenter: wo.work_center,
                 operation: wo.operation,
-                routing: order.routingName || "Standard",
+                routing: order.routingName || null, // Don't default to "Standard"
                 fulfilId: parseInt(wo.id),
                 quantityRequired: order.quantity || 100,
                 quantityDone: wo.quantity_done || 0,
@@ -286,7 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 .set({
                   workCenter: wo.work_center,
                   operation: wo.operation,
-                  routing: order.routingName || "Standard",
+                  routing: order.routingName || null, // Don't default to "Standard"
                   quantityDone: wo.quantity_done || 0,
                   status: wo.state === "request" ? "Pending" : wo.state,
                   state: wo.state,
@@ -390,12 +390,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     productionOrderId: localPO[0].id,
                     workCenter: fulfilWorkOrder.work_center,
                     operation: fulfilWorkOrder.operation,
-                    routing: order.routingName || "Standard",
+                    routing: order.routingName || null, // Don't default to "Standard"
                     fulfilId: parseInt(fulfilWorkOrder.id),
                     quantityDone: fulfilWorkOrder.quantity_done || 0,
                     status: fulfilWorkOrder.state === "request" ? "Pending" : fulfilWorkOrder.state,
                     sequence: 1,
-                    estimatedHours: 8,
+                    estimatedHours: null, // Only use actual data from Fulfil, never estimate
                     state: fulfilWorkOrder.state,
                     rec_name: `WO${fulfilWorkOrder.id}`,
                     workCenterName: fulfilWorkOrder.work_center,
