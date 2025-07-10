@@ -2957,9 +2957,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         progress: 10
       });
 
-      // Import CSV data using final import function with progress tracking
-      const { importWorkCyclesFinal } = await import("./csv-import-final.js");
-      const result = await importWorkCyclesFinal(csvData, (current, total, message) => {
+      // Import CSV data using production orders import function with progress tracking
+      const { importProductionOrdersFromCSV } = await import("./production-orders-csv-import.js");
+      const result = await importProductionOrdersFromCSV(csvData, (current, total, message) => {
         global.updateImportStatus?.({
           isImporting: true,
           currentOperation: message,
@@ -2979,9 +2979,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         success: true,
-        message: `Successfully imported ${result.imported} work cycles, skipped ${result.skipped}`,
-        productionOrdersImported: 0,
-        workOrdersImported: result.imported,
+        message: `Successfully imported ${result.productionOrdersImported} production orders and ${result.workOrdersImported} work orders, skipped ${result.skipped}`,
+        productionOrdersImported: result.productionOrdersImported,
+        workOrdersImported: result.workOrdersImported,
         operationsCreated: 0,
         workCentersCreated: 0,
         uphCalculationsGenerated: 0,
