@@ -29,6 +29,7 @@ export async function calculateWorkOrderUPH(): Promise<{
     // Use raw SQL to replicate the successful query logic
     const rawResults = await db.execute(sql`
       SELECT 
+        wc.work_id,
         wc.work_cycles_operator_rec_name as operator,
         wc.work_cycles_work_center_rec_name as work_center,
         wc.work_production_routing_rec_name as routing,
@@ -45,7 +46,48 @@ export async function calculateWorkOrderUPH(): Promise<{
 
     console.log(`Found ${rawResults.rows.length} valid work order + cycle combinations`);
 
-    // Group by operator + work center + routing for UPH calculation
+    // First aggregate by work order to get correct quantities and total time per work order
+    const workOrderAggregates = new Map<string, {
+      operator: string;
+      workCenter: string;
+      productRouting: string;
+      operation: string;
+      quantity: number;
+      totalDuration: number;
+      moNumber: string;
+    }>();
+
+    for (const row of rawResults.rows) {
+      const operator = row.operator as string;
+      const workCenter = row.work_center as string;
+      const routing = row.routing as string;
+      const operation = row.operation as string;
+      const quantity = Number(row.quantity_done);
+      const duration = Number(row.work_cycles_duration);
+      const moNumber = row.mo_number as string;
+
+      // Key by work_id to aggregate cycles per work order
+      const workOrderKey = `${row.work_id}|${operator}|${workCenter}|${routing}|${operation}|${moNumber}`;
+      
+      if (!workOrderAggregates.has(workOrderKey)) {
+        workOrderAggregates.set(workOrderKey, {
+          operator,
+          workCenter,
+          productRouting: routing,
+          operation,
+          quantity, // Work order quantity (same for all cycles of this work order)
+          totalDuration: 0,
+          moNumber
+        });
+      }
+      
+      const aggregate = workOrderAggregates.get(workOrderKey)!;
+      aggregate.totalDuration += duration; // Sum cycle durations for this work order
+    }
+
+    console.log(`Aggregated ${workOrderAggregates.size} individual work orders`);
+
+    // Now group by operator + work center + routing for final UPH calculation
     const groupedResults = new Map<string, {
       operator: string;
       workCenter: string;
@@ -56,21 +98,16 @@ export async function calculateWorkOrderUPH(): Promise<{
       workOrderCount: number;
     }>();
 
-    for (const row of rawResults.rows) {
-      const operator = row.operator as string;
-      const workCenter = row.work_center as string;
-      const routing = row.routing as string;
-      const operation = row.operation as string;
-      const quantity = Number(row.quantity_done);
-      const duration = Number(row.work_cycles_duration);
-
-      const groupKey = `${operator}|${workCenter}|${routing}`;
+    for (const [workOrderKey, aggregate] of workOrderAggregates) {
+      const groupKey = `${aggregate.operator}|${aggregate.workCenter}|${aggregate.productRouting}`;
+      
+      console.log(`Work order: ${aggregate.moNumber} - ${aggregate.quantity} units in ${(aggregate.totalDuration/3600).toFixed(2)} hours = ${(aggregate.quantity / (aggregate.totalDuration/3600)).toFixed(2)} UPH`);
       
       if (!groupedResults.has(groupKey)) {
         groupedResults.set(groupKey, {
-          operator,
-          workCenter,
-          productRouting: routing,
+          operator: aggregate.operator,
+          workCenter: aggregate.workCenter,
+          productRouting: aggregate.productRouting,
           operations: new Set(),
           totalQuantity: 0,
           totalDuration: 0,
@@ -79,9 +116,9 @@ export async function calculateWorkOrderUPH(): Promise<{
       }
       
       const group = groupedResults.get(groupKey)!;
-      group.operations.add(operation);
-      group.totalQuantity += quantity;
-      group.totalDuration += duration;
+      group.operations.add(aggregate.operation);
+      group.totalQuantity += aggregate.quantity;
+      group.totalDuration += aggregate.totalDuration;
       group.workOrderCount++;
     }
 
