@@ -580,7 +580,7 @@ export class FulfilAPIService {
       const requestBody = {
         filters: filters,
         fields: [
-          'id', 'rec_name', 'state', 'duration', 'write_date'
+          'id', 'rec_name', 'state', 'duration', 'quantity_done', 'write_date'
         ],
         limit: limit,
         offset: offset,
@@ -624,7 +624,7 @@ export class FulfilAPIService {
       return data.map((cycle: any) => {
         // Parse duration from Fulfil's timedelta format
         let duration = 0;
-        const durationField = cycle['work/cycles/duration'];
+        const durationField = cycle.duration || cycle['duration'];
         if (durationField) {
           if (typeof durationField === 'number') {
             duration = durationField;
@@ -633,6 +633,13 @@ export class FulfilAPIService {
           } else if (typeof durationField === 'string') {
             duration = parseFloat(durationField);
           }
+        }
+
+        // Parse quantity_done from the cycle data
+        let quantityDone = 0;
+        const quantityField = cycle.quantity_done || cycle['quantity_done'];
+        if (quantityField !== null && quantityField !== undefined) {
+          quantityDone = Number(quantityField) || 0;
         }
 
         // Parse operator and work center from rec_name (e.g., "Assembly - Rope | Evan Crosby | Rope")
@@ -646,6 +653,7 @@ export class FulfilAPIService {
           rec_name: cycle.rec_name || `Cycle ${cycle.id}`,
           state: cycle.state || 'unknown',
           duration: duration,
+          quantity_done: quantityDone,
           operator: operatorName ? { 
             rec_name: operatorName,
             write_date: cycle.write_date 

@@ -166,6 +166,7 @@ export class FulfilUphWorkflow {
           work_cycles_operator_rec_name: operatorName,
           work_cycles_work_center_rec_name: workCenterName,
           work_cycles_duration: parsedDuration,
+          work_cycles_quantity_done: cycle.quantity_done || 0, // Add the critical quantity field
           work_production_id: null, // Will be populated later if needed
           work_cycles_rec_name: cycle.rec_name || `Work Cycle ${cycleId}`,
           work_cycles_operator_write_date: parsedWriteDate,
@@ -220,7 +221,7 @@ export class FulfilUphWorkflow {
 
     try {
       // Query aggregated data using SQL for efficiency
-      // Use fallback routing for historical work cycles that don't have production order data
+      // Use authentic quantity_done from work cycles and include ALL manufacturing time (setup + production)
       const aggregatedData = await db.execute(sql`
         SELECT 
           CASE 
@@ -238,13 +239,11 @@ export class FulfilUphWorkflow {
           ) as routing,
           wc.work_cycles_operator_rec_name as operator,
           SUM(wc.work_cycles_duration) as total_duration_seconds,
-          COUNT(wc.work_cycles_id) * 10 as total_quantity,
+          SUM(wc.work_cycles_quantity_done) as total_quantity,
           COUNT(wc.work_cycles_id) as cycle_count
         FROM ${workCycles} wc
         LEFT JOIN ${productionOrders} po ON wc.work_production_id = po.fulfil_id
-        WHERE wc.work_cycles_duration > 120
-          AND wc.work_cycles_duration < 28800
-          AND wc.work_cycles_operator_rec_name != 'Unknown'
+        WHERE wc.work_cycles_operator_rec_name != 'Unknown'
           AND wc.work_cycles_work_center_rec_name != 'Unknown'
         GROUP BY 
           CASE 
@@ -261,8 +260,8 @@ export class FulfilUphWorkflow {
             END
           ),
           wc.work_cycles_operator_rec_name
-        HAVING COUNT(wc.work_cycles_id) >= 3
-        ORDER BY total_duration_seconds DESC
+        HAVING SUM(wc.work_cycles_quantity_done) > 0
+        ORDER BY total_quantity DESC
       `);
 
       const results = aggregatedData.rows.map(row => ({
