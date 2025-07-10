@@ -40,9 +40,9 @@ export async function calculateUphFromFulfilFields() {
 
   try {
     // Query using exact Fulfil API field paths from production.work/cycles endpoint
-    // CRITICAL: Remove duplicates and filter out zero quantities that skew UPH calculations
+    // Query all work cycles including zero quantities - let's see what we actually have
     const cyclesResult = await db.execute(sql`
-      SELECT DISTINCT
+      SELECT
         work_cycles_operator_rec_name as operator_name,
         work_operation_rec_name as operation_name,
         work_cycles_duration as duration,
@@ -58,13 +58,22 @@ export async function calculateUphFromFulfilFields() {
         AND work_cycles_operator_rec_name != ''
         AND work_cycles_work_center_rec_name IS NOT NULL
         AND work_cycles_duration > 0
-        AND work_cycles_quantity_done > 0
         AND work_production_routing_rec_name IS NOT NULL
       ORDER BY work_production_number, work_id, work_cycles_id
     `);
     
     const cycles = cyclesResult.rows;
     console.log(`Found ${cycles.length} complete work cycles with authentic Fulfil field mapping`);
+    
+    // DEBUG: Check if MO118610 is in the results
+    const mo118610Cycles = cycles.filter(c => c.production_order_number?.toString() === 'MO118610');
+    console.log(`DEBUG: Found ${mo118610Cycles.length} cycles for MO118610:`, mo118610Cycles.map(c => ({
+      operator: c.operator_name,
+      workCenter: c.work_center_name,
+      duration: c.duration,
+      quantity: c.quantity_done,
+      workOrderId: c.work_order_id
+    })));
 
     // STEP 1: First aggregate by Work Order ID to handle one-to-many cycles per WO
     const workOrderGroups = new Map<string, {
@@ -113,6 +122,11 @@ export async function calculateUphFromFulfilFields() {
 
       const group = workOrderGroups.get(key)!;
       group.totalDuration += duration;
+      
+      // DEBUG: Log MO118610 cycles being processed
+      if (moNumber === 'MO118610') {
+        console.log(`DEBUG MO118610 ${operatorName}: Adding cycle ${duration}s (qty: ${cycle.quantity_done}) - Total so far: ${group.totalDuration}s`);
+      }
       group.cycleCount += 1;
       
       // Track latest update timestamp
