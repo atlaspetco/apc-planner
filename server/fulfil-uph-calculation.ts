@@ -4,7 +4,7 @@
  */
 
 import { db } from "./db.js";
-import { workCycles, historicalUph } from "../shared/schema.js";
+import { workCycles, historicalUph, operators } from "../shared/schema.js";
 import { sql } from "drizzle-orm";
 
 /**
@@ -166,18 +166,31 @@ export async function calculateUphFromFulfilFields() {
 
     console.log(`Calculated ${uphCalculations.length} realistic UPH values using authentic Fulfil field mapping`);
     
+    // Get operator name to ID mapping
+    const operatorResults = await db.select({
+      id: operators.id,
+      name: operators.name
+    }).from(operators);
+    
+    const operatorNameToId = new Map<string, number>();
+    operatorResults.forEach(op => {
+      operatorNameToId.set(op.name, op.id);
+    });
+    
     // Clear existing historical UPH data and insert new calculations
     await db.execute(sql`DELETE FROM historical_uph`);
     
-    // Insert new UPH calculations
+    // Insert new UPH calculations with proper operator ID mapping
     for (const calc of uphCalculations) {
+      const operatorId = operatorNameToId.get(calc.operator) || null;
+      
       await db.execute(sql`
         INSERT INTO historical_uph (
-          operator, work_center, routing, operation, 
+          operator_id, operator, work_center, routing, operation, 
           total_quantity, total_hours, units_per_hour, 
           observations, data_source, last_calculated
         ) VALUES (
-          ${calc.operator}, ${calc.workCenter}, ${calc.routing}, ${calc.operation},
+          ${operatorId}, ${calc.operator}, ${calc.workCenter}, ${calc.routing}, ${calc.operation},
           ${calc.totalQuantity}, ${calc.totalHours}, ${calc.unitsPerHour},
           ${calc.observations}, ${calc.dataSource}, ${new Date().toISOString()}
         )
