@@ -39,11 +39,13 @@ export async function importWorkOrdersFromFulfil(
     
     progressCallback?.(0, limit, "Fetching work orders from Fulfil...");
     
-    // Fetch work orders using production.work endpoint with state filter
+    // Fetch work orders using production.work endpoint with all needed fields
     const endpoint = `https://apc.fulfil.io/api/v2/model/production.work`;
     const params = new URLSearchParams();
     params.append('per_page', limit.toString());
     params.append('state', state);
+    // Request basic fields that are accessible for UPH calculations
+    params.append('fields', 'id,rec_name,production,state,quantity_done,planned_date');
     
     const response = await fetch(`${endpoint}?${params.toString()}`, {
       method: 'GET',
@@ -58,10 +60,18 @@ export async function importWorkOrdersFromFulfil(
       throw new Error(`Failed to fetch work orders: ${response.status} - ${await response.text()}`);
     }
 
-    const workOrdersData = await response.json();
+    const responseText = await response.text();
+    console.log(`Raw API response: ${responseText.substring(0, 500)}...`);
+    
+    let workOrdersData;
+    try {
+      workOrdersData = JSON.parse(responseText);
+    } catch (err) {
+      throw new Error(`Failed to parse JSON response: ${err}`);
+    }
     
     if (!Array.isArray(workOrdersData) || workOrdersData.length === 0) {
-      console.log(`No ${state} work orders found in Fulfil`);
+      console.log(`No ${state} work orders found in Fulfil. Response type: ${typeof workOrdersData}, Array: ${Array.isArray(workOrdersData)}, Length: ${workOrdersData?.length}`);
       return { productionOrdersImported: 0, workOrdersImported: 0, skipped: 0, errors: [] };
     }
     
@@ -76,7 +86,19 @@ export async function importWorkOrdersFromFulfil(
         progressCallback?.(i, workOrdersData.length, `Processing work order ${i + 1}/${workOrdersData.length}`);
         
         // Extract production order ID from the work order
-        const productionId = woData.production;
+        // Try direct production field first, then extract from rec_name
+        let productionId = woData.production;
+        let moNumber = null;
+        
+        if (!productionId && woData.rec_name) {
+          // Extract MO number from rec_name format: "WO285 | Sewing - LH | MO5428"
+          const parts = woData.rec_name.split(' | ');
+          if (parts.length >= 3) {
+            moNumber = parts[2]; // "MO5428"
+            // Extract numeric ID from MO number
+            productionId = parseInt(moNumber.replace('MO', ''));
+          }
+        }
         
         if (productionId && !productionOrdersMap.has(productionId)) {
           // Check if production order already exists in database
@@ -87,10 +109,10 @@ export async function importWorkOrdersFromFulfil(
           
           if (existingPO.length === 0) {
             // Create production order from work order data
-            const moNumber = `MO${productionId}`;
+            const finalMoNumber = moNumber || `MO${productionId}`;
             
             const [newPO] = await db.insert(productionOrders).values({
-              moNumber: moNumber,
+              moNumber: finalMoNumber,
               productName: `Product ${productionId}`,
               quantity: woData.quantity_done || 0,
               status: 'done',
@@ -98,7 +120,7 @@ export async function importWorkOrdersFromFulfil(
               dueDate: woData.planned_date || null,
               priority: "Medium",
               fulfilId: productionId,
-              rec_name: moNumber
+              rec_name: finalMoNumber
             }).returning({ id: productionOrders.id });
             
             productionOrdersMap.set(productionId, newPO.id);
@@ -119,12 +141,13 @@ export async function importWorkOrdersFromFulfil(
           continue;
         }
         
-        // Extract work center and operation from rec_name
-        // Format: "WO285 | Sewing - LH | MO5428"
-        let workCenter = 'Unknown';
-        let operation = 'Unknown';
+        // Extract work center and operation from multiple sources
+        let workCenter = woData['work_center.name'] || 'Unknown';
+        let operation = woData['operation.name'] || 'Unknown';
+        let operator = null; // Employee field not accessible via API
         
-        if (woData.rec_name && typeof woData.rec_name === 'string') {
+        // If direct fields not available, extract from rec_name
+        if (workCenter === 'Unknown' && woData.rec_name && typeof woData.rec_name === 'string') {
           const parts = woData.rec_name.split(' | ');
           if (parts.length >= 2) {
             const operationPart = parts[1]; // "Sewing - LH"
@@ -138,19 +161,21 @@ export async function importWorkOrdersFromFulfil(
         const productionOrderId = productionOrdersMap.get(productionId);
         
         if (productionOrderId) {
-          // Insert work order
+          // Insert work order with all required fields
           await db.insert(workOrders).values({
             productionOrderId: productionOrderId,
             workCenter: workCenter,
             operation: operation,
-            operator: woData.operator || null,
+            operator: operator,
             status: woData.state || 'done',
             estimatedHours: 0,
             priority: "Medium",
+            routing: 'Standard', // Required field - using default routing
+            sequence: 1, // Required field - using default sequence
             fulfilId: woData.id,
             rec_name: woData.rec_name,
             quantityDone: woData.quantity_done || 0,
-            plannedDate: woData.planned_date || null
+            plannedDate: typeof woData.planned_date === 'string' ? woData.planned_date : null // Handle date properly
           });
           
           workOrdersImported++;
