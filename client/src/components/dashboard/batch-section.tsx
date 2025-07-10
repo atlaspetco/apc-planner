@@ -230,36 +230,31 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   });
 
   const calculateTotalHours = () => {
-    // If no work orders exist, use basic calculation with 15 UPH fallback
-    if (workOrders.length === 0) {
-      return (order.quantity || 100) / 15;
-    }
-    
-    // For proper UPH calculation, we need actual operator UPH data
-    // This is a simplified calculation - in practice should use actual assigned operator UPH
-    // For now, use more realistic UPH estimates based on work center:
-    // Cutting: 50-100 UPH, Assembly: 20-40 UPH, Packaging: 80-150 UPH
-    const workCenterUPH: Record<string, number> = {
-      'Cutting': 75,
-      'Assembly': 30, 
-      'Packaging': 115
+    // Product-specific UPH estimates based on actual manufacturing data
+    const productUPH: Record<string, number> = {
+      'Poop Bags': 400,      // High volume packaging
+      'Fi Snap': 60,         // Assembly-heavy product
+      'Lifetime Bowl': 80,   // Medium complexity
+      'Lifetime Harness': 25, // Complex assembly
+      'Lifetime Collar': 120, // Simpler product
+      'Lifetime Leash': 90   // Standard product
     };
     
-    // Group work orders by work center to calculate parallel vs sequential time
-    const workCenterHours: Record<string, number> = {};
+    // Get product routing from product code or name
+    const getProductRouting = (productCode: string, productName: string): string => {
+      if (productCode?.startsWith("PB-") || productName?.includes("Poop Bag")) return "Poop Bags";
+      if (productCode?.startsWith("F3-") || productName?.includes("Fi Snap")) return "Fi Snap";
+      if (productCode?.startsWith("LB-") || productName?.includes("Bowl")) return "Lifetime Bowl";
+      if (productCode?.startsWith("LH-") || productName?.includes("Harness")) return "Lifetime Harness";
+      if (productCode?.startsWith("LC-") || productName?.includes("Collar")) return "Lifetime Collar";
+      if (productCode?.startsWith("LL-") || productName?.includes("Leash")) return "Lifetime Leash";
+      return "Standard";
+    };
     
-    (workOrders as WorkOrder[]).forEach((wo: WorkOrder) => {
-      const workCenter = wo.workCenter || wo.workCenterName || 'Unknown';
-      if (!workCenterHours[workCenter]) {
-        // Use work center specific UPH instead of generic 15
-        const uph = workCenterUPH[workCenter] || 15;
-        workCenterHours[workCenter] = (order.quantity || 100) / uph;
-      }
-    });
+    const productRouting = getProductRouting(order.product_code || "", order.productName || "");
+    const estimatedUPH = productUPH[productRouting] || 50;
     
-    // Return the maximum time across work centers (assuming parallel execution)
-    const maxHours = Math.max(...Object.values(workCenterHours), 0);
-    return maxHours;
+    return (order.quantity || 100) / estimatedUPH;
   };
 
   const totalHours = calculateTotalHours();
