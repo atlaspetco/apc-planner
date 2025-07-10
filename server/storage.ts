@@ -388,9 +388,10 @@ export class DatabaseStorage implements IStorage {
     if (statusFilter && statusFilter.length > 0) {
       return db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
     } else if (excludeCompleted) {
-      // By default, show only assigned MOs (matching user's 38 assigned requirement)
+      // Show all active MOs (exclude done/cancelled states) for planning dashboard
+      const excludedStates = ['done', 'cancelled', 'closed'];
       return db.select().from(productionOrders).where(
-        eq(productionOrders.status, 'assigned')
+        not(inArray(productionOrders.status, excludedStates))
       );
     }
     

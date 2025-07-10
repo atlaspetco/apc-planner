@@ -16,6 +16,12 @@ import {
   insertOperatorSchema,
   insertBatchSchema
 } from "@shared/schema";
+import { 
+  getUphForProductionOrder, 
+  getUphByRouting, 
+  calculateEstimatedTime,
+  getUphSummaryStats
+} from './fast-uph-service.js';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -4061,6 +4067,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to sync missing work orders",
         error: error instanceof Error ? error.message : "Unknown error"
       });
+    }
+  });
+
+  // Fast UPH lookup endpoints using pre-calculated table
+  app.get("/api/uph/fast-lookup/:moNumber", async (req, res) => {
+    try {
+      const { moNumber } = req.params;
+      const { workCenter, operatorId } = req.query;
+      
+      if (!workCenter) {
+        return res.status(400).json({ error: "workCenter parameter required" });
+      }
+      
+      const uphData = await getUphForProductionOrder(
+        moNumber, 
+        workCenter as string, 
+        operatorId ? parseInt(operatorId as string) : undefined
+      );
+      
+      if (!uphData) {
+        return res.status(404).json({ 
+          error: `No UPH data found for ${moNumber} in ${workCenter}` 
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: uphData,
+        message: `Found UPH data: ${uphData.unitsPerHour} UPH based on ${uphData.observations} observations`
+      });
+      
+    } catch (error) {
+      console.error("Fast UPH lookup error:", error);
+      res.status(500).json({ error: "Failed to lookup UPH data" });
+    }
+  });
+
+  // Fast time calculation endpoint
+  app.post("/api/uph/calculate-time", async (req, res) => {
+    try {
+      const { moNumber, quantity, workCenter, operatorId } = req.body;
+      
+      if (!moNumber || !quantity || !workCenter) {
+        return res.status(400).json({ 
+          error: "moNumber, quantity, and workCenter are required" 
+        });
+      }
+      
+      const estimatedHours = await calculateEstimatedTime(
+        moNumber, 
+        quantity, 
+        workCenter, 
+        operatorId
+      );
+      
+      if (estimatedHours === null) {
+        return res.status(404).json({ 
+          error: `No UPH data available for time calculation` 
+        });
+      }
+      
+      res.json({
+        success: true,
+        estimatedHours: Math.round(estimatedHours * 100) / 100, // Round to 2 decimals
+        estimatedMinutes: Math.round(estimatedHours * 60),
+        dataSource: "pre-calculated UPH table"
+      });
+      
+    } catch (error) {
+      console.error("Time calculation error:", error);
+      res.status(500).json({ error: "Failed to calculate time" });
+    }
+  });
+
+  // Fast UPH summary stats endpoint
+  app.get("/api/uph/fast-stats", async (req, res) => {
+    try {
+      const stats = await getUphSummaryStats();
+      res.json({
+        success: true,
+        stats,
+        message: "UPH table statistics from pre-calculated data"
+      });
+    } catch (error) {
+      console.error("UPH stats error:", error);
+      res.status(500).json({ error: "Failed to get UPH statistics" });
     }
   });
 
