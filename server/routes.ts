@@ -2142,6 +2142,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Comprehensive UPH calculation using production order data
+  app.post('/api/uph/calculate-comprehensive', async (req: Request, res: Response) => {
+    try {
+      // Set calculating status
+      (global as any).updateImportStatus({
+        isCalculating: true,
+        currentOperation: 'Running comprehensive UPH calculation with production order data',
+        startTime: Date.now()
+      });
+
+      const { runComprehensiveUphCalculation } = await import('./comprehensive-uph-calculation.js');
+      
+      console.log('Starting comprehensive UPH calculation using production order data...');
+      const result = await runComprehensiveUphCalculation();
+      
+      // Clear calculating status
+      (global as any).updateImportStatus({
+        isCalculating: false,
+        currentOperation: 'Comprehensive UPH calculation completed',
+        startTime: null
+      });
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Error in comprehensive UPH calculation:', error);
+      
+      // Clear calculating status on error
+      (global as any).updateImportStatus({
+        isCalculating: false,
+        currentOperation: 'Comprehensive UPH calculation failed',
+        lastError: error instanceof Error ? error.message : "Unknown error",
+        startTime: null
+      });
+      
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to run comprehensive UPH calculation',
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Fetch newer work cycles from Fulfil API
   app.post("/api/fulfil/fetch-newer-work-cycles", async (req: Request, res: Response) => {
     try {
