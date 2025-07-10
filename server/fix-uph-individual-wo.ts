@@ -57,15 +57,13 @@ async function fixUphIndividualWorkOrders() {
       const workId = cycle.work_id;
       
       if (!workOrderMap.has(workId)) {
-        const quantity = cycle.work_cycles_quantity_done || 1;
-        
         workOrderMap.set(workId, {
           workId: workId,
           operatorName: cycle.work_cycles_operator_rec_name,
           operatorId: cycle.work_cycles_operator_id || 0,
           routing: cycle.work_production_routing_rec_name,
           workCenter: workCenterCategory,
-          quantity: quantity,
+          quantity: 0, // Will be calculated as max quantity across all cycles
           totalDurationSeconds: 0,
           totalHours: 0,
           uphPerWorkOrder: 0,
@@ -76,6 +74,12 @@ async function fixUphIndividualWorkOrders() {
       const workOrder = workOrderMap.get(workId)!;
       workOrder.totalDurationSeconds += cycle.work_cycles_duration;
       workOrder.cycleCount += 1;
+      
+      // Use the maximum quantity_done across all cycles for this work order
+      // This handles cases where some cycles have 0 quantity but others have the actual quantity
+      if (cycle.work_cycles_quantity_done && cycle.work_cycles_quantity_done > workOrder.quantity) {
+        workOrder.quantity = cycle.work_cycles_quantity_done;
+      }
     }
 
     // Calculate UPH for each individual work order
@@ -83,6 +87,19 @@ async function fixUphIndividualWorkOrders() {
     
     for (const workOrder of workOrderMap.values()) {
       if (workOrder.operatorId === 0 || workOrder.totalDurationSeconds === 0) continue;
+      
+      // Skip work orders with no quantity data (can't calculate UPH)
+      if (workOrder.quantity === 0) {
+        console.log(`Skipping work order ${workOrder.workId} - no quantity data`);
+        continue;
+      }
+      
+      // Skip work orders with very small quantities (likely test runs or partial completions)
+      // Focus on representative production runs with meaningful quantities
+      if (workOrder.quantity < 5) {
+        console.log(`Skipping work order ${workOrder.workId} - quantity too small (${workOrder.quantity})`);
+        continue;
+      }
       
       workOrder.totalHours = workOrder.totalDurationSeconds / 3600;
       workOrder.uphPerWorkOrder = workOrder.quantity / workOrder.totalHours;
