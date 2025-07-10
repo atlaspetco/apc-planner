@@ -2413,6 +2413,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fix UPH using authentic work cycles data (no artificial calculations)
+  app.post("/api/uph/fix-authentic", async (req, res) => {
+    try {
+      const { fixUphAuthentic } = await import("./fix-uph-authentic.js");
+      const result = await fixUphAuthentic();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH with authentic data:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH with authentic data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
   // Calculate UPH from existing work cycles data (no API calls needed)
   app.post("/api/uph/calculate-simple", async (req, res) => {
     try {
