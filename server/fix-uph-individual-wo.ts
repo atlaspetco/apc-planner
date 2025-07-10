@@ -57,8 +57,8 @@ async function fixUphIndividualWorkOrders() {
 
       if (workCenterCategory === 'Unknown') continue;
 
-      // Key by Production Order + Operator + Work Center (aggregates multiple WOs in same category)
-      const key = `${cycle.work_production_id}|${cycle.work_cycles_operator_rec_name}|${workCenterCategory}`;
+      // Key by Production Order + Operator + Work Center + Routing (aggregates multiple WOs in same category per MO)
+      const key = `${cycle.work_production_id}|${cycle.work_cycles_operator_rec_name}|${workCenterCategory}|${cycle.work_production_routing_rec_name}`;
       
       if (!productionOrderMap.has(key)) {
         productionOrderMap.set(key, {
