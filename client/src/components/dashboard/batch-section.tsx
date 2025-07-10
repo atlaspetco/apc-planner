@@ -40,16 +40,26 @@ export default function BatchSection({
     queryKey: ["/api/work-orders"],
   });
   
-  // Calculate total estimated hours for the batch using realistic estimates
+  // Calculate total estimated hours for the batch using actual work order estimates
   const calculateBatchTotalHours = () => {
     return orders.reduce((batchTotal, order) => {
       const orderWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
         wo.productionOrderId === order.id
       );
       
-      // If no work orders, use basic estimate
+      // If no work orders, use basic estimate based on quantity and routing
       if (orderWorkOrders.length === 0) {
-        return batchTotal + ((order.quantity || 100) / 15);
+        // Use routing-specific UPH estimates for better accuracy
+        const routing = order.routingName || "Standard";
+        let estimatedUPH = 15; // Default fallback
+        
+        if (routing.includes("Poop Bags")) estimatedUPH = 127; // 500 bags / 3.93 hours = 127 UPH
+        else if (routing.includes("Lifetime Pouch")) estimatedUPH = 25;
+        else if (routing.includes("Cutting")) estimatedUPH = 20;
+        else if (routing.includes("Assembly") || routing.includes("Sewing")) estimatedUPH = 12;
+        else if (routing.includes("Packaging")) estimatedUPH = 30;
+        
+        return batchTotal + ((order.quantity || 100) / estimatedUPH);
       }
       
       // Group work orders by work center to calculate parallel vs sequential time
@@ -61,9 +71,23 @@ export default function BatchSection({
           workCenterHours[workCenter] = 0;
         }
         
-        // Use realistic estimation: quantity / 15 UPH average (calculated once per order, not per work order)
-        const realisticHours = (order.quantity || 100) / 15;
-        workCenterHours[workCenter] = realisticHours;  // Assign, don't accumulate
+        // Use actual estimated hours from work order if available
+        if (wo.estimatedHours && wo.estimatedHours > 0) {
+          workCenterHours[workCenter] = Math.max(workCenterHours[workCenter], wo.estimatedHours);
+        } else {
+          // Fallback to routing-specific calculation
+          const routing = order.routingName || "Standard";
+          let estimatedUPH = 15;
+          
+          if (routing.includes("Poop Bags")) estimatedUPH = 127;
+          else if (routing.includes("Lifetime Pouch")) estimatedUPH = 25;
+          else if (routing.includes("Cutting")) estimatedUPH = 20;
+          else if (routing.includes("Assembly") || routing.includes("Sewing")) estimatedUPH = 12;
+          else if (routing.includes("Packaging")) estimatedUPH = 30;
+          
+          const calculatedHours = (order.quantity || 100) / estimatedUPH;
+          workCenterHours[workCenter] = Math.max(workCenterHours[workCenter], calculatedHours);
+        }
       });
       
       // Return the maximum time across work centers (assuming parallel execution)
@@ -232,14 +256,17 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   });
 
   const calculateTotalHours = () => {
-    // Product-specific UPH estimates based on actual manufacturing data
+    // Product-specific UPH estimates based on actual manufacturing data and user requirements
     const productUPH: Record<string, number> = {
-      'Poop Bags': 400,      // High volume packaging
+      'Poop Bags': 127,      // 500 bags / 3.93 hours = 127 UPH (user requirement)
       'Fi Snap': 60,         // Assembly-heavy product
       'Lifetime Bowl': 80,   // Medium complexity
       'Lifetime Harness': 25, // Complex assembly
       'Lifetime Collar': 120, // Simpler product
-      'Lifetime Leash': 90   // Standard product
+      'Lifetime Leash': 90,  // Standard product
+      'Lifetime Pouch': 25,  // Pouch products
+      'Lifetime Bandana': 30, // Bandana products
+      'Cutting - Fabric': 20  // Fabric cutting operations
     };
     
     // Get product routing from product code or name
@@ -250,6 +277,9 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
       if (productCode?.startsWith("LH-") || productName?.includes("Harness")) return "Lifetime Harness";
       if (productCode?.startsWith("LC-") || productName?.includes("Collar")) return "Lifetime Collar";
       if (productCode?.startsWith("LL-") || productName?.includes("Leash")) return "Lifetime Leash";
+      if (productCode?.startsWith("LP-") || productName?.includes("Pouch")) return "Lifetime Pouch";
+      if (productCode?.startsWith("BAN-") || productName?.includes("Bandana")) return "Lifetime Bandana";
+      if (productCode?.startsWith("F0102-") || productName?.includes("X-Pac")) return "Cutting - Fabric";
       return "Standard";
     };
     
