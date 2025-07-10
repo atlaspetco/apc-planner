@@ -2152,10 +2152,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: Date.now()
       });
 
-      const { runComprehensiveUphCalculation } = await import('./comprehensive-uph-calculation.js');
+      const { runFinalComprehensiveUphCalculation } = await import('./final-comprehensive-uph.js');
       
       console.log('Starting comprehensive UPH calculation using production order data...');
-      const result = await runComprehensiveUphCalculation();
+      const result = await runFinalComprehensiveUphCalculation();
       
       // Clear calculating status
       (global as any).updateImportStatus({

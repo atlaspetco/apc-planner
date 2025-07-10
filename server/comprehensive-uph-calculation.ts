@@ -1,50 +1,40 @@
-import { db } from './db/index.js';
+import { db } from './db.js';
 import { sql } from 'drizzle-orm';
 
 export async function runComprehensiveUphCalculation() {
   console.log('=== COMPREHENSIVE UPH CALCULATION START ===');
   console.log('Following locked process: Work Cycles → Production Orders → Duration Aggregation → UPH Calculation');
 
-  // STEP 1: Get all production orders from Fulfil API /api/v2/model/production?state=done
-  console.log('Step 1: Fetching production orders from /api/v2/model/production?state=done');
+  // STEP 1: Get production order quantities from existing work cycles data  
+  console.log('Step 1: Using existing production order data from work cycles');
   
   const productionOrders = new Map<string, {quantity: number, id: number}>();
   
-  try {
-    const response = await fetch(`https://apc.fulfil.io/api/v2/model/production.order/search_read`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN || ''
-      },
-      body: JSON.stringify({
-        filter: [['state', '=', 'done']],
-        fields: ['rec_name', 'quantity', 'id'],
-        per_page: 1000
-      })
-    });
+  // Get unique production orders with quantities from work cycles data
+  const existingMOs = await db.execute(sql`
+    SELECT DISTINCT 
+      work_production_number,
+      work_production_id,
+      MAX(COALESCE(work_cycles_quantity_done, 1)) as quantity
+    FROM work_cycles 
+    WHERE work_production_number IS NOT NULL 
+      AND work_production_number != ''
+      AND work_production_id IS NOT NULL
+    GROUP BY work_production_number, work_production_id
+    ORDER BY work_production_id DESC
+  `);
+  
+  for (const mo of existingMOs) {
+    const moNumber = mo.work_production_number?.toString();
+    const quantity = parseFloat(mo.quantity?.toString() || '1');
+    const id = parseInt(mo.work_production_id?.toString() || '0');
     
-    if (response.ok) {
-      const data = await response.json();
-      console.log(`Step 1: Fetched ${data.length} production orders from Fulfil API`);
-      
-      for (const mo of data) {
-        const moNumber = mo.rec_name?.toString();
-        const quantity = parseFloat(mo.quantity?.toString() || '0');
-        const id = parseInt(mo.id?.toString() || '0');
-        
-        if (moNumber && quantity > 0 && id > 0) {
-          productionOrders.set(moNumber, {quantity, id});
-        }
-      }
-      
-      console.log(`Step 1: Processed ${productionOrders.size} production orders with valid quantities`);
-    } else {
-      console.log(`Step 1: API error ${response.status}, proceeding with existing data`);
+    if (moNumber && quantity > 0 && id > 0) {
+      productionOrders.set(moNumber, {quantity, id});
     }
-  } catch (error) {
-    console.log('Step 1: API error, proceeding with existing data:', error);
   }
+  
+  console.log(`Step 1: Found ${productionOrders.size} production orders from work cycles data`);
 
   // STEP 2: Build UPH table with total durations per work center + production_id from work cycles
   console.log('Step 2: Aggregating work cycle durations by work center + production_id');
