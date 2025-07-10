@@ -52,8 +52,8 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false, // Prevent automatic refetch on focus
-      staleTime: 5 * 60 * 1000, // Cache for 5 minutes (production orders don't change frequently)
-      cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+      staleTime: 0, // Force fresh data - no cache while debugging filtering
+      cacheTime: 0, // Don't cache at all while debugging filtering
       retry: 1, // Reduce retries for performance
     },
     mutations: {

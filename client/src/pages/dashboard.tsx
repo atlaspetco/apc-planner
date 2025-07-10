@@ -15,13 +15,14 @@ export default function Dashboard() {
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
-  // Use a stable query key and filter client-side for better caching
+  // Force fresh data to ensure new filtering logic is applied
   const { data: allProductionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders"], // Remove dynamic filter from query key
+    queryKey: ["/api/production-orders"], 
     enabled: true,
     retry: 1,
     retryDelay: 1000,
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
+    staleTime: 0, // Force fresh data - no cache
+    cacheTime: 0, // Don't cache at all
   });
 
   // Filter client-side instead of server-side for better performance
