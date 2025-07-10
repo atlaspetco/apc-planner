@@ -43,9 +43,9 @@ export class FulfilCurrentService {
       let page = 1;
       let hasMore = true;
       
-      // Use correct production schema (NOT production.order) with search_read
-      const endpoint = `${this.baseUrl}/api/v2/model/production/search_read`;
-      console.log(`Fetching production orders using correct production schema...`);
+      // Use correct production.order schema with search_read
+      const endpoint = `${this.baseUrl}/api/v2/model/production.order/search_read`;
+      console.log(`Fetching production orders using correct production.order schema...`);
       
       const response = await fetch(endpoint, {
         method: 'PUT',
@@ -76,7 +76,7 @@ export class FulfilCurrentService {
         return [];
       }
 
-      console.log(`Found total of ${allOrders.length} assigned production orders using production schema`);
+      console.log(`Found total of ${allOrders.length} assigned production orders using production.order schema`);
       const orders = allOrders;
       
       // orders array is already populated from pagination above
