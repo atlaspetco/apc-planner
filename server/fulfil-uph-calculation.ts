@@ -4,8 +4,8 @@
  */
 
 import { db } from "./db.js";
-import { workCycles, historicalUph, operators } from "../shared/schema.js";
-import { sql } from "drizzle-orm";
+import { workCycles, historicalUph, operators, productionOrders } from "../shared/schema.js";
+import { sql, isNotNull } from "drizzle-orm";
 
 /**
  * Transform work center name according to aggregation rules:
@@ -171,29 +171,45 @@ export async function calculateUphFromFulfilFields() {
 
     console.log(`Step 2: Grouped into ${moLevelGroups.size} per-MO combinations with work center aggregation`);
 
-    // STEP 3: Get MO-level quantities from completed work cycles (when quantity_done > 0)
-    // Since work cycles contain historical MOs not in current production_orders table
+    // STEP 3: Get MO-level quantities from production orders table (authentic MO quantities)
+    // First try production_orders table, then fall back to Fulfil API for historical MOs
     const moQuantities = new Map<string, number>();
     
-    const quantityResult = await db.execute(sql`
-      SELECT 
-        work_production_number as mo_number,
-        MAX(work_cycles_quantity_done) as max_quantity
-      FROM work_cycles 
-      WHERE work_production_number IS NOT NULL
-      GROUP BY work_production_number
-      HAVING MAX(work_cycles_quantity_done) > 0
+    // Get quantities from local production_orders table  
+    const localQuantityResult = await db.execute(sql`
+      SELECT mo_number, quantity 
+      FROM production_orders 
+      WHERE quantity IS NOT NULL AND quantity > 0
     `);
     
-    for (const row of quantityResult.rows) {
+    for (const row of localQuantityResult.rows) {
       const moNumber = row.mo_number?.toString();
-      const quantity = parseFloat(row.max_quantity?.toString() || '0');
+      const quantity = parseFloat(row.quantity?.toString() || '0');
       if (moNumber && quantity > 0) {
         moQuantities.set(moNumber, quantity);
       }
     }
     
-    console.log(`Step 3: Found quantities for ${moQuantities.size} historical MOs from work_cycles with completed quantities`);
+    console.log(`Step 3a: Found quantities for ${moQuantities.size} MOs from production_orders table`);
+    
+    // For historical MOs not in production_orders, we need to fetch from Fulfil API
+    // This is a critical gap - work_cycles quantities are operation-level, not MO-level
+    const historicalMOs = new Set<string>();
+    for (const [key, moGroup] of moLevelGroups) {
+      if (!moQuantities.has(moGroup.moNumber)) {
+        historicalMOs.add(moGroup.moNumber);
+      }
+    }
+    
+    console.log(`Step 3b: Need to fetch ${historicalMOs.size} historical MO quantities from Fulfil API`);
+    
+    // TODO: Implement Fulfil API call to get historical MO quantities
+    // For now, we'll skip historical MOs that don't have authentic quantities
+    const quantityResult = await db.execute(sql`
+      SELECT 1 as placeholder WHERE 1=0
+    `);
+    
+    console.log(`Step 3c: Using authentic MO quantities for ${moQuantities.size} production orders`);
 
     // STEP 4: Calculate UPH for each MO and group by operator+work center+routing for averaging
     const operatorWorkCenterRoutingGroups = new Map<string, {
@@ -210,7 +226,7 @@ export async function calculateUphFromFulfilFields() {
       const totalHours = moGroup.totalDuration / 3600; // Convert seconds to hours
       const moQuantity = moQuantities.get(moGroup.moNumber) || 0;
       
-      // Only calculate UPH for MOs with meaningful data and MO-level quantity
+      // Only calculate UPH for MOs with meaningful data and authentic MO-level quantity
       if (totalHours > 0.01 && moGroup.observations >= 1 && moQuantity > 0) {
         const moUph = moQuantity / totalHours;
         
@@ -249,8 +265,10 @@ export async function calculateUphFromFulfilFields() {
             group.latestUpdate = moGroup.latestUpdate;
           }
           
-          console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moQuantity} units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
+          console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moQuantity} authentic units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
         }
+      } else if (totalHours > 0.01 && moGroup.observations >= 1) {
+        console.log(`SKIPPED ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} - No authentic MO quantity available (need Fulfil API lookup)`);
       }
     }
 
