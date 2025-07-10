@@ -7,17 +7,18 @@
 import { db } from "./db.js";
 import { historicalUph, workCycles } from "../shared/schema.js";
 
-interface IndividualWorkOrder {
-  workId: number;
+interface ProductionOrderWorkCenter {
+  productionId: number;
   operatorName: string;
   operatorId: number;
   routing: string;
   workCenter: string;
-  quantity: number;
+  totalQuantity: number;
   totalDurationSeconds: number;
   totalHours: number;
-  uphPerWorkOrder: number;
-  cycleCount: number;
+  uphPerMO: number;
+  totalCycleCount: number;
+  workOrderIds: number[];
 }
 
 async function fixUphIndividualWorkOrders() {
@@ -27,11 +28,13 @@ async function fixUphIndividualWorkOrders() {
     const allCycles = await db.select().from(workCycles);
     console.log(`Retrieved ${allCycles.length} work cycles from database`);
 
-    // Step 1: Calculate UPH for each individual work order
-    const workOrderMap = new Map<number, IndividualWorkOrder>();
+    // Step 1: Group work orders by Production Order + Operator + Work Center Category
+    // This aggregates durations from multiple WOs in same work center before calculating UPH
+    const productionOrderMap = new Map<string, ProductionOrderWorkCenter>();
 
     for (const cycle of allCycles) {
       if (!cycle.work_id || 
+          !cycle.work_production_id ||
           !cycle.work_cycles_operator_rec_name || 
           !cycle.work_production_routing_rec_name || 
           !cycle.work_cycles_work_center_rec_name ||
@@ -54,63 +57,69 @@ async function fixUphIndividualWorkOrders() {
 
       if (workCenterCategory === 'Unknown') continue;
 
-      const workId = cycle.work_id;
+      // Key by Production Order + Operator + Work Center (aggregates multiple WOs in same category)
+      const key = `${cycle.work_production_id}|${cycle.work_cycles_operator_rec_name}|${workCenterCategory}`;
       
-      if (!workOrderMap.has(workId)) {
-        workOrderMap.set(workId, {
-          workId: workId,
+      if (!productionOrderMap.has(key)) {
+        productionOrderMap.set(key, {
+          productionId: cycle.work_production_id,
           operatorName: cycle.work_cycles_operator_rec_name,
           operatorId: cycle.work_cycles_operator_id || 0,
           routing: cycle.work_production_routing_rec_name,
           workCenter: workCenterCategory,
-          quantity: 0, // Will be calculated as max quantity across all cycles
+          totalQuantity: 0,
           totalDurationSeconds: 0,
           totalHours: 0,
-          uphPerWorkOrder: 0,
-          cycleCount: 0
+          uphPerMO: 0,
+          totalCycleCount: 0,
+          workOrderIds: []
         });
       }
 
-      const workOrder = workOrderMap.get(workId)!;
-      workOrder.totalDurationSeconds += cycle.work_cycles_duration;
-      workOrder.cycleCount += 1;
+      const moWorkCenter = productionOrderMap.get(key)!;
+      moWorkCenter.totalDurationSeconds += cycle.work_cycles_duration;
+      moWorkCenter.totalCycleCount += 1;
       
-      // Use the maximum quantity_done across all cycles for this work order
-      // This handles cases where some cycles have 0 quantity but others have the actual quantity
-      if (cycle.work_cycles_quantity_done && cycle.work_cycles_quantity_done > workOrder.quantity) {
-        workOrder.quantity = cycle.work_cycles_quantity_done;
+      // Track work order IDs for this MO + Work Center combination
+      if (!moWorkCenter.workOrderIds.includes(cycle.work_id)) {
+        moWorkCenter.workOrderIds.push(cycle.work_id);
+      }
+      
+      // Use the maximum quantity_done across all cycles for this MO + Work Center
+      if (cycle.work_cycles_quantity_done && cycle.work_cycles_quantity_done > moWorkCenter.totalQuantity) {
+        moWorkCenter.totalQuantity = cycle.work_cycles_quantity_done;
       }
     }
 
-    // Calculate UPH for each individual work order
-    const individualWorkOrders: IndividualWorkOrder[] = [];
+    // Calculate UPH for each Production Order + Work Center combination
+    const productionOrderWorkCenters: ProductionOrderWorkCenter[] = [];
     
-    for (const workOrder of workOrderMap.values()) {
-      if (workOrder.operatorId === 0 || workOrder.totalDurationSeconds === 0) continue;
+    for (const moWorkCenter of productionOrderMap.values()) {
+      if (moWorkCenter.operatorId === 0 || moWorkCenter.totalDurationSeconds === 0) continue;
       
-      // Skip work orders with no quantity data (can't calculate UPH)
-      if (workOrder.quantity === 0) {
-        console.log(`Skipping work order ${workOrder.workId} - no quantity data`);
+      // Skip MOs with no quantity data (can't calculate UPH)
+      if (moWorkCenter.totalQuantity === 0) {
+        console.log(`Skipping MO ${moWorkCenter.productionId} ${moWorkCenter.workCenter} - no quantity data`);
         continue;
       }
       
-      // Skip work orders with very small quantities (likely test runs or partial completions)
+      // Skip MOs with very small quantities (likely test runs or partial completions)
       // Focus on representative production runs with meaningful quantities
-      if (workOrder.quantity < 5) {
-        console.log(`Skipping work order ${workOrder.workId} - quantity too small (${workOrder.quantity})`);
+      if (moWorkCenter.totalQuantity < 5) {
+        console.log(`Skipping MO ${moWorkCenter.productionId} ${moWorkCenter.workCenter} - quantity too small (${moWorkCenter.totalQuantity})`);
         continue;
       }
       
-      workOrder.totalHours = workOrder.totalDurationSeconds / 3600;
-      workOrder.uphPerWorkOrder = workOrder.quantity / workOrder.totalHours;
+      moWorkCenter.totalHours = moWorkCenter.totalDurationSeconds / 3600;
+      moWorkCenter.uphPerMO = moWorkCenter.totalQuantity / moWorkCenter.totalHours;
       
       // Only include realistic UPH values
-      if (workOrder.uphPerWorkOrder > 0 && workOrder.uphPerWorkOrder < 1000 && isFinite(workOrder.uphPerWorkOrder)) {
-        individualWorkOrders.push(workOrder);
+      if (moWorkCenter.uphPerMO > 0 && moWorkCenter.uphPerMO < 1000 && isFinite(moWorkCenter.uphPerMO)) {
+        productionOrderWorkCenters.push(moWorkCenter);
       }
     }
 
-    console.log(`Calculated UPH for ${individualWorkOrders.length} individual work orders`);
+    console.log(`Calculated UPH for ${productionOrderWorkCenters.length} Production Order + Work Center combinations`);
 
     // Step 2: Aggregate with weighted averages per operator + routing + work center
     const operatorAggregation = new Map<string, {
@@ -118,23 +127,23 @@ async function fixUphIndividualWorkOrders() {
       operatorId: number;
       routing: string;
       workCenter: string;
-      workOrders: IndividualWorkOrder[];
+      moWorkCenters: ProductionOrderWorkCenter[];
       totalObservations: number;
       weightedAverageUph: number;
       totalQuantity: number;
       totalHours: number;
     }>();
 
-    for (const wo of individualWorkOrders) {
-      const key = `${wo.operatorName}|${wo.routing}|${wo.workCenter}`;
+    for (const moWC of productionOrderWorkCenters) {
+      const key = `${moWC.operatorName}|${moWC.routing}|${moWC.workCenter}`;
       
       if (!operatorAggregation.has(key)) {
         operatorAggregation.set(key, {
-          operatorName: wo.operatorName,
-          operatorId: wo.operatorId,
-          routing: wo.routing,
-          workCenter: wo.workCenter,
-          workOrders: [],
+          operatorName: moWC.operatorName,
+          operatorId: moWC.operatorId,
+          routing: moWC.routing,
+          workCenter: moWC.workCenter,
+          moWorkCenters: [],
           totalObservations: 0,
           weightedAverageUph: 0,
           totalQuantity: 0,
@@ -143,23 +152,23 @@ async function fixUphIndividualWorkOrders() {
       }
 
       const agg = operatorAggregation.get(key)!;
-      agg.workOrders.push(wo);
-      agg.totalObservations += wo.cycleCount;
-      agg.totalQuantity += wo.quantity;
-      agg.totalHours += wo.totalHours;
+      agg.moWorkCenters.push(moWC);
+      agg.totalObservations += moWC.totalCycleCount;
+      agg.totalQuantity += moWC.totalQuantity;
+      agg.totalHours += moWC.totalHours;
     }
 
-    // Calculate weighted average UPH using observations as weights
+    // Calculate weighted average UPH using cycle counts as weights
     for (const agg of operatorAggregation.values()) {
-      if (agg.workOrders.length === 0) continue;
+      if (agg.moWorkCenters.length === 0) continue;
       
-      // Weighted average: sum(UPH * observations) / sum(observations)
+      // Weighted average: sum(UPH * cycle_count) / sum(cycle_count)
       let weightedSum = 0;
       let totalWeight = 0;
       
-      for (const wo of agg.workOrders) {
-        weightedSum += wo.uphPerWorkOrder * wo.cycleCount;
-        totalWeight += wo.cycleCount;
+      for (const moWC of agg.moWorkCenters) {
+        weightedSum += moWC.uphPerMO * moWC.totalCycleCount;
+        totalWeight += moWC.totalCycleCount;
       }
       
       agg.weightedAverageUph = totalWeight > 0 ? weightedSum / totalWeight : 0;
@@ -167,7 +176,7 @@ async function fixUphIndividualWorkOrders() {
 
     // Filter out aggregations with too few observations
     const validAggregations = Array.from(operatorAggregation.values())
-      .filter(agg => agg.totalObservations >= 3 && agg.workOrders.length >= 1);
+      .filter(agg => agg.totalObservations >= 3 && agg.moWorkCenters.length >= 1);
 
     console.log(`Created ${validAggregations.length} weighted average UPH records`);
 
@@ -232,7 +241,7 @@ async function fixUphIndividualWorkOrders() {
 
     return {
       success: true,
-      individualWorkOrders: individualWorkOrders.length,
+      productionOrderWorkCenters: productionOrderWorkCenters.length,
       recordsInserted: insertedCount,
       summary: summary
     };
