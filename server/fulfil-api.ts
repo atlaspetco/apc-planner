@@ -168,35 +168,14 @@ export class FulfilAPIService {
     try {
       if (!this.apiKey) return [];
 
-      // Calculate date filter for recent records
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
-      const dateFilter = cutoffDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      // Try GET method with query parameters for active orders
+      const endpoint = `${this.baseUrl}/api/v2/model/production.order?state=draft,waiting,assigned,running&per_page=${limit}`;
 
-      // Use POST search_read for proper filtering with date constraints
-      const endpoint = `${this.baseUrl}/api/v2/model/production.order/search_read`;
-      
-      const requestBody = {
-        fields: [
-          'id', 'rec_name', 'state', 'quantity', 'product.code', 
-          'routing.name', 'planned_date', 'create_date'
-        ],
-        filter: [
-          ['create_date', '>=', dateFilter],
-          '|',
-          ['planned_date', '>=', dateFilter],
-          '|', 
-          ['state', 'in', ['draft', 'waiting', 'assigned', 'running']]
-        ],
-        limit: limit
-      };
-
-      console.log(`Fetching recent production orders since ${dateFilter}`);
+      console.log(`Fetching current active production orders: ${endpoint}`);
       
       const response = await fetch(endpoint, {
-        method: 'POST',
+        method: 'GET',
         headers: this.headers,
-        body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(30000)
       });
 

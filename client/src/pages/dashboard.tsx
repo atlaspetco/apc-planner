@@ -37,7 +37,14 @@ export default function Dashboard() {
   // Filter client-side for better performance 
   const productionOrders = allProductionOrders.filter(po => {
     if (statusFilter.length === 0) return true;
-    return statusFilter.includes(po.status || po.state);
+    const matchesFilter = statusFilter.includes(po.status || po.state);
+    
+    // Debug first few items to understand filtering
+    if (allProductionOrders.indexOf(po) < 3) {
+      console.log(`Filtering MO ${po.moNumber}: status="${po.status}", state="${po.state}", statusFilter=${JSON.stringify(statusFilter)}, matches=${matchesFilter}`);
+    }
+    
+    return matchesFilter;
   });
 
   const { data: summary, isLoading: isLoadingSummary, error: errorSummary, refetch: refetchSummary } = useQuery({
