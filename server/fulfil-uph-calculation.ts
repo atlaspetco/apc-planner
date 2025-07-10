@@ -212,12 +212,57 @@ export async function calculateUphFromFulfilFields() {
       moQuantities.set('MO118610', 75);
     }
     
-    // NOTE: Fulfil API search_read on production.order requires investigation
-    // production.work search_read works fine, but production.order returns 500 errors
-    // This needs proper API endpoint mapping - for now using verified data
-    console.log(`Step 3c: Using ${moQuantities.size} verified MO quantities to demonstrate corrected UPH calculations`);
+    // Fetch remaining historical MO quantities from Fulfil API
+    if (historicalMOs.size > 1) { // More than just MO118610
+      console.log(`Step 3d: Fetching quantities for ${historicalMOs.size - 1} additional historical MOs from Fulfil API`);
+      
+      const batchSize = 50;
+      const remainingMOs = Array.from(historicalMOs).filter(mo => mo !== 'MO118610');
+      let fetchedCount = 0;
+      
+      for (let i = 0; i < remainingMOs.length; i += batchSize) {
+        const batch = remainingMOs.slice(i, i + batchSize);
+        
+        try {
+          const response = await fetch(`${process.env.FULFIL_BASE_URL}/api/v2/model/production.order/search_read`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN || ''
+            },
+            body: JSON.stringify({
+              filter: [['rec_name', 'in', batch]],
+              fields: ['rec_name', 'quantity'],
+              per_page: batchSize
+            })
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            for (const mo of data) {
+              const moNumber = mo.rec_name?.toString();
+              const quantity = parseFloat(mo.quantity?.toString() || '0');
+              if (moNumber && quantity > 0) {
+                moQuantities.set(moNumber, quantity);
+                fetchedCount++;
+              }
+            }
+            console.log(`Batch ${Math.floor(i/batchSize) + 1}: Fetched ${data.length} MO quantities`);
+          } else {
+            console.log(`Fulfil API error for batch ${Math.floor(i/batchSize) + 1}: ${response.status} - Using work cycle quantities as fallback`);
+          }
+        } catch (error) {
+          console.log(`Error fetching MO quantities for batch ${Math.floor(i/batchSize) + 1}:`, error);
+        }
+        
+        // Rate limiting delay
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      console.log(`Step 3e: Successfully fetched ${fetchedCount} additional MO quantities from Fulfil API`);
+    }
     
-    console.log(`Step 3d: Final result - ${moQuantities.size} MOs have authentic quantities (${localQuantityResult.rows ? localQuantityResult.rows.length : 0} local + ${moQuantities.size - (localQuantityResult.rows ? localQuantityResult.rows.length : 0)} from Fulfil API)`);
+    console.log(`Step 3f: Final result - ${moQuantities.size} MOs have authentic quantities (${localQuantityResult.rows ? localQuantityResult.rows.length : 0} local + ${moQuantities.size - (localQuantityResult.rows ? localQuantityResult.rows.length : 0)} from Fulfil API)`);
 
     // STEP 4: Calculate UPH for each MO and group by operator+work center+routing for averaging
     const operatorWorkCenterRoutingGroups = new Map<string, {
@@ -283,7 +328,53 @@ export async function calculateUphFromFulfilFields() {
           console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moQuantity} authentic units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
         }
       } else if (totalHours > 0.01 && moGroup.observations >= 1) {
-        console.log(`SKIPPED ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} - No authentic MO quantity available (need Fulfil API lookup)`);
+        // For historical MOs without production order quantities, use work cycle quantities
+        const cycleQuantityResult = await db.execute(sql`
+          SELECT SUM(work_cycles_quantity_done) as total_quantity
+          FROM work_cycles 
+          WHERE work_production_number = ${moGroup.moNumber}
+            AND work_cycles_quantity_done > 0
+        `);
+        
+        const workCycleQuantity = parseFloat(cycleQuantityResult.rows[0]?.total_quantity?.toString() || '0');
+        if (workCycleQuantity > 0) {
+          const moUph = workCycleQuantity / totalHours;
+          
+          // Only include realistic UPH values using work cycle quantities
+          if (moUph > 0 && moUph < 500) {
+            const groupKey = `${moGroup.operatorName}|${moGroup.transformedWorkCenter}|${moGroup.routing}`;
+            
+            if (!operatorWorkCenterRoutingGroups.has(groupKey)) {
+              operatorWorkCenterRoutingGroups.set(groupKey, {
+                operatorName: moGroup.operatorName,
+                transformedWorkCenter: moGroup.transformedWorkCenter,
+                routing: moGroup.routing,
+                moUphValues: [],
+                totalObservations: 0,
+                operations: new Set(),
+                latestUpdate: null
+              });
+            }
+            
+            const group = operatorWorkCenterRoutingGroups.get(groupKey)!;
+            group.moUphValues.push({
+              uph: moUph,
+              moNumber: moGroup.moNumber,
+              observations: moGroup.observations
+            });
+            group.totalObservations += moGroup.observations;
+            
+            // Merge operations and track latest update
+            moGroup.operations.forEach(op => group.operations.add(op));
+            if (moGroup.latestUpdate && (!group.latestUpdate || moGroup.latestUpdate > group.latestUpdate)) {
+              group.latestUpdate = moGroup.latestUpdate;
+            }
+            
+            console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${workCycleQuantity} work cycle units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
+          }
+        } else {
+          console.log(`SKIPPED ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} - No quantity data available in work cycles`);
+        }
       }
     }
 
