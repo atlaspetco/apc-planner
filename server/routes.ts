@@ -2096,6 +2096,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Work Order UPH calculation using reliable quantity data
+  app.post("/api/uph/calculate-work-order", async (req: Request, res: Response) => {
+    try {
+      const { calculateWorkOrderUPH } = await import('./work-order-uph-calculator');
+      const result = await calculateWorkOrderUPH();
+      res.json(result);
+    } catch (error) {
+      console.error('Error calculating work order UPH:', error);
+      res.status(500).json({ error: 'Failed to calculate work order UPH', details: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
       // Set calculating status
