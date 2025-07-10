@@ -2089,14 +2089,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating UPH from work cycles',
+        currentOperation: 'Calculating UPH using authentic Fulfil API field mapping',
         startTime: Date.now()
       });
 
-      const { calculateUphFromWorkCycles } = await import("./work-cycles-import.js");
+      const { calculateUphFromFulfilFields } = await import("./fulfil-uph-calculation.js");
       
-      console.log("Starting UPH calculation from work cycles...");
-      const results = await calculateUphFromWorkCycles();
+      console.log("Starting UPH calculation using authentic Fulfil field mapping...");
+      const results = await calculateUphFromFulfilFields();
       
       // Clear calculating status
       (global as any).updateImportStatus({
@@ -2105,17 +2105,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: null
       });
       
-      res.json({
-        success: true,
-        message: `Calculated UPH from ${results.summary.totalCycles} work cycles`,
-        calculations: results.calculations,
-        summary: results.summary,
-        totalCalculations: results.calculations.length,
-        method: "Operator + Routing + Work Center + Operation grouping from authentic work cycles data",
-        note: "Uses authentic work cycles data for precise UPH calculations with realistic filtering"
-      });
+      if (results.success) {
+        res.json({
+          success: true,
+          message: results.message,
+          calculations: results.calculations,
+          summary: results.summary,
+          totalCalculations: results.calculations,
+          workCenters: results.workCenters,
+          method: "Authentic Fulfil API field mapping with work center aggregation",
+          note: "Uses exact production.work/cycles endpoint field paths with Assembly consolidation"
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to calculate UPH using Fulfil field mapping",
+          error: results.error
+        });
+      }
     } catch (error) {
-      console.error("Error calculating UPH from work cycles:", error);
+      console.error("Error calculating UPH from Fulfil fields:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
@@ -2127,7 +2136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate UPH from work cycles",
+        message: "Failed to calculate UPH using Fulfil field mapping",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
