@@ -45,23 +45,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sort by newest first (highest ID = most recent in database)
       productionOrders = productionOrders.sort((a, b) => b.id - a.id);
       
-      // Fix product names - use product names from database
-      productionOrders = productionOrders.map(po => ({
-        ...po,
-        productName: po.productName || po.product_code || `Product ${po.fulfilId}`
-      }));
+      // Get routing data from work orders table for each production order
+      const { db } = await import("./db.js");
+      const { workOrders } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
+      
+      // Enrich production orders with routing data from work orders
+      const enrichedProductionOrders = await Promise.all(
+        productionOrders.map(async (po) => {
+          // Find work orders for this production order to get routing data
+          const woData = await db
+            .select({ routing: workOrders.routing })
+            .from(workOrders)
+            .where(eq(workOrders.productionOrderId, po.id))
+            .limit(1);
+          
+          const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
+          
+          return {
+            ...po,
+            productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
+            // Use routing from work orders if available, otherwise keep original routing
+            routingName: routingFromWorkOrders || po.routingName || "Standard"
+          };
+        })
+      );
       
       // Apply status filtering to match frontend request - include all if no specific filter
+      let finalProductionOrders = enrichedProductionOrders;
       if (statusFilter && statusFilter.length > 0 && !statusFilter.includes('assigned')) {
-        productionOrders = productionOrders.filter(po => statusFilter.includes(po.status));
-        console.log(`Filtered to ${productionOrders.length} production orders with status: ${statusFilter.join(', ')}`);
+        finalProductionOrders = enrichedProductionOrders.filter(po => statusFilter.includes(po.status));
+        console.log(`Filtered to ${finalProductionOrders.length} production orders with status: ${statusFilter.join(', ')}`);
       } else {
-        console.log(`Showing all ${productionOrders.length} active production orders (excluding Done/Cancelled)`);
+        console.log(`Showing all ${finalProductionOrders.length} active production orders (excluding Done/Cancelled)`);
       }
       
-      console.log(`Returning ${productionOrders.length} production orders (filter: ${statusFilter || 'none'})`);
+      console.log(`Returning ${finalProductionOrders.length} production orders (filter: ${statusFilter || 'none'})`);
       
-      res.json(productionOrders);
+      res.json(finalProductionOrders);
     } catch (error) {
       console.error("Error fetching production orders:", error);
       res.status(500).json({ message: "Failed to fetch production orders" });
