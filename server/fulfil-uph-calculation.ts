@@ -4,8 +4,8 @@
  */
 
 import { db } from "./db.js";
-import { workCycles, historicalUph, operators, productionOrders } from "../shared/schema.js";
-import { sql, isNotNull } from "drizzle-orm";
+import { workCycles, historicalUph, operators } from "../shared/schema.js";
+import { sql } from "drizzle-orm";
 
 /**
  * Transform work center name according to aggregation rules:
@@ -40,9 +40,9 @@ export async function calculateUphFromFulfilFields() {
 
   try {
     // Query using exact Fulfil API field paths from production.work/cycles endpoint
-    // Query all work cycles including zero quantities - let's see what we actually have
+    // CRITICAL: Remove duplicates and filter out zero quantities that skew UPH calculations
     const cyclesResult = await db.execute(sql`
-      SELECT
+      SELECT DISTINCT
         work_cycles_operator_rec_name as operator_name,
         work_operation_rec_name as operation_name,
         work_cycles_duration as duration,
@@ -58,34 +58,26 @@ export async function calculateUphFromFulfilFields() {
         AND work_cycles_operator_rec_name != ''
         AND work_cycles_work_center_rec_name IS NOT NULL
         AND work_cycles_duration > 0
+        AND work_cycles_quantity_done > 0
         AND work_production_routing_rec_name IS NOT NULL
       ORDER BY work_production_number, work_id, work_cycles_id
     `);
     
     const cycles = cyclesResult.rows;
     console.log(`Found ${cycles.length} complete work cycles with authentic Fulfil field mapping`);
-    
-    // DEBUG: Check if MO118610 is in the results
-    const mo118610Cycles = cycles.filter(c => c.production_order_number?.toString() === 'MO118610');
-    console.log(`DEBUG: Found ${mo118610Cycles.length} cycles for MO118610:`, mo118610Cycles.map(c => ({
-      operator: c.operator_name,
-      workCenter: c.work_center_name,
-      duration: c.duration,
-      quantity: c.quantity_done,
-      workOrderId: c.work_order_id
-    })));
 
-    // STEP 1: First aggregate by Work Order ID to handle one-to-many cycles per WO
-    const workOrderGroups = new Map<string, {
+    // STEP 1: Group cycles by operator + work center + routing + MO to calculate per-MO UPH
+    // CRITICAL: Multiple work orders within same work center category for each MO must have durations combined FIRST
+    const moLevelGroups = new Map<string, {
       operatorName: string;
-      originalWorkCenter: string;
       transformedWorkCenter: string;
       routing: string;
       moNumber: string;
-      operationName: string;
-      workOrderId: string;
+      operations: Set<string>;
+      workOrders: Set<string>;
       totalDuration: number;
-      cycleCount: number;
+      totalQuantity: number;
+      observations: number;
       latestUpdate: Date | null;
     }>();
 
@@ -97,37 +89,39 @@ export async function calculateUphFromFulfilFields() {
       const moNumber = cycle.production_order_number?.toString() || '';
       const operationName = cycle.operation_name?.toString() || '';
       const workOrderId = cycle.work_order_id?.toString() || '';
-      const duration = parseFloat(cycle.duration?.toString() || '0');
       
-      if (!operatorName || !originalWorkCenter || !routing || !moNumber || !workOrderId || duration <= 0) {
+      if (!operatorName || !originalWorkCenter || !routing || !moNumber) {
         continue;
       }
       
-      const key = `${workOrderId}|${operatorName}`;
+      // Group by operator + work center + routing + MO for per-MO UPH calculation
+      // This ensures multiple WOs in same work center category get their durations combined per MO
+      const key = `${operatorName}|${transformedWorkCenter}|${routing}|${moNumber}`;
       
-      if (!workOrderGroups.has(key)) {
-        workOrderGroups.set(key, {
+      if (!moLevelGroups.has(key)) {
+        moLevelGroups.set(key, {
           operatorName,
-          originalWorkCenter,
           transformedWorkCenter,
           routing,
           moNumber,
-          operationName,
-          workOrderId,
+          operations: new Set(),
+          workOrders: new Set(),
           totalDuration: 0,
-          cycleCount: 0,
+          totalQuantity: 0,
+          observations: 0,
           latestUpdate: null
         });
       }
 
-      const group = workOrderGroups.get(key)!;
-      group.totalDuration += duration;
+      const group = moLevelGroups.get(key)!;
       
-      // DEBUG: Log MO118610 cycles being processed
-      if (moNumber === 'MO118610') {
-        console.log(`DEBUG MO118610 ${operatorName}: Adding cycle ${duration}s (qty: ${cycle.quantity_done}) - Total so far: ${group.totalDuration}s`);
-      }
-      group.cycleCount += 1;
+      // CRITICAL FIX: Sum ALL durations from ALL work orders within same work center category for this MO
+      // This properly handles cases where MO has multiple WOs in Assembly (Sewing + Zipper Pull)
+      group.totalDuration += parseFloat(cycle.duration?.toString() || '0');
+      group.totalQuantity += parseFloat(cycle.quantity_done?.toString() || '0');
+      group.observations += 1;
+      group.operations.add(operationName);
+      group.workOrders.add(workOrderId);
       
       // Track latest update timestamp
       if (cycle.updated_timestamp) {
@@ -138,99 +132,9 @@ export async function calculateUphFromFulfilFields() {
       }
     }
 
-    console.log(`Step 1: Aggregated ${cycles.length} work cycles into ${workOrderGroups.size} work orders`);
+    console.log(`Step 1: Grouped into ${moLevelGroups.size} per-MO combinations`);
 
-    // STEP 2: Group work orders by MO + Operator + Work Center to combine durations within work center categories
-    const moLevelGroups = new Map<string, {
-      operatorName: string;
-      transformedWorkCenter: string;
-      routing: string;
-      moNumber: string;
-      operations: Set<string>;
-      workOrders: Set<string>;
-      totalDuration: number;
-      observations: number;
-      latestUpdate: Date | null;
-    }>();
-
-    for (const [key, woGroup] of workOrderGroups) {
-      const moKey = `${woGroup.operatorName}|${woGroup.transformedWorkCenter}|${woGroup.routing}|${woGroup.moNumber}`;
-      
-      if (!moLevelGroups.has(moKey)) {
-        moLevelGroups.set(moKey, {
-          operatorName: woGroup.operatorName,
-          transformedWorkCenter: woGroup.transformedWorkCenter,
-          routing: woGroup.routing,
-          moNumber: woGroup.moNumber,
-          operations: new Set(),
-          workOrders: new Set(),
-          totalDuration: 0,
-          observations: 0,
-          latestUpdate: null
-        });
-      }
-
-      const group = moLevelGroups.get(moKey)!;
-      
-      // Sum durations from multiple work orders within same work center category for this MO
-      group.totalDuration += woGroup.totalDuration;
-      group.observations += woGroup.cycleCount;
-      group.operations.add(woGroup.operationName);
-      group.workOrders.add(woGroup.workOrderId);
-      
-      if (woGroup.latestUpdate && (!group.latestUpdate || woGroup.latestUpdate > group.latestUpdate)) {
-        group.latestUpdate = woGroup.latestUpdate;
-      }
-    }
-
-    console.log(`Step 2: Grouped into ${moLevelGroups.size} per-MO combinations with work center aggregation`);
-
-    // STEP 3: Get MO-level quantities from production orders table (authentic MO quantities)
-    // First try production_orders table, then fall back to Fulfil API for historical MOs
-    const moQuantities = new Map<string, number>();
-    
-    // Get quantities from uploaded historical production orders data
-    // Check both mo_number and rec_name fields to capture all uploaded data
-    const localQuantityResult = await db.execute(sql`
-      SELECT 
-        COALESCE(mo_number, rec_name) as mo_number, 
-        quantity 
-      FROM production_orders 
-      WHERE quantity IS NOT NULL AND quantity > 0
-        AND (mo_number IS NOT NULL OR rec_name IS NOT NULL)
-    `);
-    
-    for (const row of localQuantityResult.rows) {
-      const moNumber = row.mo_number?.toString();
-      const quantity = parseFloat(row.quantity?.toString() || '0');
-      if (moNumber && quantity > 0) {
-        moQuantities.set(moNumber, quantity);
-      }
-    }
-    
-    console.log(`Step 3a: Found quantities for ${moQuantities.size} MOs from uploaded historical data (${localQuantityResult.rows.length} production orders processed)`);
-    
-    // For historical MOs not in production_orders, we need to fetch from Fulfil API
-    // This is a critical gap - work_cycles quantities are operation-level, not MO-level
-    const historicalMOs = new Set<string>();
-    for (const [key, moGroup] of moLevelGroups) {
-      if (!moQuantities.has(moGroup.moNumber)) {
-        historicalMOs.add(moGroup.moNumber);
-      }
-    }
-    
-    console.log(`Step 3b: Need authentic quantities for ${historicalMOs.size} MOs not found in uploaded historical data`);
-    
-    // For MOs without quantities in uploaded data, mark them as needing Fulfil API lookup
-    // This maintains authentic-data-only principle - no estimates or fallbacks
-    for (const mo of historicalMOs) {
-      console.log(`MISSING QUANTITY: ${mo} - No authentic quantity available from uploaded data or Fulfil API`);
-    }
-    
-    console.log(`Step 3c: Using ${moQuantities.size} authentic MO quantities from uploaded historical production orders`);
-    console.log(`Step 3d: Will skip ${historicalMOs.size} MOs without authentic quantity data (maintaining data integrity principle)`);
-
-    // STEP 4: Calculate UPH for each MO and group by operator+work center+routing for averaging
+    // STEP 2: Calculate UPH for each MO and group by operator+work center+routing for averaging
     const operatorWorkCenterRoutingGroups = new Map<string, {
       operatorName: string;
       transformedWorkCenter: string;
@@ -241,25 +145,12 @@ export async function calculateUphFromFulfilFields() {
       latestUpdate: Date | null;
     }>();
 
-    // Debug all MO118610 groups before processing
-    for (const [key, moGroup] of moLevelGroups) {
-      if (moGroup.moNumber === 'MO118610') {
-        console.log(`PRE-CALC MO118610: key=${key}, operator=${moGroup.operatorName}, workCenter=${moGroup.transformedWorkCenter}, routing=${moGroup.routing}, totalDurationSec=${moGroup.totalDuration}, observations=${moGroup.observations}`);
-      }
-    }
-    
     for (const [key, moGroup] of moLevelGroups) {
       const totalHours = moGroup.totalDuration / 3600; // Convert seconds to hours
-      const moQuantity = moQuantities.get(moGroup.moNumber) || 0;
       
-      // Only calculate UPH for MOs with meaningful data and authentic MO-level quantity
-      if (totalHours > 0.01 && moGroup.observations >= 1 && moQuantity > 0) {
-        const moUph = moQuantity / totalHours;
-        
-        // Debug specific MO118610 processing
-        if (moGroup.moNumber === 'MO118610') {
-          console.log(`DEBUG MO118610: operator=${moGroup.operatorName}, workCenter=${moGroup.transformedWorkCenter}, routing=${moGroup.routing}, totalDurationSec=${moGroup.totalDuration}, hours=${totalHours.toFixed(4)}, quantity=${moQuantity}, UPH=${moUph.toFixed(2)}, observations=${moGroup.observations}`);
-        }
+      // Only calculate UPH for MOs with meaningful data
+      if (totalHours > 0.01 && moGroup.observations >= 1 && moGroup.totalQuantity > 0) {
+        const moUph = moGroup.totalQuantity / totalHours;
         
         // Only include realistic UPH values for this MO
         if (moUph > 0 && moUph < 500) {
@@ -291,10 +182,8 @@ export async function calculateUphFromFulfilFields() {
             group.latestUpdate = moGroup.latestUpdate;
           }
           
-          console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moQuantity} authentic units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
+          console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moGroup.totalQuantity} units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
         }
-      } else if (totalHours > 0.01 && moGroup.observations >= 1) {
-        console.log(`SKIPPED ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} - No authentic MO quantity available (need Fulfil API lookup)`);
       }
     }
 

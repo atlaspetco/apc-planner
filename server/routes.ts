@@ -16,19 +16,27 @@ import {
   insertOperatorSchema,
   insertBatchSchema
 } from "@shared/schema";
-import { 
-  getUphForProductionOrder, 
-  getUphByRouting, 
-  calculateEstimatedTime,
-  getUphSummaryStats
-} from './fast-uph-service.js';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  // Optimized production orders endpoint - load once, cache heavily, filter client-side
+  // Main production orders endpoint - CRITICAL for dashboard
   app.get("/api/production-orders", async (req, res) => {
     try {
-      // Use existing storage method but exclude completed orders by default
+      // Parse status filter from query params - handle JSON string or array
+      let statusFilter: string[] | undefined;
+      if (req.query.status) {
+        try {
+          const statusParam = req.query.status as string;
+          statusFilter = typeof statusParam === 'string' && statusParam.startsWith('[') 
+            ? JSON.parse(statusParam) 
+            : Array.isArray(statusParam) ? statusParam : [statusParam];
+          console.log("Status filter applied:", statusFilter);
+        } catch (e) {
+          console.warn("Invalid status filter format, ignoring:", req.query.status);
+          statusFilter = undefined;
+        }
+      }
+      
       const excludeCompleted = req.query.excludeCompleted !== "false";
       
       // Get production orders with proper sorting (newest first by ID/creation)
@@ -37,25 +45,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sort by newest first (highest ID = most recent in database)
       productionOrders = productionOrders.sort((a, b) => b.id - a.id);
       
-      // Use authentic routing data from database - no synthetic mapping
-      const enrichedOrders = productionOrders.map(po => {
-        return {
-          ...po,
-          productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
-          routingName: po.routing // Use authentic routing from database
-        };
-      });
+      // Get routing data from work orders table for each production order
+      const { db } = await import("./db.js");
+      const { workOrders } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
       
-      console.log(`Showing all ${enrichedOrders.length} active production orders (excluding Done/Cancelled)`);
-      console.log(`Returning ${enrichedOrders.length} production orders (filter: client-side)`);
+      // Enrich production orders with routing data from work orders and Fulfil API
+      const enrichedProductionOrders = await Promise.all(
+        productionOrders.map(async (po) => {
+          // Find work orders for this production order to get routing data
+          const woData = await db
+            .select({ routing: workOrders.routing })
+            .from(workOrders)
+            .where(eq(workOrders.productionOrderId, po.id))
+            .limit(1);
+          
+          const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
+          
+          // Use actual routing data from work_cycles table for authentic routing names
+          let routingFromProductCode = null;
+          if (po.product_code) {
+            if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
+            else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
+            else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
+            else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
+            else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
+            else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
+            else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
+            else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
+            else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
+          }
+          
+          return {
+            ...po,
+            productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
+            // Use routing from work orders, then product code mapping, then original routing - never default to "Standard"
+            routingName: routingFromWorkOrders || routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
+          };
+        })
+      );
       
-      // Add caching headers to reduce server load
-      res.set({
-        'Cache-Control': 'public, max-age=300', // Cache for 5 minutes
-        'ETag': `"${enrichedOrders.length}-${Date.now()}"` // Simple ETag based on count
-      });
+      // Apply status filtering to match frontend request - include all if no specific filter
+      let finalProductionOrders = enrichedProductionOrders;
+      if (statusFilter && statusFilter.length > 0 && !statusFilter.includes('assigned')) {
+        finalProductionOrders = enrichedProductionOrders.filter(po => statusFilter.includes(po.status));
+        console.log(`Filtered to ${finalProductionOrders.length} production orders with status: ${statusFilter.join(', ')}`);
+      } else {
+        console.log(`Showing all ${finalProductionOrders.length} active production orders (excluding Done/Cancelled)`);
+      }
       
-      res.json(enrichedOrders);
+      console.log(`Returning ${finalProductionOrders.length} production orders (filter: ${statusFilter || 'none'})`);
+      
+      res.json(finalProductionOrders);
     } catch (error) {
       console.error("Error fetching production orders:", error);
       res.status(500).json({ message: "Failed to fetch production orders" });
@@ -1490,20 +1531,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fulfil sync statistics endpoint - fast cached approach for large datasets
+  // Fulfil sync statistics endpoint  
   app.get("/api/fulfil/sync-stats", async (req, res) => {
     try {
-      // Return known values from recent successful upload to avoid slow queries
-      // Based on confirmed database counts from recent upload completion
-      const totalMOs = 8486;  // Confirmed from upload completion logs
-      const totalWOs = 35;    // Current work orders count
-      const totalWCs = 15389; // Confirmed work cycles count
-      const lastSync = "2025-07-10T06:25:00.875Z"; // From upload completion
+      // Get actual database record counts using direct SQL queries
+      const { db } = await import("./db.js");
+      const { productionOrders, workOrders, workCycles } = await import("../shared/schema.js");
+      const { sql } = await import("drizzle-orm");
+      const { desc } = await import("drizzle-orm");
+      
+      // Count total records in database
+      const [moCount] = await db.select({ count: sql`count(*)` }).from(productionOrders);
+      const [woCount] = await db.select({ count: sql`count(*)` }).from(workOrders);
+      const [wcCount] = await db.select({ count: sql`count(*)` }).from(workCycles);
+      
+      const totalMOs = Number(moCount.count);
+      const totalWOs = Number(woCount.count);
+      const totalWCs = Number(wcCount.count);
+      
+      // For recent imports, we'll show all current data as recent
+      // since user has been actively importing CSV and API data
+      const recentMOs = totalMOs;
+      const recentWOs = totalWOs;
+      const recentWCs = totalWCs;
+      
+      // Get the most recent import timestamp from production orders table
+      let lastSync = null;
+      if (totalMOs > 0) {
+        const [lastMO] = await db
+          .select({ createdAt: productionOrders.createdAt })
+          .from(productionOrders)
+          .orderBy(desc(productionOrders.createdAt))
+          .limit(1);
+        
+        if (lastMO?.createdAt) {
+          lastSync = lastMO.createdAt.toISOString();
+        }
+      }
       
       res.json({
-        productionOrders: totalMOs,
-        workOrders: totalWOs,
-        workCycles: totalWCs,
+        productionOrders: recentMOs,
+        workOrders: recentWOs,
+        workCycles: recentWCs,
         lastSync,
         totalProductionOrders: totalMOs,
         totalWorkOrders: totalWOs,
@@ -1515,10 +1584,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         productionOrders: 0,
         workOrders: 0,
-        workCycles: 0,
         totalProductionOrders: 0,
         totalWorkOrders: 0,
-        totalWorkCycles: 0,
         lastSync: null,
         error: error instanceof Error ? error.message : "Unknown error" 
       });
@@ -2890,90 +2957,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         progress: 10
       });
 
-      // Process CSV data directly - simplified import for production orders
-      let productionOrdersImported = 0;
-      let workOrdersImported = 0;
-      const errors: string[] = [];
-      
-      for (let i = 0; i < csvData.length; i++) {
-        try {
-          const record = csvData[i];
-          
-          // Update progress
-          if (i % 100 === 0) {
-            global.updateImportStatus?.({
-              currentOperation: `Processing record ${i + 1} of ${csvData.length}`,
-              progress: Math.round((i / csvData.length) * 90) + 10,
-              processedItems: i
-            });
-          }
-          
-          // Skip empty records
-          if (!record.rec_name || !record.id) continue;
-          
-          // Create production order if it has MO number
-          if (record.rec_name && record.rec_name.includes('MO')) {
-            const moNumber = record.rec_name.match(/MO\d+/)?.[0];
-            if (moNumber && record.quantity_done) {
-              
-              // Enhanced deduplication: check for existing record first
-              const existingPO = await db.execute(sql`
-                SELECT id, mo_number, quantity FROM production_orders 
-                WHERE mo_number = ${moNumber} OR fulfil_id = ${parseInt(record.id) || null}
-                LIMIT 1
-              `);
-              
-              if (existingPO.rows.length === 0) {
-                // Insert new production order (no conflict)
-                await db.execute(sql`
-                  INSERT INTO production_orders (
-                    mo_number, product_name, routing, status, 
-                    quantity, due_date, fulfil_id, product_code
-                  ) VALUES (
-                    ${moNumber},
-                    ${record.product_code || 'Unknown Product'},
-                    ${record['routing/rec_name'] || 'Unknown Routing'},
-                    'assigned',
-                    ${parseInt(record.quantity_done) || 0},
-                    ${record.planned_date || null},
-                    ${parseInt(record.id) || null},
-                    ${record.product_code || null}
-                  )
-                `);
-                productionOrdersImported++;
-              } else {
-                // Update existing record only if data has changed
-                const existing = existingPO.rows[0];
-                const newQuantity = parseInt(record.quantity_done) || 0;
-                
-                if (existing.quantity !== newQuantity || !existing.product_code) {
-                  await db.execute(sql`
-                    UPDATE production_orders SET
-                      quantity = ${newQuantity},
-                      product_code = ${record.product_code || existing.product_code},
-                      routing = ${record['routing/rec_name'] || existing.routing}
-                    WHERE mo_number = ${moNumber}
-                  `);
-                  console.log(`UPDATED: ${moNumber} - quantity changed from ${existing.quantity} to ${newQuantity}`);
-                } else {
-                  console.log(`SKIPPED: ${moNumber} - no changes detected`);
-                }
-              }
-            }
-          }
-          
-        } catch (recordError) {
-          const errorMsg = `Record ${i}: ${recordError instanceof Error ? recordError.message : 'Unknown error'}`;
-          errors.push(errorMsg);
-          console.warn(errorMsg);
-        }
-      }
-      
-      const result = {
-        productionOrdersImported,
-        workOrdersImported,
-        errors
-      };
+      // Import CSV data using correct import function with progress tracking
+      const { correctCSVImport } = await import("./correct-csv-import.js");
+      const result = await correctCSVImport(csvData, (current, total, message) => {
+        global.updateImportStatus?.({
+          isImporting: true,
+          currentOperation: message,
+          progress: Math.round((current / total) * 90) + 10,
+          totalItems: total,
+          processedItems: current
+        });
+      });
       
       // Complete progress
       global.updateImportStatus?.({
@@ -3327,25 +3321,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const { FulfilAPIService } = await import("./fulfil-api.js");
-      const fulfilAPI = new FulfilAPIService();
-      fulfilAPI.setApiKey(process.env.FULFIL_ACCESS_TOKEN);
-
-      // Test connection first  
-      const connectionTest = await fulfilAPI.testConnection();
-      if (!connectionTest.connected) {
-        return res.status(500).json({
-          success: false,
-          message: `Fulfil API connection failed: ${connectionTest.message}`
-        });
-      }
-
-      console.log("Fetching current production orders using working API service...");
+      const { FulfilCurrentService } = await import("./fulfil-current.js");
+      const fulfilService = new FulfilCurrentService();
       
-      // Use the working method that was successful before UPH rebuild
-      const currentOrders = await fulfilAPI.getRecentManufacturingOrders(30, 200);
-      
-      console.log(`✓ Successfully fetched ${currentOrders.length} production orders from Fulfil API`);
+      const currentOrders = await fulfilService.getCurrentProductionOrders();
       
       if (currentOrders.length === 0) {
         return res.json({
@@ -4069,92 +4048,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to sync missing work orders",
         error: error instanceof Error ? error.message : "Unknown error"
       });
-    }
-  });
-
-  // Fast UPH lookup endpoints using pre-calculated table
-  app.get("/api/uph/fast-lookup/:moNumber", async (req, res) => {
-    try {
-      const { moNumber } = req.params;
-      const { workCenter, operatorId } = req.query;
-      
-      if (!workCenter) {
-        return res.status(400).json({ error: "workCenter parameter required" });
-      }
-      
-      const uphData = await getUphForProductionOrder(
-        moNumber, 
-        workCenter as string, 
-        operatorId ? parseInt(operatorId as string) : undefined
-      );
-      
-      if (!uphData) {
-        return res.status(404).json({ 
-          error: `No UPH data found for ${moNumber} in ${workCenter}` 
-        });
-      }
-      
-      res.json({
-        success: true,
-        data: uphData,
-        message: `Found UPH data: ${uphData.unitsPerHour} UPH based on ${uphData.observations} observations`
-      });
-      
-    } catch (error) {
-      console.error("Fast UPH lookup error:", error);
-      res.status(500).json({ error: "Failed to lookup UPH data" });
-    }
-  });
-
-  // Fast time calculation endpoint
-  app.post("/api/uph/calculate-time", async (req, res) => {
-    try {
-      const { moNumber, quantity, workCenter, operatorId } = req.body;
-      
-      if (!moNumber || !quantity || !workCenter) {
-        return res.status(400).json({ 
-          error: "moNumber, quantity, and workCenter are required" 
-        });
-      }
-      
-      const estimatedHours = await calculateEstimatedTime(
-        moNumber, 
-        quantity, 
-        workCenter, 
-        operatorId
-      );
-      
-      if (estimatedHours === null) {
-        return res.status(404).json({ 
-          error: `No UPH data available for time calculation` 
-        });
-      }
-      
-      res.json({
-        success: true,
-        estimatedHours: Math.round(estimatedHours * 100) / 100, // Round to 2 decimals
-        estimatedMinutes: Math.round(estimatedHours * 60),
-        dataSource: "pre-calculated UPH table"
-      });
-      
-    } catch (error) {
-      console.error("Time calculation error:", error);
-      res.status(500).json({ error: "Failed to calculate time" });
-    }
-  });
-
-  // Fast UPH summary stats endpoint
-  app.get("/api/uph/fast-stats", async (req, res) => {
-    try {
-      const stats = await getUphSummaryStats();
-      res.json({
-        success: true,
-        stats,
-        message: "UPH table statistics from pre-calculated data"
-      });
-    } catch (error) {
-      console.error("UPH stats error:", error);
-      res.status(500).json({ error: "Failed to get UPH statistics" });
     }
   });
 

@@ -45,17 +45,13 @@ export default function PlanningGrid({
   // Group production orders by routing using actual routing data from work orders
   const routingGroups = productionOrders.reduce((acc, po) => {
     // Use routing from work orders data (enriched by backend) - never default to "Standard"
-    const routing = po.routingName || po.routing || "Unknown Routing";
+    const routing = po.routingName || "Unknown Routing";
     if (!acc[routing]) {
       acc[routing] = [];
     }
     acc[routing].push(po);
     return acc;
   }, {} as Record<string, ProductionOrder[]>);
-
-  // Debug routing groups
-  console.log(`PlanningGrid: Received ${productionOrders.length} orders`);
-  console.log(`Routing groups:`, Object.keys(routingGroups).map(key => `${key}: ${routingGroups[key].length} orders`));
 
   const expandAll = () => {
     // Get all routing group keys

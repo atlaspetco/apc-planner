@@ -15,47 +15,27 @@ export default function Dashboard() {
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
-  // Get production orders from local database (filtered server-side for active only)
-  const { data: allProductionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders"],
-    retry: 1,
+  const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
+    queryKey: ["/api/production-orders", { status: JSON.stringify(statusFilter) }],
+    enabled: true,
+    retry: 3,
     retryDelay: 1000,
-    staleTime: 0, // Force fresh data
-    cacheTime: 0, // Don't cache
   });
 
-  // Try to get Fulfil data but don't block on it
-  const { data: fulfilResponse, refetch: refetchCurrentPOs } = useQuery({
+  // Get current production orders from Fulfil API
+  const { data: currentPOs = [], isLoading: isLoadingCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
     queryKey: ["/api/fulfil/current-production-orders"],
-    retry: 1,
+    retry: 3,
     retryDelay: 1000,
-    staleTime: 0,
-    cacheTime: 0,
-    enabled: false, // Don't auto-fetch since it's failing
-  });
-
-  // Filter client-side for better performance 
-  const productionOrders = allProductionOrders.filter(po => {
-    if (statusFilter.length === 0) return true;
-    const matchesFilter = statusFilter.includes(po.status || po.state);
-    
-    // Debug first few items to understand filtering
-    if (allProductionOrders.indexOf(po) < 3) {
-      console.log(`Filtering MO ${po.moNumber}: status="${po.status}", state="${po.state}", statusFilter=${JSON.stringify(statusFilter)}, matches=${matchesFilter}`);
-    }
-    
-    return matchesFilter;
   });
 
   const { data: summary, isLoading: isLoadingSummary, error: errorSummary, refetch: refetchSummary } = useQuery({
     queryKey: ["/api/dashboard/summary"],
-    retry: 1,
+    retry: 3,
     retryDelay: 1000,
-    staleTime: 2 * 60 * 1000, // 2 minutes cache for summary
   });
 
   const handleRefresh = () => {
-    // Manually refresh only when user clicks refresh
     refetchPOs();
     refetchSummary();
     refetchCurrentPOs();
@@ -139,9 +119,7 @@ export default function Dashboard() {
         {/* Status Info */}
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
-            {fulfilResponse?.success ? 
-              `Fulfil API connection restored ✓ - Showing ${productionOrders?.length || 0} of ${allProductionOrders?.length || 0} production orders after filtering (API returned ${fulfilResponse?.productionOrders || 0} current orders)` : 
-              `Showing ${productionOrders?.length || 0} of ${allProductionOrders?.length || 0} production orders after status filtering (Database: assigned=${allProductionOrders?.filter(po => po.status === 'assigned').length || 0})`}
+            Latest database data - {productionOrders?.length || 0} production orders loaded
           </p>
         </div>
 

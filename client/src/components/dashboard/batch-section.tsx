@@ -40,12 +40,40 @@ export default function BatchSection({
     queryKey: ["/api/work-orders"],
   });
   
-  // Calculate total estimated hours for the batch using simplified formula
+  // Calculate total estimated hours for the batch using actual work order estimates
   const calculateBatchTotalHours = () => {
     return orders.reduce((batchTotal, order) => {
-      // Use consistent quantity/15 formula to avoid database dependency 
-      const estimatedHours = order.quantity / 15;
-      return batchTotal + estimatedHours;
+      const orderWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
+        wo.productionOrderId === order.id
+      );
+      
+      // If no work orders exist, cannot calculate hours without actual data
+      if (orderWorkOrders.length === 0) {
+        console.warn(`No work orders found for production order ${order.moNumber}, cannot calculate time without actual data`);
+        return batchTotal; // Return 0 additional hours instead of guessing
+      }
+      
+      // Group work orders by work center to calculate parallel vs sequential time
+      const workCenterHours: Record<string, number> = {};
+      
+      orderWorkOrders.forEach((wo: WorkOrder) => {
+        const workCenter = wo.workCenter || wo.workCenterName || 'Unknown';
+        if (!workCenterHours[workCenter]) {
+          workCenterHours[workCenter] = 0;
+        }
+        
+        // Only use actual estimated hours from work order - never estimate
+        if (wo.estimatedHours && wo.estimatedHours > 0) {
+          workCenterHours[workCenter] = Math.max(workCenterHours[workCenter], wo.estimatedHours);
+        } else {
+          console.warn(`Work order ${wo.id} has no estimated hours, cannot calculate time without actual data`);
+          // Skip this work order rather than guessing
+        }
+      });
+      
+      // Return the maximum time across work centers (assuming parallel execution)
+      const maxHours = Math.max(...Object.values(workCenterHours), 0);
+      return batchTotal + maxHours;
     }, 0);
   };
   
@@ -209,9 +237,18 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   });
 
   const calculateTotalHours = () => {
-    // Use simplified calculation based on quantity and standard work centers
-    // This avoids the "No work orders found" errors by using consistent formula
-    return order.quantity / 15; // Based on historical analysis from unified time calculation
+    // Only calculate hours if work orders exist with actual estimated hours
+    const orderWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
+      wo.productionOrderId === order.id && wo.estimatedHours && wo.estimatedHours > 0
+    );
+    
+    if (orderWorkOrders.length === 0) {
+      console.warn(`No work orders with estimated hours found for ${order.moNumber}, cannot calculate time without actual data`);
+      return 0; // Return 0 instead of guessing
+    }
+    
+    // Sum actual estimated hours from work orders
+    return orderWorkOrders.reduce((total, wo) => total + (wo.estimatedHours || 0), 0);
   };
 
   const totalHours = calculateTotalHours();
