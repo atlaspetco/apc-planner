@@ -2445,6 +2445,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fix UPH calculating each work order individually, then weighted averaging per operator
+  app.post("/api/uph/fix-individual-wo", async (req, res) => {
+    try {
+      const { fixUphIndividualWorkOrders } = await import("./fix-uph-individual-wo.js");
+      const result = await fixUphIndividualWorkOrders();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH with individual work orders:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH with individual work orders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
   // Calculate UPH from existing work cycles data (no API calls needed)
   app.post("/api/uph/calculate-simple", async (req, res) => {
     try {
