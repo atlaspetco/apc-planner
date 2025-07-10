@@ -7,7 +7,7 @@ export interface UPHCalculationResult {
   operator: string;
   workCenter: string;
   productRouting: string;
-  operation: string;
+  operations: string[]; // All operations aggregated within this work center
   cycleCount: number;
   totalDurationSeconds: number;
   totalDurationHours: number;
@@ -42,12 +42,13 @@ export async function calculateCorrectedUPH(): Promise<{
 
     console.log(`Found ${rawCycles.length} work cycles with valid duration and quantity`);
 
-    // Group cycles by operator, work center, routing, and operation
+    // Group cycles by operator, work center, and routing (NOT by operation)
+    // This will aggregate all operations within the same work center
     const groupedCycles = new Map<string, {
       operator: string;
       workCenter: string;
       productRouting: string;
-      operation: string;
+      operations: Set<string>;
       cycles: typeof rawCycles;
     }>();
 
@@ -66,30 +67,33 @@ export async function calculateCorrectedUPH(): Promise<{
       else if (workCenter.includes('Packaging')) workCenter = 'Packaging';
       else if (workCenter.includes('Sewing')) workCenter = 'Assembly'; // Sewing is Assembly
 
-      const key = `${cycle.work_cycles_operator_rec_name}|${workCenter}|${cycle.work_production_routing_rec_name}|${cycle.work_operation_rec_name}`;
+      // Key by operator + work center + routing (aggregate all operations within work center)
+      const key = `${cycle.work_cycles_operator_rec_name}|${workCenter}|${cycle.work_production_routing_rec_name}`;
       
       if (!groupedCycles.has(key)) {
         groupedCycles.set(key, {
           operator: cycle.work_cycles_operator_rec_name,
           workCenter,
           productRouting: cycle.work_production_routing_rec_name,
-          operation: cycle.work_operation_rec_name,
+          operations: new Set(),
           cycles: []
         });
       }
       
+      groupedCycles.get(key)!.operations.add(cycle.work_operation_rec_name);
       groupedCycles.get(key)!.cycles.push(cycle);
     }
 
-    console.log(`Grouped into ${groupedCycles.size} operator/work center/routing/operation combinations`);
+    console.log(`Grouped into ${groupedCycles.size} operator/work center/routing combinations`);
 
-    // Calculate UPH for each group using all cycles
+    // Calculate UPH for each group using all cycles (aggregated by work center)
     const results: UPHCalculationResult[] = [];
     let totalFiltered = 0; // No filtering, so this will be 0
 
     for (const [key, group] of groupedCycles) {
       if (group.cycles.length === 0) continue;
 
+      // Sum ALL durations and quantities across all operations within this work center
       const totalDurationSeconds = group.cycles.reduce((sum, cycle) => sum + cycle.work_cycles_duration, 0);
       const totalQuantity = group.cycles.reduce((sum, cycle) => sum + cycle.work_cycles_quantity_done, 0);
       const totalDurationHours = totalDurationSeconds / 3600;
@@ -99,7 +103,7 @@ export async function calculateCorrectedUPH(): Promise<{
         operator: group.operator,
         workCenter: group.workCenter,
         productRouting: group.productRouting,
-        operation: group.operation,
+        operations: Array.from(group.operations).sort(), // All operations aggregated
         cycleCount: group.cycles.length,
         totalDurationSeconds,
         totalDurationHours,
@@ -124,7 +128,7 @@ export async function calculateCorrectedUPH(): Promise<{
       result.operator && result.operator.trim() !== '' &&
       result.workCenter && result.workCenter.trim() !== '' &&
       result.productRouting && result.productRouting.trim() !== '' &&
-      result.operation && result.operation.trim() !== ''
+      result.operations && result.operations.length > 0
     );
 
     console.log(`Filtered ${results.length} results to ${validResults.length} valid results`);
@@ -133,12 +137,12 @@ export async function calculateCorrectedUPH(): Promise<{
       operatorName: result.operator,
       workCenter: result.workCenter,
       productRouting: result.productRouting,
-      operation: result.operation,
+      operation: result.operations.join(', '), // Store all operations as comma-separated
       uph: result.uph,
       observationCount: result.validCycles,
       totalDurationHours: result.totalDurationHours,
       totalQuantity: result.totalQuantity,
-      dataSource: 'work_cycles_unfiltered'
+      dataSource: 'work_cycles_aggregated'
     }));
 
     if (uphInserts.length > 0) {
