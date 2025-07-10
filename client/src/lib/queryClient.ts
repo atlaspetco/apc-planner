@@ -53,7 +53,7 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: true,
       staleTime: 0, // Always fetch fresh data
-      cacheTime: 0, // Don't cache results
+      gcTime: 0, // Don't cache results (TanStack Query v5)
       refetchOnMount: true,
       refetchOnReconnect: true,
       retry: 3,
