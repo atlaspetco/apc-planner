@@ -63,13 +63,14 @@ export async function calculateUphFromFulfilFields() {
     const cycles = cyclesResult.rows;
     console.log(`Found ${cycles.length} complete work cycles with authentic Fulfil field mapping`);
 
-    // Group cycles by operator + transformed work center + routing ONLY (sum ALL operations within work center)
-    const groupedCycles = new Map<string, {
+    // STEP 1: Group cycles by operator + work center + routing + MO to calculate per-MO UPH
+    // This gives us individual MO performance metrics that we can analyze and average
+    const moLevelGroups = new Map<string, {
       operatorName: string;
-      operations: Set<string>;
       transformedWorkCenter: string;
-      originalWorkCenters: Set<string>;
       routing: string;
+      moNumber: string;
+      operations: Set<string>;
       totalDuration: number;
       totalQuantity: number;
       observations: number;
@@ -81,19 +82,23 @@ export async function calculateUphFromFulfilFields() {
       const originalWorkCenter = cycle.work_center_name?.toString() || '';
       const transformedWorkCenter = transformWorkCenter(originalWorkCenter);
       const routing = cycle.routing_name?.toString() || '';
+      const moNumber = cycle.production_order_number?.toString() || '';
       const operationName = cycle.operation_name?.toString() || '';
       
-      // CRITICAL FIX: Group by operator + transformed work center + routing ONLY
-      // This ensures ALL operations within the same work center are summed together
-      const key = `${operatorName}|${transformedWorkCenter}|${routing}`;
+      if (!operatorName || !originalWorkCenter || !routing || !moNumber) {
+        continue;
+      }
       
-      if (!groupedCycles.has(key)) {
-        groupedCycles.set(key, {
+      // Group by operator + work center + routing + MO for per-MO UPH calculation
+      const key = `${operatorName}|${transformedWorkCenter}|${routing}|${moNumber}`;
+      
+      if (!moLevelGroups.has(key)) {
+        moLevelGroups.set(key, {
           operatorName,
-          operations: new Set(),
           transformedWorkCenter,
-          originalWorkCenters: new Set(),
           routing,
+          moNumber,
+          operations: new Set(),
           totalDuration: 0,
           totalQuantity: 0,
           observations: 0,
@@ -101,16 +106,13 @@ export async function calculateUphFromFulfilFields() {
         });
       }
 
-      const group = groupedCycles.get(key)!;
+      const group = moLevelGroups.get(key)!;
       
-      // Sum ALL durations and quantities across ALL operations in this work center
+      // Sum ALL durations and quantities across ALL operations within this work center for this specific MO
       group.totalDuration += parseFloat(cycle.duration?.toString() || '0');
       group.totalQuantity += parseFloat(cycle.quantity_done?.toString() || '0');
       group.observations += 1;
-      
-      // Track all operations and work centers included in this aggregation
       group.operations.add(operationName);
-      group.originalWorkCenters.add(originalWorkCenter);
       
       // Track latest update timestamp
       if (cycle.updated_timestamp) {
@@ -121,7 +123,62 @@ export async function calculateUphFromFulfilFields() {
       }
     }
 
-    console.log(`Grouped into ${groupedCycles.size} operator/work center/routing combinations`);
+    console.log(`Step 1: Grouped into ${moLevelGroups.size} per-MO combinations`);
+
+    // STEP 2: Calculate UPH for each MO and group by operator+work center+routing for averaging
+    const operatorWorkCenterRoutingGroups = new Map<string, {
+      operatorName: string;
+      transformedWorkCenter: string;
+      routing: string;
+      moUphValues: Array<{uph: number, moNumber: string, observations: number}>;
+      totalObservations: number;
+      operations: Set<string>;
+      latestUpdate: Date | null;
+    }>();
+
+    for (const [key, moGroup] of moLevelGroups) {
+      const totalHours = moGroup.totalDuration / 3600; // Convert seconds to hours
+      
+      // Only calculate UPH for MOs with meaningful data
+      if (totalHours > 0.01 && moGroup.observations >= 1 && moGroup.totalQuantity > 0) {
+        const moUph = moGroup.totalQuantity / totalHours;
+        
+        // Only include realistic UPH values for this MO
+        if (moUph > 0 && moUph < 500) {
+          const groupKey = `${moGroup.operatorName}|${moGroup.transformedWorkCenter}|${moGroup.routing}`;
+          
+          if (!operatorWorkCenterRoutingGroups.has(groupKey)) {
+            operatorWorkCenterRoutingGroups.set(groupKey, {
+              operatorName: moGroup.operatorName,
+              transformedWorkCenter: moGroup.transformedWorkCenter,
+              routing: moGroup.routing,
+              moUphValues: [],
+              totalObservations: 0,
+              operations: new Set(),
+              latestUpdate: null
+            });
+          }
+          
+          const group = operatorWorkCenterRoutingGroups.get(groupKey)!;
+          group.moUphValues.push({
+            uph: moUph,
+            moNumber: moGroup.moNumber,
+            observations: moGroup.observations
+          });
+          group.totalObservations += moGroup.observations;
+          
+          // Merge operations and track latest update
+          moGroup.operations.forEach(op => group.operations.add(op));
+          if (moGroup.latestUpdate && (!group.latestUpdate || moGroup.latestUpdate > group.latestUpdate)) {
+            group.latestUpdate = moGroup.latestUpdate;
+          }
+          
+          console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moGroup.totalQuantity} units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.observations} cycles)`);
+        }
+      }
+    }
+
+    console.log(`Step 2: Created ${operatorWorkCenterRoutingGroups.size} operator/work center/routing combinations for averaging`);
 
     // Calculate UPH and store in database
     const uphCalculations: Array<{
