@@ -1,4 +1,5 @@
 import { useState } from "react";
+import React from "react";
 import { ChevronDown, ChevronRight, Layers, Inbox, Wand2 } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -202,11 +203,16 @@ interface MORowProps {
 
 function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }: MORowProps) {
   // Get local database work orders which contain assignments
-  const { data: allLocalWorkOrders = [] } = useQuery({
+  const { data: allLocalWorkOrders = [], refetch: refetchWorkOrders } = useQuery({
     queryKey: ["/api/work-orders"],
     staleTime: 0, // Force fresh data every time
     cacheTime: 0, // Don't cache results
   });
+  
+  // Force refetch on component mount to ensure fresh data
+  React.useEffect(() => {
+    refetchWorkOrders();
+  }, [refetchWorkOrders]);
   
   // Filter work orders for this production order from local database
   const localWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
@@ -224,10 +230,20 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   });
 
   const calculateTotalHours = () => {
-    // If no work orders exist, use basic calculation
+    // If no work orders exist, use basic calculation with 15 UPH fallback
     if (workOrders.length === 0) {
       return (order.quantity || 100) / 15;
     }
+    
+    // For proper UPH calculation, we need actual operator UPH data
+    // This is a simplified calculation - in practice should use actual assigned operator UPH
+    // For now, use more realistic UPH estimates based on work center:
+    // Cutting: 50-100 UPH, Assembly: 20-40 UPH, Packaging: 80-150 UPH
+    const workCenterUPH: Record<string, number> = {
+      'Cutting': 75,
+      'Assembly': 30, 
+      'Packaging': 115
+    };
     
     // Group work orders by work center to calculate parallel vs sequential time
     const workCenterHours: Record<string, number> = {};
@@ -235,11 +251,10 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
     (workOrders as WorkOrder[]).forEach((wo: WorkOrder) => {
       const workCenter = wo.workCenter || wo.workCenterName || 'Unknown';
       if (!workCenterHours[workCenter]) {
-        workCenterHours[workCenter] = 0;
+        // Use work center specific UPH instead of generic 15
+        const uph = workCenterUPH[workCenter] || 15;
+        workCenterHours[workCenter] = (order.quantity || 100) / uph;
       }
-      // Use realistic estimation: quantity / 15 UPH average (same as batch calculation)
-      const realisticHours = (order.quantity || 100) / 15;
-      workCenterHours[workCenter] = realisticHours;  // Assign, don't accumulate
     });
     
     // Return the maximum time across work centers (assuming parallel execution)
