@@ -1,0 +1,119 @@
+✅ Final Combined Block with Pagination (No Hard Limits)
+
+🔁 Pagination Strategy (All Endpoints)
+
+Fulfil’s API uses standard offset-based pagination:
+	•	Use limit: 100 (or higher)
+	•	Use offset: 0, 100, 200, … until the response returns fewer than limit items
+
+🧱 Helper Function for Paginated Fetch
+
+Add this to your shared Fulfil client module:
+
+async function fetchAllPaginated(endpoint: string, body: any): Promise<any[]> {
+  const allResults: any[] = [];
+  let offset = 0;
+  const limit = 100;
+
+  while (true) {
+    const response = await axios.post(
+      `${BASE_URL}${endpoint}`,
+      { ...body, offset, limit },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FULFIL_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const chunk = response.data;
+    if (!Array.isArray(chunk)) break;
+
+    allResults.push(...chunk);
+    if (chunk.length < limit) break;
+
+    offset += limit;
+  }
+
+  return allResults;
+}
+
+
+⸻
+
+🟩 1. Planning Grid – Active Work Orders
+
+export async function fetchActiveWorkOrders() {
+  return fetchAllPaginated(
+    "/model/work.order/search_read",
+    {
+      domain: [["state", "in", ["request", "draft", "waiting", "assigned", "running"]]],
+      fields: ["id", "name", "production_id", "work_center_id", "qty_produced", "operator_id", "state"],
+    }
+  );
+}
+
+
+⸻
+
+🟦 2. UPH Calculation – Done Work Cycles
+
+export async function fetchDoneWorkCycles() {
+  return fetchAllPaginated(
+    "/model/production.work.cycle/search_read",
+    {
+      domain: [["state", "=", "done"]],
+      fields: ["id", "rec_name", "duration", "write_date", "production_id", "operator_id", "work_center_id"],
+    }
+  );
+}
+
+
+⸻
+
+🟥 3. Real MO Quantities – Done MOs
+
+export async function fetchDoneMOQuantities() {
+  const data = await fetchAllPaginated(
+    "/model/production.order/search_read",
+    {
+      domain: [["state", "=", "done"]],
+      fields: ["id", "quantity", "work_order_ids"],
+    }
+  );
+
+  return data.map((mo: any) => ({
+    id: mo.id,
+    quantity: mo.quantity,
+    workOrderIds: mo.work_order_ids,
+  }));
+}
+
+
+⸻
+
+📦 4. Update UPH Rows with Real Quantities
+
+export async function updateDoneQuantitiesInUPH() {
+  const doneMOs = await fetchDoneMOQuantities();
+
+  for (const mo of doneMOs) {
+    await db.update(uphData)
+      .set({ totalQuantity: mo.quantity })
+      .where(eq(uphData.productionId, mo.id));
+  }
+
+  console.log(`Updated quantities for ${doneMOs.length} done MOs`);
+}
+
+
+⸻
+
+✅ Summary: Final Config with Pagination
+
+Use Case	API Endpoint	Pagination?	Entity Type	Purpose
+Planning Grid	/model/work.order/search_read	✅ Yes	Work Orders	Live production grid
+UPH Durations	/model/production.work.cycle/search_read	✅ Yes	Work Cycles	Duration by operator/workcenter
+MO Quantity Sync	/model/production.order/search_read	✅ Yes	MOs	Attach quantity to UPH rows
+

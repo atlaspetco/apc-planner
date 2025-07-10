@@ -2084,6 +2084,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Single UPH calculation from work cycles
+  // Add new corrected UPH calculation endpoint without filtering
+  app.post("/api/uph/calculate-corrected", async (req: Request, res: Response) => {
+    try {
+      const { calculateCorrectedUPH } = await import('./corrected-uph-calculator');
+      const result = await calculateCorrectedUPH();
+      res.json(result);
+    } catch (error) {
+      console.error('Error calculating corrected UPH:', error);
+      res.status(500).json({ error: 'Failed to calculate corrected UPH' });
+    }
+  });
+
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
       // Set calculating status
