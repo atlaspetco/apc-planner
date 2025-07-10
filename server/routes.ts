@@ -2983,28 +2983,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const moNumber = record.rec_name.match(/MO\d+/)?.[0];
             if (moNumber && record.quantity_done) {
               
-              // Insert into production_orders table
-              await db.execute(sql`
-                INSERT INTO production_orders (
-                  mo_number, product_name, routing, status, 
-                  quantity, due_date, fulfil_id, product_code
-                ) VALUES (
-                  ${moNumber},
-                  ${record.product_code || 'Unknown Product'},
-                  ${record['routing/rec_name'] || 'Unknown Routing'},
-                  'assigned',
-                  ${parseInt(record.quantity_done) || 0},
-                  ${record.planned_date || null},
-                  ${parseInt(record.id) || null},
-                  ${record.product_code || null}
-                )
-                ON CONFLICT (mo_number) DO UPDATE SET
-                  quantity = EXCLUDED.quantity,
-                  product_code = EXCLUDED.product_code,
-                  routing = EXCLUDED.routing
+              // Enhanced deduplication: check for existing record first
+              const existingPO = await db.execute(sql`
+                SELECT id, mo_number, quantity FROM production_orders 
+                WHERE mo_number = ${moNumber} OR fulfil_id = ${parseInt(record.id) || null}
+                LIMIT 1
               `);
               
-              productionOrdersImported++;
+              if (existingPO.rows.length === 0) {
+                // Insert new production order (no conflict)
+                await db.execute(sql`
+                  INSERT INTO production_orders (
+                    mo_number, product_name, routing, status, 
+                    quantity, due_date, fulfil_id, product_code
+                  ) VALUES (
+                    ${moNumber},
+                    ${record.product_code || 'Unknown Product'},
+                    ${record['routing/rec_name'] || 'Unknown Routing'},
+                    'assigned',
+                    ${parseInt(record.quantity_done) || 0},
+                    ${record.planned_date || null},
+                    ${parseInt(record.id) || null},
+                    ${record.product_code || null}
+                  )
+                `);
+                productionOrdersImported++;
+              } else {
+                // Update existing record only if data has changed
+                const existing = existingPO.rows[0];
+                const newQuantity = parseInt(record.quantity_done) || 0;
+                
+                if (existing.quantity !== newQuantity || !existing.product_code) {
+                  await db.execute(sql`
+                    UPDATE production_orders SET
+                      quantity = ${newQuantity},
+                      product_code = ${record.product_code || existing.product_code},
+                      routing = ${record['routing/rec_name'] || existing.routing}
+                    WHERE mo_number = ${moNumber}
+                  `);
+                  console.log(`UPDATED: ${moNumber} - quantity changed from ${existing.quantity} to ${newQuantity}`);
+                } else {
+                  console.log(`SKIPPED: ${moNumber} - no changes detected`);
+                }
+              }
             }
           }
           

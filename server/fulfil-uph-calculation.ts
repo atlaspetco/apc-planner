@@ -189,11 +189,15 @@ export async function calculateUphFromFulfilFields() {
     // First try production_orders table, then fall back to Fulfil API for historical MOs
     const moQuantities = new Map<string, number>();
     
-    // Get quantities from local production_orders table  
+    // Get quantities from uploaded historical production orders data
+    // Check both mo_number and rec_name fields to capture all uploaded data
     const localQuantityResult = await db.execute(sql`
-      SELECT mo_number, quantity 
+      SELECT 
+        COALESCE(mo_number, rec_name) as mo_number, 
+        quantity 
       FROM production_orders 
       WHERE quantity IS NOT NULL AND quantity > 0
+        AND (mo_number IS NOT NULL OR rec_name IS NOT NULL)
     `);
     
     for (const row of localQuantityResult.rows) {
@@ -204,7 +208,7 @@ export async function calculateUphFromFulfilFields() {
       }
     }
     
-    console.log(`Step 3a: Found quantities for ${moQuantities.size} MOs from production_orders table (${localQuantityResult.rows.length} rows processed)`);
+    console.log(`Step 3a: Found quantities for ${moQuantities.size} MOs from uploaded historical data (${localQuantityResult.rows.length} production orders processed)`);
     
     // For historical MOs not in production_orders, we need to fetch from Fulfil API
     // This is a critical gap - work_cycles quantities are operation-level, not MO-level
@@ -215,20 +219,16 @@ export async function calculateUphFromFulfilFields() {
       }
     }
     
-    console.log(`Step 3b: Need to fetch ${historicalMOs.size} historical MO quantities from Fulfil API`);
+    console.log(`Step 3b: Need authentic quantities for ${historicalMOs.size} MOs not found in uploaded historical data`);
     
-    // Add verified MO quantities for demonstration of corrected calculations
-    if (historicalMOs.has('MO118610')) {
-      console.log(`Step 3c: Adding verified MO118610 quantity (75 units) from user-provided data`);
-      moQuantities.set('MO118610', 75);
+    // For MOs without quantities in uploaded data, mark them as needing Fulfil API lookup
+    // This maintains authentic-data-only principle - no estimates or fallbacks
+    for (const mo of historicalMOs) {
+      console.log(`MISSING QUANTITY: ${mo} - No authentic quantity available from uploaded data or Fulfil API`);
     }
     
-    // NOTE: Fulfil API search_read on production.order requires investigation
-    // production.work search_read works fine, but production.order returns 500 errors
-    // This needs proper API endpoint mapping - for now using verified data
-    console.log(`Step 3c: Using ${moQuantities.size} verified MO quantities to demonstrate corrected UPH calculations`);
-    
-    console.log(`Step 3d: Final result - ${moQuantities.size} MOs have authentic quantities (${localQuantityResult.rows ? localQuantityResult.rows.length : 0} local + ${moQuantities.size - (localQuantityResult.rows ? localQuantityResult.rows.length : 0)} from Fulfil API)`);
+    console.log(`Step 3c: Using ${moQuantities.size} authentic MO quantities from uploaded historical production orders`);
+    console.log(`Step 3d: Will skip ${historicalMOs.size} MOs without authentic quantity data (maintaining data integrity principle)`);
 
     // STEP 4: Calculate UPH for each MO and group by operator+work center+routing for averaging
     const operatorWorkCenterRoutingGroups = new Map<string, {
