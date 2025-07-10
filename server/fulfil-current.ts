@@ -36,56 +36,55 @@ export class FulfilCurrentService {
 
   async getCurrentProductionOrders(): Promise<CurrentProductionOrder[]> {
     try {
-      if (!this.apiKey) return [];
+      if (!this.apiKey) {
+        console.log("No API key found, returning empty array");
+        return [];
+      }
 
-      // Step 1: Get ALL production orders using pagination
-      let allOrders: any[] = [];
-      let page = 1;
-      let hasMore = true;
+      // Test basic API connectivity first
+      const testEndpoint = `${this.baseUrl}/api/v2/model/production`;
+      console.log(`Testing basic API connectivity to: ${testEndpoint}`);
       
-      // Use correct production.order schema with search_read
-      const endpoint = `${this.baseUrl}/api/v2/model/production.order/search_read`;
-      console.log(`Fetching production orders using correct production.order schema...`);
+      const testResponse = await fetch(testEndpoint, {
+        method: 'GET',
+        headers: this.headers,
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (testResponse.status !== 200) {
+        console.error(`Basic API test failed with status ${testResponse.status}`);
+        const errorText = await testResponse.text();
+        console.error(`Error: ${errorText}`);
+        return [];
+      }
+
+      console.log(`✓ Basic API connectivity successful`);
+
+      // Now try to get production orders with minimal complexity
+      const endpoint = `${this.baseUrl}/api/v2/model/production.order`;
+      console.log(`Fetching production orders from: ${endpoint}`);
       
       const response = await fetch(endpoint, {
-        method: 'PUT',
+        method: 'GET',
         headers: this.headers,
-        body: JSON.stringify({
-          "filters": [
-            ['state', '!=', 'done']
-          ],
-          "fields": [
-            'id', 'rec_name', 'state', 'quantity'
-          ]
-        }),
         signal: AbortSignal.timeout(15000)
       });
 
       if (response.status !== 200) {
-        console.error(`Production schema fetch failed with status ${response.status}`);
+        console.error(`Production order API call failed with status ${response.status}`);
         const errorText = await response.text();
         console.error(`Error details: ${errorText}`);
         console.error(`Request URL: ${endpoint}`);
-        console.error(`Request body:`, JSON.stringify({
-          "filters": [
-            ['state', 'in', ['request', 'waiting', 'assigned', 'running']]
-          ],
-          "fields": [
-            'id', 'rec_name', 'number', 'state', 'quantity', 'quantity_done', 'quantity_remaining',
-            'planned_date', 'priority', 'product.rec_name', 'product.code', 'product_code',
-            'routing.rec_name', 'bom.rec_name'
-          ]
-        }, null, 2));
         return [];
       }
 
-      allOrders = await response.json();
+      const allOrders = await response.json();
       if (!Array.isArray(allOrders)) {
         console.error("Unexpected response format:", allOrders);
         return [];
       }
 
-      console.log(`Found total of ${allOrders.length} active production orders (request/waiting/assigned/running) using production.order schema`);
+      console.log(`Found total of ${allOrders.length} production orders using basic GET (will filter by state client-side)`);
       const orders = allOrders;
       
       // orders array is already populated from pagination above
@@ -151,11 +150,19 @@ export class FulfilCurrentService {
         console.log("Failed to fetch work orders:", error);
       }
 
+      // Filter to only active production orders client-side
+      const activeOrders = orders.filter((po: any) => {
+        const state = po.state;
+        return state && ['request', 'waiting', 'assigned', 'running'].includes(state);
+      });
+      
+      console.log(`Filtered to ${activeOrders.length} active production orders (request/waiting/assigned/running)`);
+
       // Step 3: Group work orders by production order and create enriched data
       const productionOrdersMap = new Map();
       
-      // Process production orders with authentic schema fields
-      orders.forEach((po: any) => {
+      // Process active production orders with authentic schema fields
+      activeOrders.forEach((po: any) => {
         const productName = po['product.rec_name'] || po.product?.rec_name || po.rec_name;
         const productCode = po['product.code'] || po.product_code || po.product?.code || `PROD-${po.id}`;
         const routingName = po['routing.rec_name'] || po.routing?.rec_name || 'Standard';

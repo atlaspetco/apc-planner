@@ -15,20 +15,24 @@ export default function Dashboard() {
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
-  // Get current production orders from Fulfil API (live data source)
-  const { data: fulfilResponse, isLoading: isLoadingCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
+  // Get production orders from local database (filtered server-side for active only)
+  const { data: allProductionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
+    queryKey: ["/api/production-orders"],
+    retry: 1,
+    retryDelay: 1000,
+    staleTime: 0, // Force fresh data
+    cacheTime: 0, // Don't cache
+  });
+
+  // Try to get Fulfil data but don't block on it
+  const { data: fulfilResponse, refetch: refetchCurrentPOs } = useQuery({
     queryKey: ["/api/fulfil/current-production-orders"],
     retry: 1,
     retryDelay: 1000,
-    staleTime: 0, // Always fetch fresh Fulfil data
-    cacheTime: 0, // Don't cache Fulfil data
+    staleTime: 0,
+    cacheTime: 0,
+    enabled: false, // Don't auto-fetch since it's failing
   });
-
-  // Use Fulfil data as primary source for active production orders
-  const allProductionOrders = fulfilResponse?.orders || [];
-  const isLoadingPOs = isLoadingCurrentPOs;
-  const errorPOs = !fulfilResponse?.success;
-  const refetchPOs = refetchCurrentPOs;
 
   // Filter client-side for better performance 
   const productionOrders = allProductionOrders.filter(po => {
@@ -128,15 +132,13 @@ export default function Dashboard() {
         {/* Status Info */}
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
-            {fulfilResponse?.success ? 
-              `Latest Fulfil data - ${productionOrders?.length || 0} active production orders` : 
-              `Fulfil API error - showing ${productionOrders?.length || 0} cached orders`}
+            Latest database data - {allProductionOrders?.length || 0} production orders loaded (Fulfil API connectivity being resolved)
           </p>
         </div>
 
         {/* Main Planning Grid */}
         <PlanningGrid 
-          productionOrders={productionOrders || []}
+          productionOrders={allProductionOrders || []}
           isLoading={isLoadingPOs}
           selectedMOs={selectedMOs}
           onMOSelection={handleMOSelection}
