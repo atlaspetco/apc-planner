@@ -52,12 +52,10 @@ export class FulfilCurrentService {
         headers: this.headers,
         body: JSON.stringify({
           "filters": [
-            ['state', '=', 'assigned']
+            ['state', '!=', 'done']
           ],
           "fields": [
-            'id', 'rec_name', 'number', 'state', 'quantity', 'quantity_done', 'quantity_remaining',
-            'planned_date', 'priority', 'product.rec_name', 'product.code', 'product_code',
-            'routing.rec_name', 'bom.rec_name'
+            'id', 'rec_name', 'state', 'quantity'
           ]
         }),
         signal: AbortSignal.timeout(15000)
@@ -67,6 +65,17 @@ export class FulfilCurrentService {
         console.error(`Production schema fetch failed with status ${response.status}`);
         const errorText = await response.text();
         console.error(`Error details: ${errorText}`);
+        console.error(`Request URL: ${endpoint}`);
+        console.error(`Request body:`, JSON.stringify({
+          "filters": [
+            ['state', 'in', ['request', 'waiting', 'assigned', 'running']]
+          ],
+          "fields": [
+            'id', 'rec_name', 'number', 'state', 'quantity', 'quantity_done', 'quantity_remaining',
+            'planned_date', 'priority', 'product.rec_name', 'product.code', 'product_code',
+            'routing.rec_name', 'bom.rec_name'
+          ]
+        }, null, 2));
         return [];
       }
 
@@ -76,7 +85,7 @@ export class FulfilCurrentService {
         return [];
       }
 
-      console.log(`Found total of ${allOrders.length} assigned production orders using production.order schema`);
+      console.log(`Found total of ${allOrders.length} active production orders (request/waiting/assigned/running) using production.order schema`);
       const orders = allOrders;
       
       // orders array is already populated from pagination above

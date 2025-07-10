@@ -15,28 +15,25 @@ export default function Dashboard() {
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
-  // Force fresh data to ensure new filtering logic is applied
-  const { data: allProductionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders"], 
-    enabled: true,
-    retry: 1,
-    retryDelay: 1000,
-    staleTime: 0, // Force fresh data - no cache
-    cacheTime: 0, // Don't cache at all
-  });
-
-  // Filter client-side instead of server-side for better performance
-  const productionOrders = allProductionOrders.filter(po => {
-    if (statusFilter.length === 0) return true;
-    return statusFilter.includes(po.status);
-  });
-
-  // Get current production orders from Fulfil API
-  const { data: currentPOs = [], isLoading: isLoadingCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
+  // Get current production orders from Fulfil API (live data source)
+  const { data: fulfilResponse, isLoading: isLoadingCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
     queryKey: ["/api/fulfil/current-production-orders"],
     retry: 1,
     retryDelay: 1000,
-    staleTime: 10 * 60 * 1000, // 10 minutes cache for Fulfil data
+    staleTime: 0, // Always fetch fresh Fulfil data
+    cacheTime: 0, // Don't cache Fulfil data
+  });
+
+  // Use Fulfil data as primary source for active production orders
+  const allProductionOrders = fulfilResponse?.orders || [];
+  const isLoadingPOs = isLoadingCurrentPOs;
+  const errorPOs = !fulfilResponse?.success;
+  const refetchPOs = refetchCurrentPOs;
+
+  // Filter client-side for better performance 
+  const productionOrders = allProductionOrders.filter(po => {
+    if (statusFilter.length === 0) return true;
+    return statusFilter.includes(po.status || po.state);
   });
 
   const { data: summary, isLoading: isLoadingSummary, error: errorSummary, refetch: refetchSummary } = useQuery({
@@ -131,7 +128,9 @@ export default function Dashboard() {
         {/* Status Info */}
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
-            Latest database data - {productionOrders?.length || 0} production orders loaded
+            {fulfilResponse?.success ? 
+              `Latest Fulfil data - ${productionOrders?.length || 0} active production orders` : 
+              `Fulfil API error - showing ${productionOrders?.length || 0} cached orders`}
           </p>
         </div>
 
