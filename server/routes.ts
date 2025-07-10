@@ -19,24 +19,10 @@ import {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  // Main production orders endpoint - CRITICAL for dashboard
+  // Optimized production orders endpoint - load once, cache heavily, filter client-side
   app.get("/api/production-orders", async (req, res) => {
     try {
-      // Parse status filter from query params - handle JSON string or array
-      let statusFilter: string[] | undefined;
-      if (req.query.status) {
-        try {
-          const statusParam = req.query.status as string;
-          statusFilter = typeof statusParam === 'string' && statusParam.startsWith('[') 
-            ? JSON.parse(statusParam) 
-            : Array.isArray(statusParam) ? statusParam : [statusParam];
-          console.log("Status filter applied:", statusFilter);
-        } catch (e) {
-          console.warn("Invalid status filter format, ignoring:", req.query.status);
-          statusFilter = undefined;
-        }
-      }
-      
+      // Use existing storage method but exclude completed orders by default
       const excludeCompleted = req.query.excludeCompleted !== "false";
       
       // Get production orders with proper sorting (newest first by ID/creation)
@@ -45,58 +31,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sort by newest first (highest ID = most recent in database)
       productionOrders = productionOrders.sort((a, b) => b.id - a.id);
       
-      // Get routing data from work orders table for each production order
-      const { db } = await import("./db.js");
-      const { workOrders } = await import("../shared/schema.js");
-      const { eq } = await import("drizzle-orm");
+      // Quick routing enhancement without individual database queries
+      const enrichedOrders = productionOrders.map(po => {
+        let routingFromProductCode = null;
+        if (po.product_code) {
+          if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
+          else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
+          else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
+          else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
+          else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
+          else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
+          else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
+          else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
+          else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
+        }
+        
+        return {
+          ...po,
+          productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
+          routingName: routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
+        };
+      });
       
-      // Enrich production orders with routing data from work orders and Fulfil API
-      const enrichedProductionOrders = await Promise.all(
-        productionOrders.map(async (po) => {
-          // Find work orders for this production order to get routing data
-          const woData = await db
-            .select({ routing: workOrders.routing })
-            .from(workOrders)
-            .where(eq(workOrders.productionOrderId, po.id))
-            .limit(1);
-          
-          const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
-          
-          // Use actual routing data from work_cycles table for authentic routing names
-          let routingFromProductCode = null;
-          if (po.product_code) {
-            if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
-            else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
-            else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
-            else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
-            else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
-            else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
-            else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
-            else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
-            else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
-          }
-          
-          return {
-            ...po,
-            productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
-            // Use routing from work orders, then product code mapping, then original routing - never default to "Standard"
-            routingName: routingFromWorkOrders || routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
-          };
-        })
-      );
+      console.log(`Showing all ${enrichedOrders.length} active production orders (excluding Done/Cancelled)`);
+      console.log(`Returning ${enrichedOrders.length} production orders (filter: client-side)`);
       
-      // Apply status filtering to match frontend request - include all if no specific filter
-      let finalProductionOrders = enrichedProductionOrders;
-      if (statusFilter && statusFilter.length > 0 && !statusFilter.includes('assigned')) {
-        finalProductionOrders = enrichedProductionOrders.filter(po => statusFilter.includes(po.status));
-        console.log(`Filtered to ${finalProductionOrders.length} production orders with status: ${statusFilter.join(', ')}`);
-      } else {
-        console.log(`Showing all ${finalProductionOrders.length} active production orders (excluding Done/Cancelled)`);
-      }
+      // Add caching headers to reduce server load
+      res.set({
+        'Cache-Control': 'public, max-age=300', // Cache for 5 minutes
+        'ETag': `"${enrichedOrders.length}-${Date.now()}"` // Simple ETag based on count
+      });
       
-      console.log(`Returning ${finalProductionOrders.length} production orders (filter: ${statusFilter || 'none'})`);
-      
-      res.json(finalProductionOrders);
+      res.json(enrichedOrders);
     } catch (error) {
       console.error("Error fetching production orders:", error);
       res.status(500).json({ message: "Failed to fetch production orders" });

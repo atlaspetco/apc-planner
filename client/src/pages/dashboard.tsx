@@ -15,27 +15,38 @@ export default function Dashboard() {
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
-  const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders", { status: JSON.stringify(statusFilter) }],
+  // Use a stable query key and filter client-side for better caching
+  const { data: allProductionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
+    queryKey: ["/api/production-orders"], // Remove dynamic filter from query key
     enabled: true,
-    retry: 3,
+    retry: 1,
     retryDelay: 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutes cache
+  });
+
+  // Filter client-side instead of server-side for better performance
+  const productionOrders = allProductionOrders.filter(po => {
+    if (statusFilter.length === 0) return true;
+    return statusFilter.includes(po.status);
   });
 
   // Get current production orders from Fulfil API
   const { data: currentPOs = [], isLoading: isLoadingCurrentPOs, refetch: refetchCurrentPOs } = useQuery({
     queryKey: ["/api/fulfil/current-production-orders"],
-    retry: 3,
+    retry: 1,
     retryDelay: 1000,
+    staleTime: 10 * 60 * 1000, // 10 minutes cache for Fulfil data
   });
 
   const { data: summary, isLoading: isLoadingSummary, error: errorSummary, refetch: refetchSummary } = useQuery({
     queryKey: ["/api/dashboard/summary"],
-    retry: 3,
+    retry: 1,
     retryDelay: 1000,
+    staleTime: 2 * 60 * 1000, // 2 minutes cache for summary
   });
 
   const handleRefresh = () => {
+    // Manually refresh only when user clicks refresh
     refetchPOs();
     refetchSummary();
     refetchCurrentPOs();
