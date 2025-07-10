@@ -428,19 +428,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const activeOnly = req.query.activeOnly !== "false";
     const operators = await storage.getOperators(activeOnly);
     
-    // Add activity status based on work cycles data (30+ days inactive threshold)
+    // Add activity status - use database last_active_date first, then fallback to work cycles
     const operatorsWithActivity = await Promise.all(operators.map(async (operator) => {
       try {
-        // Get the most recent work cycle for this operator
-        const recentCycles = await db.select()
-          .from(workCycles)
-          .where(eq(workCycles.work_cycles_operator_rec_name, operator.name))
-          .orderBy(desc(workCycles.work_cycles_operator_write_date))
-          .limit(1);
+        let lastActiveDate = operator.lastActiveDate; // Use database field first
         
-        const lastActiveDate = recentCycles.length > 0 
-          ? recentCycles[0].work_cycles_operator_write_date 
-          : null;
+        // If no database last_active_date, fallback to work cycles data
+        if (!lastActiveDate) {
+          const recentCycles = await db.select()
+            .from(workCycles)
+            .where(eq(workCycles.work_cycles_operator_rec_name, operator.name))
+            .orderBy(desc(workCycles.work_cycles_operator_write_date))
+            .limit(1);
+          
+          lastActiveDate = recentCycles.length > 0 
+            ? recentCycles[0].work_cycles_operator_write_date 
+            : null;
+        }
         
         // Calculate if operator is active (activity within last 30 days)
         const now = new Date();
