@@ -3570,6 +3570,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Import status endpoint
+  // Routing synchronization endpoint to fix MO routing data
+  app.post("/api/fulfil/sync-routing", async (req, res) => {
+    try {
+      const apiKey = process.env.FULFIL_ACCESS_TOKEN;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Fulfil API key not configured" });
+      }
+
+      // Get all production orders with "Standard" routing that need fixing
+      const standardRoutingOrders = await db.select().from(productionOrders).where(eq(productionOrders.routing, 'Standard'));
+      
+      if (standardRoutingOrders.length === 0) {
+        return res.json({ message: "No production orders with Standard routing found", updated: 0 });
+      }
+
+      console.log(`Found ${standardRoutingOrders.length} production orders with Standard routing to fix`);
+
+      // Extract Fulfil IDs for bulk lookup
+      const fulfilIds = standardRoutingOrders.map(po => po.fulfilId).filter(id => id !== null);
+      
+      if (fulfilIds.length === 0) {
+        return res.json({ message: "No valid Fulfil IDs found", updated: 0 });
+      }
+
+      // Bulk fetch routing data from Fulfil using search_read with multiple IDs
+      const endpoint = "https://apc.fulfil.io/api/v2/model/production/search_read";
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': apiKey
+        },
+        body: JSON.stringify({
+          "filters": [
+            ['id', 'in', fulfilIds]
+          ],
+          "fields": [
+            'id', 'rec_name', 'routing.rec_name'
+          ]
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (response.status !== 200) {
+        const errorText = await response.text();
+        console.error(`Fulfil routing sync failed: ${response.status} - ${errorText}`);
+        return res.status(500).json({ error: "Failed to fetch routing data from Fulfil" });
+      }
+
+      const fulfilData = await response.json();
+      console.log(`Received routing data for ${fulfilData.length} production orders from Fulfil`);
+
+      let updatedCount = 0;
+
+      // Update each production order with correct routing
+      for (const fulfilPO of fulfilData) {
+        const routingName = fulfilPO['routing.rec_name'] || 'Standard';
+        
+        // Find matching local production order
+        const localPO = standardRoutingOrders.find(po => po.fulfilId === fulfilPO.id);
+        if (localPO && routingName !== 'Standard') {
+          // Update production order routing
+          await db.update(productionOrders)
+            .set({ routing: routingName })
+            .where(eq(productionOrders.id, localPO.id));
+
+          // Update work orders routing for this production order
+          await db.update(workOrders)
+            .set({ routing: routingName })
+            .where(eq(workOrders.productionOrderId, localPO.id));
+
+          console.log(`Updated ${localPO.moNumber} routing from Standard to ${routingName}`);
+          updatedCount++;
+        }
+      }
+
+      res.json({ 
+        message: `Successfully synchronized routing data from Fulfil`,
+        checked: fulfilData.length,
+        updated: updatedCount,
+        details: fulfilData.map(po => ({
+          mo: po.rec_name,
+          routing: po['routing.rec_name'] || 'Standard'
+        }))
+      });
+
+    } catch (error) {
+      console.error("Error syncing routing data:", error);
+      res.status(500).json({ error: "Failed to sync routing data" });
+    }
+  });
+
   app.get("/api/fulfil/import-status", (req: Request, res: Response) => {
     res.json({
       ...importStatus,

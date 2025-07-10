@@ -303,11 +303,13 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
           // Check if operator can work in this work center
           const canWorkInCenter = op.workCenters?.includes(workCenter);
           
-          // For Fi Snap products, also check if operator has Fi Snap routing
-          const isF3Product = order.productName?.includes('F3-') || order.product_code?.includes('F3-');
-          if (isF3Product) {
-            const hasF3Routing = op.routings?.includes('Fi Snap');
-            return canWorkInCenter && hasF3Routing;
+          // Get the actual routing for this production order
+          const orderRouting = order.routingName || order.routing || 'Standard';
+          
+          // For specific routing products, check if operator has matching routing
+          if (orderRouting !== 'Standard') {
+            const hasMatchingRouting = op.routings?.includes(orderRouting);
+            return canWorkInCenter && hasMatchingRouting;
           }
           
           return canWorkInCenter;
