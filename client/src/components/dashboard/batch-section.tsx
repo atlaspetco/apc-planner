@@ -47,19 +47,10 @@ export default function BatchSection({
         wo.productionOrderId === order.id
       );
       
-      // If no work orders, use basic estimate based on quantity and routing
+      // If no work orders exist, cannot calculate hours without actual data
       if (orderWorkOrders.length === 0) {
-        // Use routing-specific UPH estimates for better accuracy
-        const routing = order.routingName || "Standard";
-        let estimatedUPH = 15; // Default fallback
-        
-        if (routing.includes("Poop Bags")) estimatedUPH = 127; // 500 bags / 3.93 hours = 127 UPH
-        else if (routing.includes("Lifetime Pouch")) estimatedUPH = 25;
-        else if (routing.includes("Cutting")) estimatedUPH = 20;
-        else if (routing.includes("Assembly") || routing.includes("Sewing")) estimatedUPH = 12;
-        else if (routing.includes("Packaging")) estimatedUPH = 30;
-        
-        return batchTotal + ((order.quantity || 100) / estimatedUPH);
+        console.warn(`No work orders found for production order ${order.moNumber}, cannot calculate time without actual data`);
+        return batchTotal; // Return 0 additional hours instead of guessing
       }
       
       // Group work orders by work center to calculate parallel vs sequential time
@@ -71,22 +62,12 @@ export default function BatchSection({
           workCenterHours[workCenter] = 0;
         }
         
-        // Use actual estimated hours from work order if available
+        // Only use actual estimated hours from work order - never estimate
         if (wo.estimatedHours && wo.estimatedHours > 0) {
           workCenterHours[workCenter] = Math.max(workCenterHours[workCenter], wo.estimatedHours);
         } else {
-          // Fallback to routing-specific calculation
-          const routing = order.routingName || "Standard";
-          let estimatedUPH = 15;
-          
-          if (routing.includes("Poop Bags")) estimatedUPH = 127;
-          else if (routing.includes("Lifetime Pouch")) estimatedUPH = 25;
-          else if (routing.includes("Cutting")) estimatedUPH = 20;
-          else if (routing.includes("Assembly") || routing.includes("Sewing")) estimatedUPH = 12;
-          else if (routing.includes("Packaging")) estimatedUPH = 30;
-          
-          const calculatedHours = (order.quantity || 100) / estimatedUPH;
-          workCenterHours[workCenter] = Math.max(workCenterHours[workCenter], calculatedHours);
+          console.warn(`Work order ${wo.id} has no estimated hours, cannot calculate time without actual data`);
+          // Skip this work order rather than guessing
         }
       });
       
@@ -256,37 +237,18 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
   });
 
   const calculateTotalHours = () => {
-    // Product-specific UPH estimates based on actual manufacturing data and user requirements
-    const productUPH: Record<string, number> = {
-      'Poop Bags': 127,      // 500 bags / 3.93 hours = 127 UPH (user requirement)
-      'Fi Snap': 60,         // Assembly-heavy product
-      'Lifetime Bowl': 80,   // Medium complexity
-      'Lifetime Harness': 25, // Complex assembly
-      'Lifetime Collar': 120, // Simpler product
-      'Lifetime Leash': 90,  // Standard product
-      'Lifetime Pouch': 25,  // Pouch products
-      'Lifetime Bandana': 30, // Bandana products
-      'Cutting - Fabric': 20  // Fabric cutting operations
-    };
+    // Only calculate hours if work orders exist with actual estimated hours
+    const orderWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
+      wo.productionOrderId === order.id && wo.estimatedHours && wo.estimatedHours > 0
+    );
     
-    // Get product routing from product code or name
-    const getProductRouting = (productCode: string, productName: string): string => {
-      if (productCode?.startsWith("PB-") || productName?.includes("Poop Bag")) return "Poop Bags";
-      if (productCode?.startsWith("F3-") || productName?.includes("Fi Snap")) return "Fi Snap";
-      if (productCode?.startsWith("LB-") || productName?.includes("Bowl")) return "Lifetime Bowl";
-      if (productCode?.startsWith("LH-") || productName?.includes("Harness")) return "Lifetime Harness";
-      if (productCode?.startsWith("LC-") || productName?.includes("Collar")) return "Lifetime Collar";
-      if (productCode?.startsWith("LL-") || productName?.includes("Leash")) return "Lifetime Leash";
-      if (productCode?.startsWith("LP-") || productName?.includes("Pouch")) return "Lifetime Pouch";
-      if (productCode?.startsWith("BAN-") || productName?.includes("Bandana")) return "Lifetime Bandana";
-      if (productCode?.startsWith("F0102-") || productName?.includes("X-Pac")) return "Cutting - Fabric";
-      return "Standard";
-    };
+    if (orderWorkOrders.length === 0) {
+      console.warn(`No work orders with estimated hours found for ${order.moNumber}, cannot calculate time without actual data`);
+      return 0; // Return 0 instead of guessing
+    }
     
-    const productRouting = getProductRouting(order.product_code || "", order.productName || "");
-    const estimatedUPH = productUPH[productRouting] || 50;
-    
-    return (order.quantity || 100) / estimatedUPH;
+    // Sum actual estimated hours from work orders
+    return orderWorkOrders.reduce((total, wo) => total + (wo.estimatedHours || 0), 0);
   };
 
   const totalHours = calculateTotalHours();

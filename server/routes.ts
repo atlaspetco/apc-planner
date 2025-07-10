@@ -261,7 +261,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 quantityDone: wo.quantity_done || 0,
                 status: wo.state === "request" ? "Pending" : wo.state,
                 sequence: 1, // Default sequence
-                estimatedHours: Math.round((order.quantity || 100) / 15 * 10) / 10, // Realistic estimated hours based on quantity
+                estimatedHours: null, // Only use actual data from Fulfil, never estimate
                 actualHours: null,
                 operatorId: null,
                 operatorName: null,

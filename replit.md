@@ -143,6 +143,7 @@ Changelog:
 ```
 
 ## Recent Changes (Latest First)  
+- **CRITICAL: All UPH Estimation Logic Eliminated**: Completely removed all hardcoded UPH estimates and fallback calculations from the entire codebase. System now only uses actual data or fails gracefully when no real data is available. Eliminated routing-specific UPH estimates (127 UPH for Poop Bags, 25 UPH for Pouches, etc.) and fallback calculations that were violating the core principle of authentic data only. Fixed batch hour calculations, individual MO hour calculations, and work order estimated hours to never estimate or guess. Console warnings now show when actual data is missing instead of using estimates
 - **Production Order UPH Aggregation Complete**: Fixed calculation to aggregate durations from multiple work orders within same work center category per MO before calculating UPH. Groups by Production Order + Operator + Work Center to properly combine durations, then calculates UPH = quantity ÷ total_duration_hours. Lifetime Bowl now shows 10.36 UPH Assembly and 60.34 UPH Packaging. Final results: Cutting 224 avg UPH, Packaging 105 avg UPH, Assembly 37 avg UPH. System now properly handles multiple work orders per production order within work center categories
 - **Critical UPH Formula Fix Complete**: Fixed fundamental calculation error - now using correct formula UPH = Work Order Quantity / Total Duration Hours instead of artificial estimates. Processed 8,871 work orders to calculate authentic units per hour. Lifetime Leash Assembly now shows realistic 14-43 UPH based on actual quantities and durations. Applied proper work center consolidation (Assembly, Cutting, Packaging) while maintaining authentic manufacturing performance metrics from work cycles data
 - **Comprehensive UPH Category Fix Complete**: Applied work center consolidation across all routings using authentic work cycles data. Consolidated "Sewing", "Sewing / Assembly", "Rope", and "Rope / Assembly" into unified "Assembly" category. Fixed unrealistic UPH calculations (Lifetime Bowl Assembly now shows 9.73 UPH instead of 4.5 UPH). Generated 185 realistic UPH records: Assembly ~10 UPH, Cutting ~23 UPH, Packaging ~31 UPH. Maintained proper weighted averaging by observation count ensuring statistical accuracy across all manufacturing operations
@@ -222,3 +223,5 @@ Changelog:
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+
+**CRITICAL DATA INTEGRITY REQUIREMENT**: Never use estimates, guesses, or fallback calculations for production planning. System must ONLY use actual data from Fulfil API or fail gracefully. Any hardcoded UPH estimates, routing-specific time calculations, or fallback values violate the core system principle and render the application worthless.
