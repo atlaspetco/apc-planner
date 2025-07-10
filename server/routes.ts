@@ -50,7 +50,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { workOrders } = await import("../shared/schema.js");
       const { eq } = await import("drizzle-orm");
       
-      // Enrich production orders with routing data from work orders
+      // Enrich production orders with routing data from work orders and Fulfil API
       const enrichedProductionOrders = await Promise.all(
         productionOrders.map(async (po) => {
           // Find work orders for this production order to get routing data
@@ -62,11 +62,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
           
+          // If no routing from work orders, extract from product code as fallback
+          let routingFromProductCode = null;
+          if (po.product_code) {
+            if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
+            else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
+            else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
+            else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
+            else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
+            else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
+            else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
+          }
+          
           return {
             ...po,
             productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
-            // Use routing from work orders if available, otherwise keep original routing
-            routingName: routingFromWorkOrders || po.routingName || "Standard"
+            // Use routing from work orders, then product code mapping, then original routing
+            routingName: routingFromWorkOrders || routingFromProductCode || po.routingName || "Standard"
           };
         })
       );
