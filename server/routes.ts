@@ -2397,6 +2397,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fix UPH categories across all routings
+  app.post("/api/uph/fix-all-categories", async (req, res) => {
+    try {
+      const { fixAllUphCategories } = await import("./fix-all-uph-categories.js");
+      const result = await fixAllUphCategories();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH categories:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH categories: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
   // Calculate UPH from existing work cycles data (no API calls needed)
   app.post("/api/uph/calculate-simple", async (req, res) => {
     try {
