@@ -62,10 +62,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
           
-          // If no routing from work orders, extract from product code as fallback
+          // Use actual routing data from work_cycles table for authentic routing names
           let routingFromProductCode = null;
           if (po.product_code) {
-            if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
+            if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
+            else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
+            else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
             else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
             else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
             else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
@@ -77,8 +79,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return {
             ...po,
             productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
-            // Use routing from work orders, then product code mapping, then original routing
-            routingName: routingFromWorkOrders || routingFromProductCode || po.routingName || "Standard"
+            // Use routing from work orders, then product code mapping, then original routing - never default to "Standard"
+            routingName: routingFromWorkOrders || routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
           };
         })
       );

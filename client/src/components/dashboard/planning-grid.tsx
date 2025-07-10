@@ -44,8 +44,8 @@ export default function PlanningGrid({
 
   // Group production orders by routing using actual routing data from work orders
   const routingGroups = productionOrders.reduce((acc, po) => {
-    // Use routing from work orders data (enriched by backend)
-    const routing = po.routingName || "Standard";
+    // Use routing from work orders data (enriched by backend) - never default to "Standard"
+    const routing = po.routingName || "Unknown Routing";
     if (!acc[routing]) {
       acc[routing] = [];
     }
