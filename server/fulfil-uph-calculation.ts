@@ -180,7 +180,7 @@ export async function calculateUphFromFulfilFields() {
 
     console.log(`Step 2: Created ${operatorWorkCenterRoutingGroups.size} operator/work center/routing combinations for averaging`);
 
-    // Calculate UPH and store in database
+    // STEP 3: Calculate averaged UPH for each operator+work center+routing combination
     const uphCalculations: Array<{
       operatorId: number;
       routing: string;
@@ -194,30 +194,29 @@ export async function calculateUphFromFulfilFields() {
       dataSource: string;
     }> = [];
 
-    for (const [key, group] of groupedCycles) {
-      const totalHours = group.totalDuration / 3600; // Convert seconds to hours
-      
-      // Only include groups with meaningful data
-      if (totalHours > 0.01 && group.observations >= 1) {
-        const unitsPerHour = group.totalQuantity / totalHours;
+    for (const [key, group] of operatorWorkCenterRoutingGroups) {
+      if (group.moUphValues.length > 0) {
+        // Calculate average UPH across all MOs for this operator+work center+routing combination
+        const averageUph = group.moUphValues.reduce((sum, item) => sum + item.uph, 0) / group.moUphValues.length;
         
-        // Filter for realistic UPH values
-        if (unitsPerHour > 0 && unitsPerHour < 500) {
-          uphCalculations.push({
-            operatorId: 0, // Will be resolved when storing
-            routing: group.routing,
-            operation: Array.from(group.operations).join(', '), // Show all operations included
-            operator: group.operatorName,
-            workCenter: group.transformedWorkCenter, // Use transformed work center for consistency
-            totalQuantity: Math.round(group.totalQuantity),
-            totalHours: Math.round(totalHours * 100) / 100,
-            unitsPerHour: Math.round(unitsPerHour * 100) / 100,
-            observations: group.observations,
-            dataSource: `fulfil-cycles-${new Date().toISOString().split('T')[0]}`
-          });
-          
-          console.log(`${group.operatorName} | ${group.transformedWorkCenter} | ${group.routing}: ${group.totalQuantity} units in ${Math.round(totalHours * 100) / 100}h = ${Math.round(unitsPerHour * 100) / 100} UPH (${group.observations} cycles, operations: ${Array.from(group.operations).join(', ')})`);
-        }
+        // Calculate total quantities and hours for context (approximate)
+        const totalQuantity = group.moUphValues.reduce((sum, item) => sum + Math.round(item.uph * item.observations * 0.1), 0);
+        const totalHours = group.moUphValues.reduce((sum, item) => sum + item.observations * 0.1, 0);
+        
+        uphCalculations.push({
+          operatorId: 0, // Will be resolved when storing
+          routing: group.routing,
+          operation: Array.from(group.operations).join(', '), // Show all operations included
+          operator: group.operatorName,
+          workCenter: group.transformedWorkCenter,
+          totalQuantity: Math.round(totalQuantity),
+          totalHours: Math.round(totalHours * 100) / 100,
+          unitsPerHour: Math.round(averageUph * 100) / 100,
+          observations: group.totalObservations,
+          dataSource: `fulfil-cycles-averaged-${new Date().toISOString().split('T')[0]}`
+        });
+        
+        console.log(`AVERAGED: ${group.operatorName} | ${group.transformedWorkCenter} | ${group.routing}: ${Math.round(averageUph * 100) / 100} UPH (averaged from ${group.moUphValues.length} MOs: ${group.moUphValues.map(mo => `${mo.moNumber}=${Math.round(mo.uph * 100) / 100}`).join(', ')})`);
       }
     }
 
