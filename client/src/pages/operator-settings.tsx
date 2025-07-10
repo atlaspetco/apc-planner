@@ -422,20 +422,17 @@ export default function OperatorSettings() {
                           const optimisticData = getOptimisticOperatorData();
                           const operatorOperationsWithData = getOperatorOperationsWithData(optimisticData?.name || '');
                           
-                          // Get all available operations from work centers
+                          // Get all available operations from work centers - SHOW ALL OPERATIONS
                           const allOperations = (workCenterData as any[]).flatMap((wc: any) => wc.operations);
+                          const uniqueOperations = [...new Set(allOperations)];
                           
-                          // Show only operations where operator has data, plus any that are manually checked
-                          const relevantOperations = allOperations.filter((operation: string) => {
-                            const hasData = operatorOperationsWithData.includes(operation);
-                            const isManuallyChecked = optimisticData?.operations?.includes(operation);
-                            return hasData || isManuallyChecked;
-                          });
+                          // Show ALL operations available in the system, not just ones with data
+                          const relevantOperations = uniqueOperations;
                           
                           if (relevantOperations.length === 0) {
                             return (
                               <div className="text-gray-500 text-sm">
-                                No UPH data found for this operator. Performance data will auto-populate here when available.
+                                No operations configured in the system.
                               </div>
                             );
                           }
@@ -484,16 +481,16 @@ export default function OperatorSettings() {
                         const optimisticData = getOptimisticOperatorData();
                         const operatorRoutingsWithData = getOperatorRoutingsWithData(optimisticData?.name || '');
                         
-                        // Show all routings - both those with data and available options
+                        // Show ALL routings available in system - both with data and master list
                         const allPossibleRoutings = [
-                          ...operatorRoutingsWithData, // Always include routings where operator has UPH data
+                          ...operatorRoutingsWithData, // Include routings where operator has UPH data
                           ...(optimisticData?.routings || []), // Include manually checked routings
                           ...(routingsData?.routings || []) // Include master list routings
                         ];
                         
-                        // Remove duplicates - show all routings for full transparency
+                        // Remove duplicates and show ALL routings for complete transparency
                         const uniqueRoutings = [...new Set(allPossibleRoutings)];
-                        const relevantRoutings = uniqueRoutings; // Show all available routings
+                        const relevantRoutings = uniqueRoutings.length > 0 ? uniqueRoutings : routingsData?.routings || [];
                         
                         if (relevantRoutings.length === 0) {
                           return (

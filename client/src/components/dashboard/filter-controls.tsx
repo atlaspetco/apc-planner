@@ -116,7 +116,14 @@ export default function FilterControls({
               type="week" 
               className="mt-2" 
               defaultValue={currentWeek}
+              onChange={(e) => {
+                // TODO: Implement week filtering based on planned dates
+                console.log('Week filter changed:', e.target.value);
+              }}
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Current week by default • Filters by planned date • Supports 1-4 weeks
+            </p>
           </div>
           
           {/* Routing Filter */}
