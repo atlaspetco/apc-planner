@@ -50,7 +50,7 @@ export async function calculateUphFromFulfilFields() {
         work_cycles_work_center_rec_name as work_center_name,
         work_production_routing_rec_name as routing_name,
         work_production_number as production_order_number,
-        work_number as work_order_number
+        work_id as work_order_id
       FROM work_cycles 
       WHERE work_cycles_operator_rec_name IS NOT NULL 
         AND work_cycles_operator_rec_name != ''
@@ -63,12 +63,12 @@ export async function calculateUphFromFulfilFields() {
     const cycles = cyclesResult.rows;
     console.log(`Found ${cycles.length} complete work cycles with authentic Fulfil field mapping`);
 
-    // Group cycles by operator + transformed work center + routing for UPH calculation
+    // Group cycles by operator + transformed work center + routing ONLY (sum ALL operations within work center)
     const groupedCycles = new Map<string, {
       operatorName: string;
-      operationName: string;
+      operations: Set<string>;
       transformedWorkCenter: string;
-      originalWorkCenter: string;
+      originalWorkCenters: Set<string>;
       routing: string;
       totalDuration: number;
       totalQuantity: number;
@@ -83,15 +83,16 @@ export async function calculateUphFromFulfilFields() {
       const routing = cycle.routing_name?.toString() || '';
       const operationName = cycle.operation_name?.toString() || '';
       
-      // Group by operator + transformed work center + routing (not operation for aggregation)
+      // CRITICAL FIX: Group by operator + transformed work center + routing ONLY
+      // This ensures ALL operations within the same work center are summed together
       const key = `${operatorName}|${transformedWorkCenter}|${routing}`;
       
       if (!groupedCycles.has(key)) {
         groupedCycles.set(key, {
           operatorName,
-          operationName,
+          operations: new Set(),
           transformedWorkCenter,
-          originalWorkCenter,
+          originalWorkCenters: new Set(),
           routing,
           totalDuration: 0,
           totalQuantity: 0,
@@ -101,9 +102,15 @@ export async function calculateUphFromFulfilFields() {
       }
 
       const group = groupedCycles.get(key)!;
+      
+      // Sum ALL durations and quantities across ALL operations in this work center
       group.totalDuration += parseFloat(cycle.duration?.toString() || '0');
       group.totalQuantity += parseFloat(cycle.quantity_done?.toString() || '0');
       group.observations += 1;
+      
+      // Track all operations and work centers included in this aggregation
+      group.operations.add(operationName);
+      group.originalWorkCenters.add(originalWorkCenter);
       
       // Track latest update timestamp
       if (cycle.updated_timestamp) {
@@ -142,7 +149,7 @@ export async function calculateUphFromFulfilFields() {
           uphCalculations.push({
             operatorId: 0, // Will be resolved when storing
             routing: group.routing,
-            operation: group.operationName,
+            operation: Array.from(group.operations).join(', '), // Show all operations included
             operator: group.operatorName,
             workCenter: group.transformedWorkCenter, // Use transformed work center for consistency
             totalQuantity: Math.round(group.totalQuantity),
@@ -151,6 +158,8 @@ export async function calculateUphFromFulfilFields() {
             observations: group.observations,
             dataSource: `fulfil-cycles-${new Date().toISOString().split('T')[0]}`
           });
+          
+          console.log(`${group.operatorName} | ${group.transformedWorkCenter} | ${group.routing}: ${group.totalQuantity} units in ${Math.round(totalHours * 100) / 100}h = ${Math.round(unitsPerHour * 100) / 100} UPH (${group.observations} cycles, operations: ${Array.from(group.operations).join(', ')})`);
         }
       }
     }
@@ -164,9 +173,9 @@ export async function calculateUphFromFulfilFields() {
     for (const calc of uphCalculations) {
       await db.execute(sql`
         INSERT INTO historical_uph (
-          operator_name, work_center, routing, operation, 
+          operator, work_center, routing, operation, 
           total_quantity, total_hours, units_per_hour, 
-          observations, data_source, calculated_at
+          observations, data_source, last_calculated
         ) VALUES (
           ${calc.operator}, ${calc.workCenter}, ${calc.routing}, ${calc.operation},
           ${calc.totalQuantity}, ${calc.totalHours}, ${calc.unitsPerHour},
