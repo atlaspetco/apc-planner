@@ -104,31 +104,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Work Orders
   app.get("/api/work-orders", async (req, res) => {
-    // Check if 'all' parameter is provided (for Operator Summary)
-    const getAll = req.query.all === 'true';
+    // Force fresh data to prevent cache issues
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     
     try {
-      if (getAll) {
-        // Return all work orders without pagination for Operator Summary
-        const workOrdersList = await db
-          .select()
-          .from(workOrders);
-        
-        res.json(workOrdersList);
-      } else {
-        // Add pagination support for large datasets
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 50;
-        const offset = (page - 1) * limit;
-        
-        const workOrdersList = await db
-          .select()
-          .from(workOrders)
-          .limit(limit)
-          .offset(offset);
-        
-        res.json(workOrdersList);
-      }
+      // Always return ALL work orders to fix missing dropdown issue
+      const workOrdersList = await db
+        .select()
+        .from(workOrders)
+        .orderBy(desc(workOrders.id));
+      
+      console.log(`Returned ${workOrdersList.length} work orders (including assignments)`);
+      res.json(workOrdersList);
     } catch (error) {
       console.error("Error fetching work orders:", error);
       res.status(500).json({ message: "Error fetching work orders" });

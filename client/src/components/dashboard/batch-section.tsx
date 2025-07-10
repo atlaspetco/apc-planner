@@ -207,12 +207,14 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
     queryKey: ["/api/work-orders"],
     staleTime: 0, // Force fresh data every time
     cacheTime: 0, // Don't cache results
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
   
-  // Force refetch on component mount to ensure fresh data
+  // Force refetch on component mount and when order changes
   React.useEffect(() => {
     refetchWorkOrders();
-  }, [refetchWorkOrders]);
+  }, [refetchWorkOrders, order.id]);
   
   // Filter work orders for this production order from local database
   const localWorkOrders = allLocalWorkOrders.filter((wo: WorkOrder) => 
