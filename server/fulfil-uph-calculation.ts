@@ -66,18 +66,17 @@ export async function calculateUphFromFulfilFields() {
     const cycles = cyclesResult.rows;
     console.log(`Found ${cycles.length} complete work cycles with authentic Fulfil field mapping`);
 
-    // STEP 1: Group cycles by operator + work center + routing + MO to calculate per-MO UPH
-    // CRITICAL: Multiple work orders within same work center category for each MO must have durations combined FIRST
-    const moLevelGroups = new Map<string, {
+    // STEP 1: First aggregate by Work Order ID to handle one-to-many cycles per WO
+    const workOrderGroups = new Map<string, {
       operatorName: string;
+      originalWorkCenter: string;
       transformedWorkCenter: string;
       routing: string;
       moNumber: string;
-      operations: Set<string>;
-      workOrders: Set<string>;
+      operationName: string;
+      workOrderId: string;
       totalDuration: number;
-      totalQuantity: number;
-      observations: number;
+      cycleCount: number;
       latestUpdate: Date | null;
     }>();
 
@@ -89,39 +88,32 @@ export async function calculateUphFromFulfilFields() {
       const moNumber = cycle.production_order_number?.toString() || '';
       const operationName = cycle.operation_name?.toString() || '';
       const workOrderId = cycle.work_order_id?.toString() || '';
+      const duration = parseFloat(cycle.duration?.toString() || '0');
       
-      if (!operatorName || !originalWorkCenter || !routing || !moNumber) {
+      if (!operatorName || !originalWorkCenter || !routing || !moNumber || !workOrderId || duration <= 0) {
         continue;
       }
       
-      // Group by operator + work center + routing + MO for per-MO UPH calculation
-      // This ensures multiple WOs in same work center category get their durations combined per MO
-      const key = `${operatorName}|${transformedWorkCenter}|${routing}|${moNumber}`;
+      const key = `${workOrderId}|${operatorName}`;
       
-      if (!moLevelGroups.has(key)) {
-        moLevelGroups.set(key, {
+      if (!workOrderGroups.has(key)) {
+        workOrderGroups.set(key, {
           operatorName,
+          originalWorkCenter,
           transformedWorkCenter,
           routing,
           moNumber,
-          operations: new Set(),
-          workOrders: new Set(),
+          operationName,
+          workOrderId,
           totalDuration: 0,
-          totalQuantity: 0,
-          observations: 0,
+          cycleCount: 0,
           latestUpdate: null
         });
       }
 
-      const group = moLevelGroups.get(key)!;
-      
-      // CRITICAL FIX: Sum ALL durations from ALL work orders within same work center category for this MO
-      // This properly handles cases where MO has multiple WOs in Assembly (Sewing + Zipper Pull)
-      group.totalDuration += parseFloat(cycle.duration?.toString() || '0');
-      group.totalQuantity += parseFloat(cycle.quantity_done?.toString() || '0');
-      group.observations += 1;
-      group.operations.add(operationName);
-      group.workOrders.add(workOrderId);
+      const group = workOrderGroups.get(key)!;
+      group.totalDuration += duration;
+      group.cycleCount += 1;
       
       // Track latest update timestamp
       if (cycle.updated_timestamp) {
@@ -132,9 +124,78 @@ export async function calculateUphFromFulfilFields() {
       }
     }
 
-    console.log(`Step 1: Grouped into ${moLevelGroups.size} per-MO combinations`);
+    console.log(`Step 1: Aggregated ${cycles.length} work cycles into ${workOrderGroups.size} work orders`);
 
-    // STEP 2: Calculate UPH for each MO and group by operator+work center+routing for averaging
+    // STEP 2: Group work orders by MO + Operator + Work Center to combine durations within work center categories
+    const moLevelGroups = new Map<string, {
+      operatorName: string;
+      transformedWorkCenter: string;
+      routing: string;
+      moNumber: string;
+      operations: Set<string>;
+      workOrders: Set<string>;
+      totalDuration: number;
+      observations: number;
+      latestUpdate: Date | null;
+    }>();
+
+    for (const [key, woGroup] of workOrderGroups) {
+      const moKey = `${woGroup.operatorName}|${woGroup.transformedWorkCenter}|${woGroup.routing}|${woGroup.moNumber}`;
+      
+      if (!moLevelGroups.has(moKey)) {
+        moLevelGroups.set(moKey, {
+          operatorName: woGroup.operatorName,
+          transformedWorkCenter: woGroup.transformedWorkCenter,
+          routing: woGroup.routing,
+          moNumber: woGroup.moNumber,
+          operations: new Set(),
+          workOrders: new Set(),
+          totalDuration: 0,
+          observations: 0,
+          latestUpdate: null
+        });
+      }
+
+      const group = moLevelGroups.get(moKey)!;
+      
+      // Sum durations from multiple work orders within same work center category for this MO
+      group.totalDuration += woGroup.totalDuration;
+      group.observations += woGroup.cycleCount;
+      group.operations.add(woGroup.operationName);
+      group.workOrders.add(woGroup.workOrderId);
+      
+      if (woGroup.latestUpdate && (!group.latestUpdate || woGroup.latestUpdate > group.latestUpdate)) {
+        group.latestUpdate = woGroup.latestUpdate;
+      }
+    }
+
+    console.log(`Step 2: Grouped into ${moLevelGroups.size} per-MO combinations with work center aggregation`);
+
+    // STEP 3: Get MO-level quantities from completed work cycles (when quantity_done > 0)
+    // Since work cycles contain historical MOs not in current production_orders table
+    const moQuantities = new Map<string, number>();
+    
+    const quantityResult = await db.execute(sql`
+      SELECT 
+        work_production_number as mo_number,
+        MAX(work_cycles_quantity_done) as max_quantity
+      FROM work_cycles 
+      WHERE work_cycles_quantity_done > 0
+        AND work_production_number IS NOT NULL
+      GROUP BY work_production_number
+    `);
+    
+    for (const row of quantityResult.rows) {
+      const moNumber = row.mo_number?.toString();
+      const quantity = parseFloat(row.max_quantity?.toString() || '0');
+      if (moNumber && quantity > 0) {
+        moQuantities.set(moNumber, quantity);
+      }
+    }
+    
+    console.log(`Step 3: Found quantities for ${moQuantities.size} historical MOs from work_cycles with completed quantities`);
+
+    // STEP 4: Calculate UPH for each MO and group by operator+work center+routing for averaging
     const operatorWorkCenterRoutingGroups = new Map<string, {
       operatorName: string;
       transformedWorkCenter: string;
@@ -147,10 +208,11 @@ export async function calculateUphFromFulfilFields() {
 
     for (const [key, moGroup] of moLevelGroups) {
       const totalHours = moGroup.totalDuration / 3600; // Convert seconds to hours
+      const moQuantity = moQuantities.get(moGroup.moNumber) || 0;
       
-      // Only calculate UPH for MOs with meaningful data
-      if (totalHours > 0.01 && moGroup.observations >= 1 && moGroup.totalQuantity > 0) {
-        const moUph = moGroup.totalQuantity / totalHours;
+      // Only calculate UPH for MOs with meaningful data and MO-level quantity
+      if (totalHours > 0.01 && moGroup.observations >= 1 && moQuantity > 0) {
+        const moUph = moQuantity / totalHours;
         
         // Only include realistic UPH values for this MO
         if (moUph > 0 && moUph < 500) {
@@ -182,7 +244,7 @@ export async function calculateUphFromFulfilFields() {
             group.latestUpdate = moGroup.latestUpdate;
           }
           
-          console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moGroup.totalQuantity} units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
+          console.log(`MO ${moGroup.moNumber}: ${moGroup.operatorName} | ${moGroup.transformedWorkCenter} | ${moGroup.routing} = ${Math.round(moUph * 100) / 100} UPH (${moQuantity} units in ${Math.round(totalHours * 100) / 100}h, ${moGroup.workOrders.size} WOs: ${Array.from(moGroup.operations).join(', ')})`);
         }
       }
     }
