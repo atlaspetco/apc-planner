@@ -67,39 +67,73 @@ export default function OperatorSettings() {
 
   // Helper functions to determine auto-enabled settings based on raw work_cycles data
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
-    if (!rawWorkCyclesData?.success || !rawWorkCyclesData?.workCenters) {
-      console.log("Debug: No raw work cycles data available for", operatorName);
+    if (!uphData?.routings) {
+      console.log("Debug: No UPH data available for", operatorName);
       return [];
     }
     
-    console.log("Debug: Getting work centers for operator (raw data):", operatorName);
-    console.log("Debug: Raw work centers:", rawWorkCyclesData.workCenters);
+    const workCenters = new Set<string>();
     
-    return rawWorkCyclesData.workCenters;
+    // Search through all routings and operators in UPH data
+    uphData.routings.forEach(routing => {
+      routing.operators.forEach(operator => {
+        if (operator.operatorName === operatorName) {
+          workCenters.add(operator.workCenter);
+        }
+      });
+    });
+    
+    const workCentersArray = Array.from(workCenters);
+    console.log("Debug: Getting work centers for operator (UPH data):", operatorName, workCentersArray);
+    
+    return workCentersArray;
   };
 
   const getOperatorOperationsWithData = (operatorName: string): string[] => {
-    if (!rawWorkCyclesData?.success || !rawWorkCyclesData?.operations) {
-      console.log("Debug: No raw work cycles data available for", operatorName);
+    if (!workCentersData) {
+      console.log("Debug: No work centers data available for", operatorName);
       return [];
     }
     
-    console.log("Debug: Getting operations for operator (raw data):", operatorName);
-    console.log("Debug: Raw operations:", rawWorkCyclesData.operations);
+    const operations = new Set<string>();
     
-    return rawWorkCyclesData.operations;
+    // Get all operations for work centers where this operator has UPH data
+    const operatorWorkCenters = getOperatorWorkCentersWithData(operatorName);
+    
+    workCentersData.forEach(workCenter => {
+      if (operatorWorkCenters.includes(workCenter.workCenter)) {
+        workCenter.operations.forEach(operation => {
+          operations.add(operation);
+        });
+      }
+    });
+    
+    const operationsArray = Array.from(operations);
+    console.log("Debug: Getting operations for operator (derived from UPH data):", operatorName, operationsArray);
+    
+    return operationsArray;
   };
 
   const getOperatorRoutingsWithData = (operatorName: string): string[] => {
-    if (!rawWorkCyclesData?.success || !rawWorkCyclesData?.routings) {
-      console.log("Debug: No raw work cycles data available for", operatorName);
+    if (!uphData?.routings) {
+      console.log("Debug: No UPH data available for", operatorName);
       return [];
     }
     
-    console.log("Debug: Getting routings for operator (raw data):", operatorName);
-    console.log("Debug: Raw routings:", rawWorkCyclesData.routings);
+    const routings = new Set<string>();
     
-    return rawWorkCyclesData.routings;
+    // Search through all routings to find ones where this operator has data
+    uphData.routings.forEach(routing => {
+      const hasOperatorData = routing.operators.some(operator => operator.operatorName === operatorName);
+      if (hasOperatorData) {
+        routings.add(routing.routingName);
+      }
+    });
+    
+    const routingsArray = Array.from(routings);
+    console.log("Debug: Getting routings for operator (UPH data):", operatorName, routingsArray);
+    
+    return routingsArray;
   };
 
   // Auto-configure operator settings based on UPH data
@@ -211,12 +245,9 @@ export default function OperatorSettings() {
 
   const selectedOperatorData = allOperators.find((op: Operator) => op.id === selectedOperator);
   
-  // Query to get raw work cycles data for an operator
-  const { data: rawWorkCyclesData, refetch: refetchRawData } = useQuery({
-    queryKey: [`/api/operators/${selectedOperatorData?.name}/work-cycles-data`],
-    enabled: !!selectedOperatorData?.name,
-    staleTime: 30000 // Cache for 30 seconds
-  });
+  // Query to get raw work cycles data for an operator - REMOVED broken endpoint
+  // Instead, we'll use the existing UPH data to determine operator capabilities
+  const rawWorkCyclesData = null;
   
   // Apply optimistic updates to the selected operator data
   const getOptimisticOperatorData = () => {
