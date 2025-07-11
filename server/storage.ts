@@ -363,7 +363,7 @@ export class MemStorage implements IStorage {
 }
 
 import { db } from "./db";
-import { eq, and, inArray, not } from "drizzle-orm";
+import { eq, and, inArray, notInArray, not } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
@@ -388,9 +388,9 @@ export class DatabaseStorage implements IStorage {
     if (statusFilter && statusFilter.length > 0) {
       return db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
     } else if (excludeCompleted) {
-      // By default, show only assigned MOs (matching user's 38 assigned requirement)
+      // Show all non-done MOs (Draft, Waiting, Assigned, Running)
       return db.select().from(productionOrders).where(
-        eq(productionOrders.status, 'assigned')
+        notInArray(productionOrders.status, ['done', 'cancelled'])
       );
     }
     

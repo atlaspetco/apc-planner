@@ -1,6 +1,5 @@
 import { RefreshCw, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,109 +70,88 @@ export default function FilterControls({
     String(Math.ceil((new Date().getDate() - new Date().getDay() + 1) / 7)).padStart(2, '0');
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>Filters & Controls</CardTitle>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending}
+    <div className="bg-white border rounded-lg p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-medium text-gray-900">Production Planner</h3>
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={() => refreshMutation.mutate()}
+          disabled={refreshMutation.isPending}
+        >
+          <RefreshCw className={`w-4 h-4 mr-1 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+          {refreshMutation.isPending ? 'Syncing...' : 'Refresh'}
+        </Button>
+      </div>
+      
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Compact Status Filter */}
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-gray-600">Status:</Label>
+          <Select
+            value={statusFilter.length === 0 ? "all" : statusFilter[0]}
+            onValueChange={handleStatusChange}
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
-            {refreshMutation.isPending ? 'Processing...' : 'Refresh from Fulfil'}
+            <SelectTrigger className="w-32 h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Active</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="waiting">Waiting</SelectItem>
+              <SelectItem value="assigned">Assigned</SelectItem>
+              <SelectItem value="running">Running</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* Compact Week Filter */}
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-gray-600">Week:</Label>
+          <Input 
+            type="week" 
+            className="w-40 h-8" 
+            defaultValue={currentWeek}
+            onChange={(e) => {
+              console.log('Week filter changed:', e.target.value);
+            }}
+          />
+        </div>
+        
+        {/* Compact Routing Filter */}
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-gray-600">Routing:</Label>
+          <Select value={routingFilter} onValueChange={onRoutingFilterChange}>
+            <SelectTrigger className="w-32 h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="lifetime-pouch">Pouch</SelectItem>
+              <SelectItem value="lifetime-bowl">Bowl</SelectItem>
+              <SelectItem value="lifetime-harness">Harness</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* Compact Batch Actions */}
+        <div className="flex items-center gap-2 ml-auto">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            disabled={selectedMOs.length === 0}
+            onClick={() => {
+              toast({
+                title: "Create Batch",
+                description: `Creating batch with ${selectedMOs.length} MOs`,
+              });
+            }}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Batch ({selectedMOs.length})
           </Button>
         </div>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          {/* Status Filter */}
-          <div>
-            <Label className="text-sm font-medium text-gray-700">MO Status</Label>
-            <Select
-              value={statusFilter.length === 0 ? "all" : statusFilter[0]}
-              onValueChange={handleStatusChange}
-            >
-              <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="waiting">Waiting</SelectItem>
-                <SelectItem value="assigned">Assigned</SelectItem>
-                <SelectItem value="running">Running</SelectItem>
-                <SelectItem value="done">Done</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Week Filter */}
-          <div>
-            <Label className="text-sm font-medium text-gray-700">Planning Week</Label>
-            <Input 
-              type="week" 
-              className="mt-2" 
-              defaultValue={currentWeek}
-              onChange={(e) => {
-                // TODO: Implement week filtering based on planned dates
-                console.log('Week filter changed:', e.target.value);
-              }}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Current week by default • Filters by planned date • Supports 1-4 weeks
-            </p>
-          </div>
-          
-          {/* Routing Filter */}
-          <div>
-            <Label className="text-sm font-medium text-gray-700">Product Routing</Label>
-            <Select value={routingFilter} onValueChange={onRoutingFilterChange}>
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Routings</SelectItem>
-                <SelectItem value="Lifetime Leash">Lifetime Leash</SelectItem>
-                <SelectItem value="Lifetime Harness">Lifetime Harness</SelectItem>
-                <SelectItem value="Lifetime Pouch">Lifetime Pouch</SelectItem>
-                <SelectItem value="Lifetime Bowl">Lifetime Bowl</SelectItem>
-                <SelectItem value="Lifetime Bandana">Lifetime Bandana</SelectItem>
-                <SelectItem value="Fi Snap">Fi Snap</SelectItem>
-                <SelectItem value="Lifetime Pro Collar">Lifetime Pro Collar</SelectItem>
-                <SelectItem value="Lifetime Pro Harness">Lifetime Pro Harness</SelectItem>
-                <SelectItem value="Lifetime Lite Leash">Lifetime Lite Leash</SelectItem>
-                <SelectItem value="Lifetime Lite Collar">Lifetime Lite Collar</SelectItem>
-                <SelectItem value="Lifetime Air Harness">Lifetime Air Harness</SelectItem>
-                <SelectItem value="Lifetime Handle">Lifetime Handle</SelectItem>
-                <SelectItem value="Cutting - Fabric">Cutting - Fabric</SelectItem>
-                <SelectItem value="Cutting - Webbing">Cutting - Webbing</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Batch Actions */}
-          <div>
-            <Label className="text-sm font-medium text-gray-700">Batch Actions</Label>
-            <Button 
-              className="w-full mt-2 bg-green-600 hover:bg-green-700"
-              disabled={selectedMOs.length === 0}
-              onClick={() => {
-                if (selectedMOs.length > 0) {
-                  toast({
-                    title: "Batch Created",
-                    description: `Created batch with ${selectedMOs.length} production orders`,
-                  });
-                }
-              }}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Batch ({selectedMOs.length})
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

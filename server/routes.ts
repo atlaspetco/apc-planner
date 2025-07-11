@@ -91,7 +91,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         finalProductionOrders = enrichedProductionOrders.filter(po => statusFilter.includes(po.status));
         console.log(`Filtered to ${finalProductionOrders.length} production orders with status: ${statusFilter.join(', ')}`);
       } else {
-        console.log(`Showing all ${finalProductionOrders.length} active production orders (excluding Done/Cancelled)`);
+        console.log(`Showing all ${finalProductionOrders.length} incomplete production orders (excluding Done/Cancelled)`);
       }
       
       console.log(`Returning ${finalProductionOrders.length} production orders (filter: ${statusFilter || 'none'})`);

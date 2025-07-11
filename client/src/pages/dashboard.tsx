@@ -11,7 +11,7 @@ import MOWorkCenters from "@/components/dashboard/mo-work-centers";
 
 
 export default function Dashboard() {
-  const [statusFilter, setStatusFilter] = useState<string[]>(["assigned", "waiting", "running", "draft"]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
