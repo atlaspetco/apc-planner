@@ -39,53 +39,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const excludeCompleted = req.query.excludeCompleted !== "false";
       
-      // Get production orders with proper sorting (newest first by ID/creation)
-      let productionOrders = await storage.getProductionOrders(undefined, excludeCompleted);
+      // Get production orders with simple, fast query
+      let productionOrders = await storage.getProductionOrders(statusFilter, excludeCompleted);
       
       // Sort by newest first (highest ID = most recent in database)
       productionOrders = productionOrders.sort((a, b) => b.id - a.id);
       
-      // Get routing data from work orders table for each production order
-      const { db } = await import("./db.js");
-      const { workOrders } = await import("../shared/schema.js");
-      const { eq } = await import("drizzle-orm");
+      // Simple product name enrichment without heavy database joins
+      const enrichedProductionOrders = productionOrders.map(po => ({
+        ...po,
+        productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
+        // Use existing routing data from production order record
+        routingName: po.routing || (po.routingName !== "Standard" ? po.routingName : null)
+      }));
       
-      // Enrich production orders with routing data from work orders and Fulfil API
-      const enrichedProductionOrders = await Promise.all(
-        productionOrders.map(async (po) => {
-          // Find work orders for this production order to get routing data
-          const woData = await db
-            .select({ routing: workOrders.routing })
-            .from(workOrders)
-            .where(eq(workOrders.productionOrderId, po.id))
-            .limit(1);
-          
-          const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
-          
-          // Use actual routing data from work_cycles table for authentic routing names
-          let routingFromProductCode = null;
-          if (po.product_code) {
-            if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
-            else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
-            else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
-            else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
-            else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
-            else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
-            else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
-            else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
-            else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
-          }
-          
-          return {
-            ...po,
-            productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
-            // Use routing from work orders, then product code mapping, then original routing - never default to "Standard"
-            routingName: routingFromWorkOrders || routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
-          };
-        })
-      );
-      
-      // Apply status filtering to match frontend request - include all if no specific filter
+      // Return all production orders matching criteria
       let finalProductionOrders = enrichedProductionOrders;
       if (statusFilter && statusFilter.length > 0 && !statusFilter.includes('assigned')) {
         finalProductionOrders = enrichedProductionOrders.filter(po => statusFilter.includes(po.status));

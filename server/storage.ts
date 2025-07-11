@@ -385,16 +385,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProductionOrders(statusFilter?: string[], excludeCompleted = true): Promise<ProductionOrder[]> {
+    console.log(`Getting production orders with status filter: ${statusFilter}, excludeCompleted: ${excludeCompleted}`);
+    
+    let query = db.select().from(productionOrders);
+    
     if (statusFilter && statusFilter.length > 0) {
-      return db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
+      console.log(`Filtering by statuses: ${statusFilter.join(', ')}`);
+      query = query.where(inArray(productionOrders.status, statusFilter));
     } else if (excludeCompleted) {
-      // Show all non-done MOs (Draft, Waiting, Assigned, Running)
-      return db.select().from(productionOrders).where(
+      console.log("Excluding Done/Cancelled orders");
+      query = query.where(
         notInArray(productionOrders.status, ['done', 'cancelled'])
       );
     }
     
-    return db.select().from(productionOrders);
+    // Add ordering by ID descending for consistent results
+    query = query.orderBy(productionOrders.id);
+    
+    const result = await query;
+    console.log(`Found ${result.length} production orders`);
+    return result;
   }
 
   async getProductionOrder(id: number): Promise<ProductionOrder | undefined> {

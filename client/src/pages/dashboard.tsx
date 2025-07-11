@@ -16,12 +16,12 @@ export default function Dashboard() {
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
   const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders", { status: JSON.stringify(statusFilter), timestamp: Date.now() }],
+    queryKey: ["/api/production-orders", statusFilter.join(",")],
     enabled: true,
     retry: 3,
     retryDelay: 1000,
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 30000, // Cache for 30 seconds
+    gcTime: 300000, // Keep in memory for 5 minutes
   });
 
   // Get current production orders from Fulfil API
