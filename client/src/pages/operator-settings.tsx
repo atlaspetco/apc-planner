@@ -90,7 +90,7 @@ export default function OperatorSettings() {
   };
 
   const getOperatorOperationsWithData = (operatorName: string): string[] => {
-    if (!workCentersData) {
+    if (!workCenterData) {
       console.log("Debug: No work centers data available for", operatorName);
       return [];
     }
@@ -100,7 +100,7 @@ export default function OperatorSettings() {
     // Get all operations for work centers where this operator has UPH data
     const operatorWorkCenters = getOperatorWorkCentersWithData(operatorName);
     
-    workCentersData.forEach(workCenter => {
+    workCenterData.forEach(workCenter => {
       if (operatorWorkCenters.includes(workCenter.workCenter)) {
         workCenter.operations.forEach(operation => {
           operations.add(operation);
