@@ -30,6 +30,7 @@ export default function OperatorSettings() {
   
   // Local state for optimistic updates to prevent visual lag
   const [optimisticUpdates, setOptimisticUpdates] = useState<Map<number, Partial<Operator>>>(new Map());
+  const [selectedTimeWindow, setSelectedTimeWindow] = useState<string>('month');
 
   const { data: allOperators = [], isLoading, refetch: refetchOperators } = useQuery({
     queryKey: ["/api/operators?activeOnly=false"],
@@ -48,11 +49,18 @@ export default function OperatorSettings() {
     queryKey: ["/api/uph/table-data"],
   });
 
+  // Get time-windowed UPH data for the selected operator
+  const { data: timeWindowedData, refetch: refetchTimeWindowed } = useQuery({
+    queryKey: [`/api/uph/time-windowed?window=${selectedTimeWindow}`],
+    enabled: !!selectedTimeWindow,
+  });
+
   const handleRefresh = () => {
     refetchOperators();
     refetchWorkCenters();
     refetchRoutings();
     refetchUphData();
+    refetchTimeWindowed();
   };
 
   // Helper functions to determine auto-enabled settings based on UPH data
@@ -359,25 +367,68 @@ export default function OperatorSettings() {
                   />
                 </div>
 
-                {/* UPH Calculation Window */}
+                {/* UPH Analysis Time Window */}
                 <div>
-                  <Label htmlFor="uphWindow">UPH Calculation Window (days)</Label>
-                  <Select
-                    defaultValue={selectedOperatorData.uphCalculationWindow?.toString()}
-                    onValueChange={(value) => handleUpdateOperator({ uphCalculationWindow: parseInt(value) })}
+                  <Label htmlFor="timeWindow">UPH Analysis Time Window</Label>
+                  <Select 
+                    value={selectedTimeWindow} 
+                    onValueChange={(value) => {
+                      setSelectedTimeWindow(value);
+                      toast({
+                        title: "Time window updated",
+                        description: `Now showing UPH data for: ${value === 'day' ? 'Last 24 Hours' : value === 'week' ? 'Last 7 Days' : value === 'month' ? 'Last 30 Days' : value === 'quarter' ? 'Last 90 Days' : value === 'year' ? 'Last 365 Days' : 'All Time'}`
+                      });
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">1 day</SelectItem>
-                      <SelectItem value="5">5 days</SelectItem>
-                      <SelectItem value="10">10 days</SelectItem>
-                      <SelectItem value="30">30 days</SelectItem>
-                      <SelectItem value="90">90 days</SelectItem>
-                      <SelectItem value="180">180 days</SelectItem>
+                      <SelectItem value="day">Last 24 Hours</SelectItem>
+                      <SelectItem value="week">Last 7 Days</SelectItem>
+                      <SelectItem value="month">Last 30 Days</SelectItem>
+                      <SelectItem value="quarter">Last 90 Days</SelectItem>
+                      <SelectItem value="year">Last 365 Days</SelectItem>
+                      <SelectItem value="max">All Time</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Analyze operator performance within the selected time period
+                  </p>
+                  
+                  {/* Time-Windowed Summary */}
+                  {timeWindowedData && (
+                    <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                      <div className="text-sm">
+                        <div className="font-medium text-blue-900">
+                          {selectedTimeWindow === 'day' ? 'Last 24 Hours' : 
+                           selectedTimeWindow === 'week' ? 'Last 7 Days' : 
+                           selectedTimeWindow === 'month' ? 'Last 30 Days' : 
+                           selectedTimeWindow === 'quarter' ? 'Last 90 Days' : 
+                           selectedTimeWindow === 'year' ? 'Last 365 Days' : 'All Time'} Summary
+                        </div>
+                        <div className="text-blue-700 mt-1">
+                          <div className="grid grid-cols-3 gap-4 mt-2">
+                            <div>
+                              <div className="text-xs text-blue-600">Cutting</div>
+                              <div className="font-medium">{timeWindowedData.summary?.cutting?.operators || 0} operators, {Math.round((timeWindowedData.summary?.cutting?.avg_uph || 0) * 100) / 100} avg UPH</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-blue-600">Assembly</div>
+                              <div className="font-medium">{timeWindowedData.summary?.assembly?.operators || 0} operators, {Math.round((timeWindowedData.summary?.assembly?.avg_uph || 0) * 100) / 100} avg UPH</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-blue-600">Packaging</div>
+                              <div className="font-medium">{timeWindowedData.summary?.packaging?.operators || 0} operators, {Math.round((timeWindowedData.summary?.packaging?.avg_uph || 0) * 100) / 100} avg UPH</div>
+                            </div>
+                          </div>
+                          <div className="text-xs mt-2">
+                            {timeWindowedData.workOrderCount} work orders • {timeWindowedData.consolidatedUPH?.length || 0} operator-work center combinations
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Two Column Layout: Work Centers/Operations + Product Routings */}

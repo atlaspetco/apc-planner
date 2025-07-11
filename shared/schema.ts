@@ -144,6 +144,11 @@ export const workOrderDurations = pgTable("work_order_durations", {
   work_center: text("work_center"),
   production_number: text("production_number"),
   routing_name: text("routing_name"),
+  // Timestamp fields for time-windowed analysis
+  created_at: timestamp("created_at").defaultNow(),
+  work_completed_date: timestamp("work_completed_date"), // When the work was completed
+  earliest_cycle_date: timestamp("earliest_cycle_date"), // Earliest cycle in this work order
+  latest_cycle_date: timestamp("latest_cycle_date"), // Latest cycle in this work order
 });
 
 // Fulfil reference tables for ID to name mappings

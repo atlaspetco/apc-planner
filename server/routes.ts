@@ -3438,6 +3438,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Time-windowed UPH calculation endpoint
+  app.get("/api/uph/time-windowed", async (req, res) => {
+    try {
+      const { calculateTimeWindowedUPH } = await import("./time-windowed-uph-calculator.js");
+      const timeWindow = (req.query.window as string) || 'month';
+      
+      if (!['day', 'week', 'month', 'quarter', 'year', 'max'].includes(timeWindow)) {
+        return res.status(400).json({ error: "Invalid time window. Use: day, week, month, quarter, year, max" });
+      }
+      
+      const result = await calculateTimeWindowedUPH(timeWindow as any);
+      
+      res.json({
+        success: true,
+        ...result
+      });
+    } catch (error) {
+      console.error("Error calculating time-windowed UPH:", error);
+      res.status(500).json({ error: "Failed to calculate time-windowed UPH" });
+    }
+  });
+
+  // Update work order timestamps endpoint
+  app.post("/api/work-orders/update-timestamps", async (req, res) => {
+    try {
+      const { updateWorkOrderTimestamps } = await import("./time-windowed-uph-calculator.js");
+      const result = await updateWorkOrderTimestamps();
+      
+      res.json({
+        success: true,
+        message: "Work order timestamps updated successfully",
+        ...result
+      });
+    } catch (error) {
+      console.error("Error updating work order timestamps:", error);
+      res.status(500).json({ error: "Failed to update work order timestamps" });
+    }
+  });
+
   // Fetch active production orders for planning dashboard using production.work endpoint
   app.post("/api/fulfil/import-authentic-data", async (req: Request, res: Response) => {
     try {
