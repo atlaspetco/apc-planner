@@ -59,15 +59,19 @@ export default function OperatorSettings() {
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
     if (!uphData || !uphData.routings) return [];
     
-    // Flatten all work center data from the table-data structure
-    const allWorkCenterRecords = uphData.routings.flatMap((routing: any) => 
-      routing.workCenters.flatMap((wc: any) => 
-        wc.operators.map((op: any) => ({
+    // Flatten all work center data from the table-data structure with null checks
+    const allWorkCenterRecords = uphData.routings.flatMap((routing: any) => {
+      if (!routing.workCenters || !Array.isArray(routing.workCenters)) return [];
+      
+      return routing.workCenters.flatMap((wc: any) => {
+        if (!wc.operators || !Array.isArray(wc.operators)) return [];
+        
+        return wc.operators.map((op: any) => ({
           operatorName: op.operatorName,
           workCenter: wc.workCenterName
-        }))
-      )
-    );
+        }));
+      });
+    });
     
     // Find all work centers where this operator has UPH data
     const operatorWorkCenters = allWorkCenterRecords
@@ -111,9 +115,17 @@ export default function OperatorSettings() {
     const operatorRoutings: string[] = [];
     
     uphData.routings.forEach((routing: any) => {
-      const hasOperatorData = routing.workCenters.some((wc: any) =>
-        wc.operators.some((op: any) => op.operatorName === operatorName)
-      );
+      // Add null checks for workCenters
+      if (!routing.workCenters || !Array.isArray(routing.workCenters)) {
+        return;
+      }
+      
+      const hasOperatorData = routing.workCenters.some((wc: any) => {
+        if (!wc.operators || !Array.isArray(wc.operators)) {
+          return false;
+        }
+        return wc.operators.some((op: any) => op.operatorName === operatorName);
+      });
       
       if (hasOperatorData) {
         operatorRoutings.push(routing.routingName);
