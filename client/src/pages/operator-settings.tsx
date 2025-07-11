@@ -63,100 +63,43 @@ export default function OperatorSettings() {
     refetchTimeWindowed();
   };
 
+
+
   // Helper functions to determine auto-enabled settings based on raw work_cycles data
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
-    // This should check the raw work_cycles table data, not aggregated UPH data
-    // For now, we'll use a direct API call to get the raw data
-    // TODO: Implement API endpoint to check raw work_cycles data
-    console.log("Debug: Getting work centers for operator (raw data):", operatorName);
-    
-    // Fallback to existing UPH data structure until we implement raw data check
-    if (!uphData || !uphData.routings) return [];
-    
-    const allWorkCenterRecords: any[] = [];
-    
-    uphData.routings.forEach((routing: any) => {
-      if (routing.operators && Array.isArray(routing.operators)) {
-        routing.operators.forEach((operator: any) => {
-          if (operator.operatorName === operatorName && operator.workCenterPerformance) {
-            Object.keys(operator.workCenterPerformance).forEach(workCenter => {
-              const performance = operator.workCenterPerformance[workCenter];
-              if (performance !== null && performance !== undefined) {
-                allWorkCenterRecords.push({
-                  operatorName: operator.operatorName,
-                  workCenter: workCenter,
-                  routing: routing.routingName,
-                  performance: performance
-                });
-              }
-            });
-          }
-        });
-      }
-    });
-    
-    const operatorWorkCenters = allWorkCenterRecords.map((record: any) => record.workCenter);
-    const uniqueWorkCenters = [...new Set(operatorWorkCenters)];
-    
-    console.log("Debug: Work centers found for", operatorName, ":", uniqueWorkCenters);
-    return uniqueWorkCenters;
-  };
-
-  const getOperatorOperationsWithData = (operatorName: string): string[] => {
-    if (!uphData || !uphData.routings) return [];
-    
-    // Since operations aren't directly tracked in historical UPH data,
-    // we'll derive them from work centers that have data
-    const operatorWorkCenters = getOperatorWorkCentersWithData(operatorName);
-    
-    // Map work centers to their typical operations
-    const workCenterOperations: { [key: string]: string[] } = {
-      'Assembly': ['Assembly', 'Sewing', 'Rope Assembly'],
-      'Cutting': ['Cutting', 'Laser Cutting', 'Fabric Cutting', 'Webbing Cutting'],
-      'Packaging': ['Packaging', 'Final Assembly', 'Quality Check']
-    };
-    
-    const allOperations = operatorWorkCenters.flatMap(wc => 
-      workCenterOperations[wc] || [wc]
-    );
-    
-    return [...new Set(allOperations)];
-  };
-
-  const getOperatorRoutingsWithData = (operatorName: string): string[] => {
-    if (!uphData || !uphData.routings) {
-      console.log("Debug: uphData is empty or missing routings:", uphData);
+    if (!rawWorkCyclesData?.success || !rawWorkCyclesData?.workCenters) {
+      console.log("Debug: No raw work cycles data available for", operatorName);
       return [];
     }
     
-    console.log("Debug: Searching for operator:", operatorName);
-    console.log("Debug: Total UPH records:", uphData.routings?.length);
+    console.log("Debug: Getting work centers for operator (raw data):", operatorName);
+    console.log("Debug: Raw work centers:", rawWorkCyclesData.workCenters);
     
-    // Find all routings where this operator has UPH data
-    const operatorRoutings: string[] = [];
+    return rawWorkCyclesData.workCenters;
+  };
+
+  const getOperatorOperationsWithData = (operatorName: string): string[] => {
+    if (!rawWorkCyclesData?.success || !rawWorkCyclesData?.operations) {
+      console.log("Debug: No raw work cycles data available for", operatorName);
+      return [];
+    }
     
-    uphData.routings.forEach((routing: any) => {
-      if (routing.operators && Array.isArray(routing.operators)) {
-        const hasOperatorData = routing.operators.some((op: any) => {
-          if (op.operatorName === operatorName && op.workCenterPerformance) {
-            // Check if operator has any non-null performance data
-            return Object.values(op.workCenterPerformance).some(perf => perf !== null && perf !== undefined);
-          }
-          return false;
-        });
-        
-        if (hasOperatorData) {
-          operatorRoutings.push(routing.routingName);
-          console.log("Debug: Found matching routing:", {
-            operatorName: operatorName,
-            routing: routing.routingName
-          });
-        }
-      }
-    });
+    console.log("Debug: Getting operations for operator (raw data):", operatorName);
+    console.log("Debug: Raw operations:", rawWorkCyclesData.operations);
     
-    console.log("Debug: Final routings found:", operatorRoutings);
-    return operatorRoutings;
+    return rawWorkCyclesData.operations;
+  };
+
+  const getOperatorRoutingsWithData = (operatorName: string): string[] => {
+    if (!rawWorkCyclesData?.success || !rawWorkCyclesData?.routings) {
+      console.log("Debug: No raw work cycles data available for", operatorName);
+      return [];
+    }
+    
+    console.log("Debug: Getting routings for operator (raw data):", operatorName);
+    console.log("Debug: Raw routings:", rawWorkCyclesData.routings);
+    
+    return rawWorkCyclesData.routings;
   };
 
   // Auto-configure operator settings based on UPH data
@@ -267,6 +210,13 @@ export default function OperatorSettings() {
   });
 
   const selectedOperatorData = allOperators.find((op: Operator) => op.id === selectedOperator);
+  
+  // Query to get raw work cycles data for an operator
+  const { data: rawWorkCyclesData, refetch: refetchRawData } = useQuery({
+    queryKey: [`/api/operators/${selectedOperatorData?.name}/work-cycles-data`],
+    enabled: !!selectedOperatorData?.name,
+    staleTime: 30000 // Cache for 30 seconds
+  });
   
   // Apply optimistic updates to the selected operator data
   const getOptimisticOperatorData = () => {

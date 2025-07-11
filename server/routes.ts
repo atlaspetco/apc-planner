@@ -2636,6 +2636,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get raw work cycles data for operator settings detection
+  app.get('/api/operators/:operatorName/work-cycles-data', async (req, res) => {
+    try {
+      const { operatorName } = req.params;
+      
+      console.log(`Getting raw work cycles data for operator: ${operatorName}`);
+      
+      // Get distinct work centers and routings for this operator from raw work_cycles data
+      const workCyclesData = await db
+        .select({
+          workCenter: workCyclesTable.work_cycles_work_center_rec_name,
+          routing: workCyclesTable.work_production_routing_rec_name,
+          operation: workCyclesTable.work_operation_rec_name
+        })
+        .from(workCyclesTable)
+        .where(eq(workCyclesTable.work_cycles_operator_rec_name, operatorName))
+        .groupBy(
+          workCyclesTable.work_cycles_work_center_rec_name,
+          workCyclesTable.work_production_routing_rec_name,
+          workCyclesTable.work_operation_rec_name
+        );
+      
+      console.log(`Found ${workCyclesData.length} raw work cycles records for ${operatorName}`);
+      
+      // Extract unique work centers (no consolidation for raw data)
+      const workCenters = [...new Set(workCyclesData
+        .map(row => row.workCenter)
+        .filter(wc => wc && wc.trim() !== ''))];
+      
+      // Extract unique routings
+      const routings = [...new Set(workCyclesData
+        .map(row => row.routing)
+        .filter(routing => routing && routing.trim() !== ''))];
+      
+      // Extract unique operations
+      const operations = [...new Set(workCyclesData
+        .map(row => row.operation)
+        .filter(op => op && op.trim() !== ''))];
+      
+      console.log(`Raw data for ${operatorName}: Work Centers: [${workCenters.join(', ')}], Routings: [${routings.join(', ')}]`);
+      
+      res.json({
+        success: true,
+        operatorName,
+        workCenters: workCenters.sort(),
+        routings: routings.sort(),
+        operations: operations.sort(),
+        totalRecords: workCyclesData.length
+      });
+      
+    } catch (error) {
+      console.error('Error fetching operator work cycles data:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: 'Failed to fetch operator work cycles data' 
+      });
+    }
+  });
+
   // Simple aggregation for work cycles - stable version
   app.post("/api/uph/simple-aggregate", async (req, res) => {
     try {
