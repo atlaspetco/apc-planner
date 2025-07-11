@@ -2890,10 +2890,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
         
-        // Debug logging for Lifetime Pouch
-        if (row.routing === 'Lifetime Pouch') {
-          console.log(`Processing Lifetime Pouch: Operator ${row.operator} (ID: ${row.operatorId}), Work Center: ${row.workCenter}, UPH: ${row.unitsPerHour}`);
-        }
+
         
         if (!routingData.has(row.routing)) {
           routingData.set(row.routing, new Map());

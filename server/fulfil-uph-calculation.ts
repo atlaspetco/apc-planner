@@ -44,21 +44,20 @@ export async function calculateUphFromFulfilFields() {
       SELECT 
         operator_name,
         work_center,
-        routing,
-        production_order_number as mo_number,
+        routing_name as routing,
+        production_number as mo_number,
         work_order_id,
         total_duration_seconds,
         total_quantity_done,
-        cycle_count,
-        operation_name
+        cycle_count
       FROM work_order_durations 
       WHERE operator_name IS NOT NULL 
         AND operator_name != ''
         AND work_center IS NOT NULL
         AND total_duration_seconds > 0
         AND total_quantity_done > 0
-        AND routing IS NOT NULL
-      ORDER BY production_order_number, work_order_id
+        AND routing_name IS NOT NULL
+      ORDER BY production_number, work_order_id
     `);
     
     const workOrders = workOrdersResult.rows;
