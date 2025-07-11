@@ -156,10 +156,11 @@ export default function FulfilSettings() {
     },
     onSuccess: (data) => {
       toast({
-        title: "Work Orders Import Complete",
-        description: `Processed ${data.workOrdersImported} work orders with cycle duration data`,
+        title: "Work Cycles Import Complete",
+        description: `Processed ${data.workOrdersImported} work cycles for historical UPH calculations`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/uph/table-data"] });
       // Clear the file inputs after both uploads complete
       setSelectedFiles({});
       const moInput = document.getElementById('mo-csv') as HTMLInputElement;
@@ -300,14 +301,50 @@ export default function FulfilSettings() {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
     
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    // Handle CSV with proper quote handling for comma-separated values
+    const parseCSVLine = (line: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const nextChar = line[i + 1];
+        
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            // Escaped quote
+            current += '"';
+            i++; // Skip next quote
+          } else {
+            // Toggle quote mode
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          // End of field
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      
+      // Add the last field
+      result.push(current.trim());
+      return result;
+    };
+    
+    const headers = parseCSVLine(lines[0]);
     return lines.slice(1).map(line => {
-      const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+      const values = parseCSVLine(line);
       const row: any = {};
       headers.forEach((header, index) => {
         row[header] = values[index] || '';
       });
       return row;
+    }).filter(row => {
+      // Filter out completely empty rows
+      return Object.values(row).some(value => value && value.toString().trim() !== '');
     });
   };
 
@@ -526,7 +563,7 @@ export default function FulfilSettings() {
                     )}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    Expected columns: id, number, work_center.name, operation.name, operator.name, state, quantity_done
+                    Work cycles CSV with columns: work/cycles/duration, work/cycles/operator/rec_name, work/cycles/quantity_done, work/production/number
                   </p>
                 </div>
 

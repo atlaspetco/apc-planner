@@ -3156,10 +3156,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { csvData } = req.body;
       
       if (!csvData || !Array.isArray(csvData)) {
-        throw new Error("No Work Orders CSV data provided");
+        throw new Error("No Work Cycles CSV data provided");
       }
 
-      console.log(`Processing ${csvData.length} Work Orders CSV records...`);
+      console.log(`Processing ${csvData.length} Work Cycles CSV records...`);
+      console.log("Sample CSV records:", JSON.stringify(csvData.slice(0, 2), null, 2));
       
       // Update progress
       global.updateImportStatus?.({
@@ -3168,9 +3169,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         progress: 10
       });
 
-      // Import work orders only - no production orders created (using efficient import)
-      const { efficientWorkOrdersImport } = await import("./efficient-work-orders-import.js");
-      const result = await efficientWorkOrdersImport(csvData, (current, total, message) => {
+      // Import work orders only - no production orders created (using final CSV import)
+      const { importWorkCyclesFinal } = await import("./csv-import-final.js");
+      const result = await importWorkCyclesFinal(csvData, (current, total, message) => {
         global.updateImportStatus?.({
           isImporting: true,
           currentOperation: message,
@@ -3190,13 +3191,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         success: true,
-        message: `Work orders CSV imported successfully - ${result.imported} work orders added`,
+        message: `Work cycles CSV imported successfully - ${result.imported} cycles added`,
         workOrdersImported: result.imported,
         workOrdersSkipped: result.skipped,
         totalRowsProcessed: csvData.length,
         errors: result.errors,
-        processingMethod: "work-orders-only",
-        note: "Only work orders created, linked to existing production orders"
+        processingMethod: "work-cycles-csv-import"
       });
 
     } catch (error) {
