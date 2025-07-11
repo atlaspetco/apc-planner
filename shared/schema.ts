@@ -130,6 +130,22 @@ export const workCycles = pgTable("work_cycles", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Work Order Durations - Aggregated table for one-to-many cycle relationships
+export const workOrderDurations = pgTable("work_order_durations", {
+  id: serial("id").primaryKey(),
+  work_order_id: text("work_order_id").notNull().unique(), // Clean Work Order ID (e.g., "WO13942")
+  total_duration_seconds: integer("total_duration_seconds").notNull(),
+  total_duration_hours: real("total_duration_hours").notNull(),
+  cycle_count: integer("cycle_count").notNull(), // Number of cycles aggregated
+  last_updated: timestamp("last_updated").defaultNow(),
+  // Additional fields for UPH calculations
+  total_quantity_done: real("total_quantity_done"),
+  operator_name: text("operator_name"),
+  work_center: text("work_center"),
+  production_number: text("production_number"),
+  routing_name: text("routing_name"),
+});
+
 // Fulfil reference tables for ID to name mappings
 export const fulfilWorkCenters = pgTable("fulfil_work_centers", {
   id: integer("id").primaryKey(), // Fulfil work center ID
@@ -243,6 +259,11 @@ export const insertWorkCycleSchema = createInsertSchema(workCycles).omit({
   createdAt: true,
 });
 
+export const insertWorkOrderDurationSchema = createInsertSchema(workOrderDurations).omit({
+  id: true,
+  last_updated: true,
+});
+
 export const insertHistoricalUphSchema = createInsertSchema(historicalUph).omit({
   id: true,
   lastCalculated: true,
@@ -274,6 +295,8 @@ export type Batch = typeof batches.$inferSelect;
 export type InsertBatch = z.infer<typeof insertBatchSchema>;
 export type WorkCycle = typeof workCycles.$inferSelect;
 export type InsertWorkCycle = z.infer<typeof insertWorkCycleSchema>;
+export type WorkOrderDuration = typeof workOrderDurations.$inferSelect;
+export type InsertWorkOrderDuration = z.infer<typeof insertWorkOrderDurationSchema>;
 export type HistoricalUph = typeof historicalUph.$inferSelect;
 export type InsertHistoricalUph = z.infer<typeof insertHistoricalUphSchema>;
 export type UphCalculationData = typeof uphCalculationData.$inferSelect;

@@ -168,6 +168,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(workOrders);
   });
 
+  // Get all aggregated work order durations (MUST be before :id route)
+  app.get("/api/work-orders/durations", async (req, res) => {
+    try {
+      const { getAllWorkOrderDurations } = await import("./work-order-aggregator.js");
+      const durations = await getAllWorkOrderDurations();
+      
+      res.json({
+        success: true,
+        count: durations.length,
+        data: durations
+      });
+    } catch (error) {
+      console.error("Error getting work order durations:", error);
+      res.status(500).json({ error: "Failed to get work order durations" });
+    }
+  });
+
   app.get("/api/work-orders/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
@@ -3341,6 +3358,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to calculate UPH from work cycles",
         details: error instanceof Error ? error.message : "Unknown error"
       });
+    }
+  });
+
+  // Work Order Aggregation API endpoints (ChatGPT "nice to haves")
+
+  // Get specific work order summary
+  app.get("/api/uph/summary", async (req, res) => {
+    try {
+      const workOrderId = req.query.wo as string;
+      
+      if (!workOrderId) {
+        return res.status(400).json({ error: "Work Order ID (wo) parameter is required" });
+      }
+      
+      const { getWorkOrderSummary } = await import("./work-order-aggregator.js");
+      const summary = await getWorkOrderSummary(workOrderId);
+      
+      if (!summary) {
+        return res.status(404).json({ error: `Work Order ${workOrderId} not found` });
+      }
+      
+      res.json(summary);
+    } catch (error) {
+      console.error("Error getting work order summary:", error);
+      res.status(500).json({ error: "Failed to get work order summary" });
+    }
+  });
+
+  // Moved above to prevent conflict with :id route
+
+  // Manual work order aggregation trigger
+  app.post("/api/work-orders/aggregate", async (req, res) => {
+    try {
+      const { aggregateWorkOrderDurations } = await import("./work-order-aggregator.js");
+      const result = await aggregateWorkOrderDurations();
+      
+      res.json({
+        success: true,
+        message: "Work order aggregation completed",
+        ...result
+      });
+    } catch (error) {
+      console.error("Error in manual work order aggregation:", error);
+      res.status(500).json({ error: "Failed to aggregate work orders" });
     }
   });
 
