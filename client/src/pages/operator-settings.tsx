@@ -68,32 +68,38 @@ export default function OperatorSettings() {
     if (!uphData || !uphData.routings) return [];
     
     console.log("Debug: Getting work centers for operator:", operatorName);
-    console.log("Debug: UPH data structure:", uphData);
     
-    // Flatten all work center data from the table-data structure with null checks
-    const allWorkCenterRecords = uphData.routings.flatMap((routing: any) => {
-      if (!routing.workCenters || !Array.isArray(routing.workCenters)) return [];
-      
-      return routing.workCenters.flatMap((wc: any) => {
-        if (!wc.operators || !Array.isArray(wc.operators)) return [];
-        
-        return wc.operators.map((op: any) => ({
-          operatorName: op.operatorName,
-          workCenter: wc.workCenterName
-        }));
-      });
+    // The UPH data structure has routings with operators array, not workCenters with operators
+    const allWorkCenterRecords: any[] = [];
+    
+    uphData.routings.forEach((routing: any) => {
+      if (routing.operators && Array.isArray(routing.operators)) {
+        routing.operators.forEach((operator: any) => {
+          if (operator.operatorName === operatorName && operator.workCenterPerformance) {
+            // Extract work centers where this operator has performance data
+            Object.keys(operator.workCenterPerformance).forEach(workCenter => {
+              const performance = operator.workCenterPerformance[workCenter];
+              if (performance !== null && performance !== undefined) {
+                allWorkCenterRecords.push({
+                  operatorName: operator.operatorName,
+                  workCenter: workCenter,
+                  routing: routing.routingName,
+                  performance: performance
+                });
+              }
+            });
+          }
+        });
+      }
     });
     
-    console.log("Debug: All work center records:", allWorkCenterRecords);
+    console.log("Debug: All work center records for", operatorName, ":", allWorkCenterRecords);
     
     // Find all work centers where this operator has UPH data
-    const operatorWorkCenters = allWorkCenterRecords
-      .filter((record: any) => record.operatorName === operatorName)
-      .map((record: any) => record.workCenter);
-    
+    const operatorWorkCenters = allWorkCenterRecords.map((record: any) => record.workCenter);
     const uniqueWorkCenters = [...new Set(operatorWorkCenters)];
-    console.log("Debug: Work centers found for", operatorName, ":", uniqueWorkCenters);
     
+    console.log("Debug: Work centers found for", operatorName, ":", uniqueWorkCenters);
     return uniqueWorkCenters;
   };
 
@@ -131,26 +137,22 @@ export default function OperatorSettings() {
     const operatorRoutings: string[] = [];
     
     uphData.routings.forEach((routing: any) => {
-      // Add null checks for workCenters
-      if (!routing.workCenters || !Array.isArray(routing.workCenters)) {
-        return;
-      }
-      
-      const hasOperatorData = routing.workCenters.some((wc: any) => {
-        if (!wc.operators || !Array.isArray(wc.operators)) {
+      if (routing.operators && Array.isArray(routing.operators)) {
+        const hasOperatorData = routing.operators.some((op: any) => {
+          if (op.operatorName === operatorName && op.workCenterPerformance) {
+            // Check if operator has any non-null performance data
+            return Object.values(op.workCenterPerformance).some(perf => perf !== null && perf !== undefined);
+          }
           return false;
-        }
-        return wc.operators.some((op: any) => op.operatorName === operatorName);
-      });
-      
-      if (hasOperatorData) {
-        operatorRoutings.push(routing.routingName);
-        console.log("Debug: Found matching record:", {
-          operatorName: operatorName,
-          operatorId: selectedOperatorData?.id,
-          routing: routing.routingName,
-          workCenter: routing.workCenters.map((wc: any) => wc.workCenterName).join(', ')
         });
+        
+        if (hasOperatorData) {
+          operatorRoutings.push(routing.routingName);
+          console.log("Debug: Found matching routing:", {
+            operatorName: operatorName,
+            routing: routing.routingName
+          });
+        }
       }
     });
     
@@ -276,26 +278,37 @@ export default function OperatorSettings() {
 
   // Auto-configure settings when operator is selected and UPH data is available
   useEffect(() => {
-    if (selectedOperatorData && uphData && uphData.routings) {
+    if (selectedOperatorData && uphData && uphData.routings && !optimisticUpdates.has(selectedOperator || 0)) {
       const operatorName = selectedOperatorData.name;
       const workCentersWithData = getOperatorWorkCentersWithData(operatorName);
       const routingsWithData = getOperatorRoutingsWithData(operatorName);
       
-      // Only auto-configure if the operator has data but no current settings configured
-      if ((workCentersWithData.length > 0 || routingsWithData.length > 0) && 
-          (!selectedOperatorData.workCenters?.length && !selectedOperatorData.routings?.length)) {
-        console.log("Auto-configuring operator on selection:", operatorName, {
-          workCenters: workCentersWithData,
-          routings: routingsWithData
-        });
+      // Auto-configure if operator has UPH data and current settings are empty or missing
+      if (workCentersWithData.length > 0 || routingsWithData.length > 0) {
+        const hasEmptyWorkCenters = !selectedOperatorData.workCenters || selectedOperatorData.workCenters.length === 0;
+        const hasEmptyRoutings = !selectedOperatorData.routings || selectedOperatorData.routings.length === 0;
         
-        // Don't show toast for automatic configuration
-        const operationsWithData = getOperatorOperationsWithData(operatorName);
-        handleUpdateOperator({
-          workCenters: workCentersWithData,
-          operations: operationsWithData,
-          routings: routingsWithData
-        });
+        if (hasEmptyWorkCenters || hasEmptyRoutings) {
+          console.log("Auto-configuring operator on selection:", operatorName, {
+            workCenters: workCentersWithData,
+            routings: routingsWithData,
+            currentWorkCenters: selectedOperatorData.workCenters,
+            currentRoutings: selectedOperatorData.routings
+          });
+          
+          const operationsWithData = getOperatorOperationsWithData(operatorName);
+          
+          // Merge with existing data rather than replacing
+          const newWorkCenters = [...new Set([...(selectedOperatorData.workCenters || []), ...workCentersWithData])];
+          const newOperations = [...new Set([...(selectedOperatorData.operations || []), ...operationsWithData])];
+          const newRoutings = [...new Set([...(selectedOperatorData.routings || []), ...routingsWithData])];
+          
+          handleUpdateOperator({
+            workCenters: newWorkCenters,
+            operations: newOperations,
+            routings: newRoutings
+          });
+        }
       }
     }
   }, [selectedOperator, uphData]);
