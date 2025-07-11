@@ -65,7 +65,7 @@ export default function OperatorSettings() {
 
 
 
-  // Helper functions to determine auto-enabled settings based on raw work_cycles data
+  // Helper functions to determine auto-enabled settings based on UPH data
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
     if (!uphData?.routings) {
       console.log("Debug: No UPH data available for", operatorName);
@@ -78,7 +78,12 @@ export default function OperatorSettings() {
     uphData.routings.forEach(routing => {
       routing.operators.forEach(operator => {
         if (operator.operatorName === operatorName) {
-          workCenters.add(operator.workCenter);
+          // Extract work centers from workCenterPerformance object
+          Object.keys(operator.workCenterPerformance || {}).forEach(workCenter => {
+            if (operator.workCenterPerformance[workCenter] !== null) {
+              workCenters.add(workCenter);
+            }
+          });
         }
       });
     });
@@ -517,24 +522,30 @@ export default function OperatorSettings() {
                         {(workCenterData as any[]).map((wc: any) => {
                           const optimisticData = getOptimisticOperatorData();
                           const hasData = getOperatorWorkCentersWithData(optimisticData?.name || '').includes(wc.workCenter);
-                          // Auto-enable work centers if they have UPH data
-                          const isChecked = optimisticData?.workCenters?.includes(wc.workCenter) || hasData;
+                          // Manual control - only use explicitly set values from database
+                          const isChecked = optimisticData?.workCenters?.includes(wc.workCenter) || false;
+                          const isOffWithData = hasData && !isChecked;
                           
                           return (
                             <div key={`${selectedOperatorData.id}-wc-${wc.workCenter}`} className="flex items-center space-x-2">
-                              <Switch
-                                id={`wc-${wc.workCenter}-${selectedOperatorData.id}`}
-                                key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}`}
-                                checked={isChecked}
-                                onCheckedChange={(checked) => {
-                                  const optimisticData = getOptimisticOperatorData();
-                                  const currentWorkCenters = optimisticData?.workCenters || [];
-                                  const newWorkCenters = checked
-                                    ? [...currentWorkCenters, wc.workCenter]
-                                    : currentWorkCenters.filter((center: string) => center !== wc.workCenter);
-                                  handleUpdateOperator({ workCenters: newWorkCenters });
-                                }}
-                              />
+                              <div className="relative">
+                                <Switch
+                                  id={`wc-${wc.workCenter}-${selectedOperatorData.id}`}
+                                  key={`switch-wc-${wc.workCenter}-${selectedOperatorData.id}`}
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) => {
+                                    const optimisticData = getOptimisticOperatorData();
+                                    const currentWorkCenters = optimisticData?.workCenters || [];
+                                    const newWorkCenters = checked
+                                      ? [...currentWorkCenters, wc.workCenter]
+                                      : currentWorkCenters.filter((center: string) => center !== wc.workCenter);
+                                    handleUpdateOperator({ workCenters: newWorkCenters });
+                                  }}
+                                />
+                                {isOffWithData && (
+                                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                                )}
+                              </div>
                               <Label htmlFor={`wc-${wc.workCenter}-${selectedOperatorData.id}`} className="flex items-center space-x-2">
                                 <span>{wc.workCenter}</span>
                                 {hasData && (
@@ -574,25 +585,31 @@ export default function OperatorSettings() {
                           return relevantOperations.map((operation: string, index: number) => {
                             const hasData = operatorOperationsWithData.includes(operation);
                             const optimisticData = getOptimisticOperatorData();
-                            // Auto-enable operations if they have UPH data
-                            const isChecked = optimisticData?.operations?.includes(operation) || hasData;
+                            // Manual control - only use explicitly set values from database
+                            const isChecked = optimisticData?.operations?.includes(operation) || false;
+                            const isOffWithData = hasData && !isChecked;
                             // Create truly unique key combining operator ID, operation, and index
                             const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
                             
                             return (
                               <div key={stableKey} className="flex items-center space-x-2">
-                                <Switch
-                                  id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
-                                  checked={isChecked}
-                                  onCheckedChange={(checked) => {
-                                    const optimisticData = getOptimisticOperatorData();
-                                    const currentOperations = optimisticData?.operations || [];
-                                    const newOperations = checked
-                                      ? [...currentOperations, operation]
-                                      : currentOperations.filter((op: string) => op !== operation);
-                                    handleUpdateOperator({ operations: newOperations });
-                                  }}
-                                />
+                                <div className="relative">
+                                  <Switch
+                                    id={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`}
+                                    checked={isChecked}
+                                    onCheckedChange={(checked) => {
+                                      const optimisticData = getOptimisticOperatorData();
+                                      const currentOperations = optimisticData?.operations || [];
+                                      const newOperations = checked
+                                        ? [...currentOperations, operation]
+                                        : currentOperations.filter((op: string) => op !== operation);
+                                      handleUpdateOperator({ operations: newOperations });
+                                    }}
+                                  />
+                                  {isOffWithData && (
+                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                                  )}
+                                </div>
                                 <Label htmlFor={`op-${operation.replace(/[^a-zA-Z0-9]/g, '')}-${selectedOperatorData.id}-${index}`} className="flex items-center space-x-2">
                                   <span className="text-sm">{operation}</span>
                                   {hasData && (
@@ -638,24 +655,30 @@ export default function OperatorSettings() {
                         return relevantRoutings.map((routing: string) => {
                           const hasData = operatorRoutingsWithData.includes(routing);
                           const optimisticData = getOptimisticOperatorData();
-                          // Auto-enable routings if they have UPH data
-                          const isChecked = optimisticData?.routings?.includes(routing) || hasData;
+                          // Manual control - only use explicitly set values from database
+                          const isChecked = optimisticData?.routings?.includes(routing) || false;
+                          const isOffWithData = hasData && !isChecked;
                           const stableKey = `routing-${selectedOperatorData.id}-${routing.replace(/\s+/g, '-')}`;
                           
                           return (
                             <div key={stableKey} className="flex items-center space-x-2">
-                              <Switch
-                                id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
-                                checked={isChecked}
-                                onCheckedChange={(checked) => {
-                                  const optimisticData = getOptimisticOperatorData();
-                                  const currentRoutings = optimisticData?.routings || [];
-                                  const newRoutings = checked
-                                    ? [...currentRoutings, routing]
-                                    : currentRoutings.filter((rt: string) => rt !== routing);
-                                  handleUpdateOperator({ routings: newRoutings });
-                                }}
-                              />
+                              <div className="relative">
+                                <Switch
+                                  id={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`}
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) => {
+                                    const optimisticData = getOptimisticOperatorData();
+                                    const currentRoutings = optimisticData?.routings || [];
+                                    const newRoutings = checked
+                                      ? [...currentRoutings, routing]
+                                      : currentRoutings.filter((rt: string) => rt !== routing);
+                                    handleUpdateOperator({ routings: newRoutings });
+                                  }}
+                                />
+                                {isOffWithData && (
+                                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                                )}
+                              </div>
                               <Label htmlFor={`rt-${routing.replace(/\s+/g, '-')}-${selectedOperatorData.id}`} className="flex items-center space-x-2">
                                 <span className="text-sm">{routing}</span>
                                 {hasData && (
