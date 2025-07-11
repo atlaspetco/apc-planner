@@ -1280,6 +1280,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Import real data from Fulfil to replace test data
+  app.post("/api/fulfil/import-real-data", async (req, res) => {
+    try {
+      console.log("Starting import of real Fulfil data to replace test data...");
+      
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(401).json({ 
+          success: false, 
+          message: "Fulfil API token not configured - please contact admin" 
+        });
+      }
+
+      // Simple direct API call to get recent production orders
+      const apiUrl = "https://apc.fulfil.io/api/v2/model/production.order";
+      const response = await fetch(`${apiUrl}?per_page=100&state=draft,waiting,assigned,running`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+        }
+      });
+
+      if (!response.ok) {
+        console.error(`Fulfil API error: ${response.status} ${response.statusText}`);
+        return res.status(500).json({
+          success: false,
+          message: `Fulfil API error: ${response.status} - Check API token and permissions`
+        });
+      }
+
+      const fulfilOrders = await response.json();
+      console.log(`Retrieved ${fulfilOrders.length} orders from Fulfil`);
+
+      if (!Array.isArray(fulfilOrders) || fulfilOrders.length === 0) {
+        return res.json({
+          success: true,
+          message: "No active production orders found in Fulfil",
+          imported: 0
+        });
+      }
+
+      const { db } = await import("./db.js");
+      const { productionOrders } = await import("../shared/schema.js");
+      
+      // Clear test data and import real data
+      await db.delete(productionOrders);
+      console.log("Cleared test production orders");
+
+      let imported = 0;
+      for (const order of fulfilOrders) {
+        try {
+          await db.insert(productionOrders).values({
+            moNumber: order.rec_name || `MO${order.id}`,
+            productName: order.product?.rec_name || order.product?.code || `Product ${order.id}`,
+            quantity: order.quantity || 0,
+            status: order.state || 'draft',
+            routing: order.routing?.name || null,
+            dueDate: order.planned_date ? new Date(order.planned_date) : null,
+            priority: "Medium",
+            fulfilId: order.id,
+            rec_name: order.rec_name,
+            state: order.state,
+            planned_date: order.planned_date,
+            create_date: order.create_date,
+            product_code: order.product?.code
+          });
+          imported++;
+        } catch (error) {
+          console.error(`Error importing order ${order.rec_name}:`, error);
+        }
+      }
+
+      console.log(`Successfully imported ${imported} real production orders from Fulfil`);
+      
+      res.json({
+        success: true,
+        message: `Successfully imported ${imported} real production orders from Fulfil`,
+        imported,
+        sample: fulfilOrders.slice(0, 3).map(o => ({
+          moNumber: o.rec_name,
+          state: o.state,
+          product: o.product?.code
+        }))
+      });
+    } catch (error) {
+      console.error("Error importing real data:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to import real data from Fulfil",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Dashboard summary data
   app.get("/api/dashboard/summary", async (req, res) => {
     try {

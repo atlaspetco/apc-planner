@@ -1,4 +1,4 @@
-import { RefreshCw, Plus } from "lucide-react";
+import { RefreshCw, Plus, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -81,6 +81,28 @@ export default function FilterControls({
         >
           <RefreshCw className={`w-4 h-4 mr-1 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
           {refreshMutation.isPending ? 'Syncing...' : 'Refresh'}
+        </Button>
+        
+        <Button 
+          size="sm"
+          className="bg-green-600 hover:bg-green-700 text-white"
+          onClick={async () => {
+            try {
+              const response = await fetch('/api/fulfil/import-real-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}'
+              });
+              const result = await response.json();
+              console.log('Import result:', result);
+              refreshMutation.mutate(); // Refresh after import
+            } catch (error) {
+              console.error('Import failed:', error);
+            }
+          }}
+        >
+          <Download className="w-4 h-4 mr-1" />
+          Import Real Data
         </Button>
       </div>
       
