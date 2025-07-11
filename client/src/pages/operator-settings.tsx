@@ -63,20 +63,22 @@ export default function OperatorSettings() {
     refetchTimeWindowed();
   };
 
-  // Helper functions to determine auto-enabled settings based on UPH data
+  // Helper functions to determine auto-enabled settings based on raw work_cycles data
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
+    // This should check the raw work_cycles table data, not aggregated UPH data
+    // For now, we'll use a direct API call to get the raw data
+    // TODO: Implement API endpoint to check raw work_cycles data
+    console.log("Debug: Getting work centers for operator (raw data):", operatorName);
+    
+    // Fallback to existing UPH data structure until we implement raw data check
     if (!uphData || !uphData.routings) return [];
     
-    console.log("Debug: Getting work centers for operator:", operatorName);
-    
-    // The UPH data structure has routings with operators array, not workCenters with operators
     const allWorkCenterRecords: any[] = [];
     
     uphData.routings.forEach((routing: any) => {
       if (routing.operators && Array.isArray(routing.operators)) {
         routing.operators.forEach((operator: any) => {
           if (operator.operatorName === operatorName && operator.workCenterPerformance) {
-            // Extract work centers where this operator has performance data
             Object.keys(operator.workCenterPerformance).forEach(workCenter => {
               const performance = operator.workCenterPerformance[workCenter];
               if (performance !== null && performance !== undefined) {
@@ -93,9 +95,6 @@ export default function OperatorSettings() {
       }
     });
     
-    console.log("Debug: All work center records for", operatorName, ":", allWorkCenterRecords);
-    
-    // Find all work centers where this operator has UPH data
     const operatorWorkCenters = allWorkCenterRecords.map((record: any) => record.workCenter);
     const uniqueWorkCenters = [...new Set(operatorWorkCenters)];
     
