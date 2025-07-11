@@ -3405,6 +3405,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Consolidated UPH calculation endpoint
+  app.get("/api/uph/consolidated", async (req, res) => {
+    try {
+      const { calculateConsolidatedUPH } = await import("./consolidated-uph-calculator.js");
+      const consolidatedUPH = await calculateConsolidatedUPH();
+      
+      res.json({
+        success: true,
+        count: consolidatedUPH.length,
+        data: consolidatedUPH
+      });
+    } catch (error) {
+      console.error("Error calculating consolidated UPH:", error);
+      res.status(500).json({ error: "Failed to calculate consolidated UPH" });
+    }
+  });
+
+  // Work center summary endpoint
+  app.get("/api/work-centers/summary", async (req, res) => {
+    try {
+      const { getWorkCenterSummary } = await import("./consolidated-uph-calculator.js");
+      const summary = await getWorkCenterSummary();
+      
+      res.json({
+        success: true,
+        data: summary
+      });
+    } catch (error) {
+      console.error("Error getting work center summary:", error);
+      res.status(500).json({ error: "Failed to get work center summary" });
+    }
+  });
+
   // Fetch active production orders for planning dashboard using production.work endpoint
   app.post("/api/fulfil/import-authentic-data", async (req: Request, res: Response) => {
     try {
