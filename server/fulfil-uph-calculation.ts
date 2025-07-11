@@ -36,38 +36,35 @@ function transformWorkCenter(workCenterName: string): string {
 }
 
 export async function calculateUphFromFulfilFields() {
-  console.log("Calculating UPH using authentic Fulfil API field mapping...");
+  console.log("Calculating UPH using work_order_durations aggregated data...");
 
   try {
-    // Query using exact Fulfil API field paths from production.work/cycles endpoint
-    // CRITICAL: Remove duplicates and filter out zero quantities that skew UPH calculations
-    const cyclesResult = await db.execute(sql`
-      SELECT DISTINCT
-        work_cycles_operator_rec_name as operator_name,
-        work_operation_rec_name as operation_name,
-        work_cycles_duration as duration,
-        work_cycles_quantity_done as quantity_done,
-        work_cycles_operator_write_date as updated_timestamp,
-        work_cycles_work_center_rec_name as work_center_name,
-        work_production_routing_rec_name as routing_name,
-        work_production_number as production_order_number,
-        work_id as work_order_id,
-        work_cycles_id as cycle_id
-      FROM work_cycles 
-      WHERE work_cycles_operator_rec_name IS NOT NULL 
-        AND work_cycles_operator_rec_name != ''
-        AND work_cycles_work_center_rec_name IS NOT NULL
-        AND work_cycles_duration > 0
-        AND work_cycles_quantity_done > 0
-        AND work_production_routing_rec_name IS NOT NULL
-      ORDER BY work_production_number, work_id, work_cycles_id
+    // Use the existing work_order_durations table that properly aggregates cycles by work order number
+    const workOrdersResult = await db.execute(sql`
+      SELECT 
+        operator_name,
+        work_center,
+        routing,
+        production_order_number as mo_number,
+        work_order_id,
+        total_duration_seconds,
+        total_quantity_done,
+        cycle_count,
+        operation_name
+      FROM work_order_durations 
+      WHERE operator_name IS NOT NULL 
+        AND operator_name != ''
+        AND work_center IS NOT NULL
+        AND total_duration_seconds > 0
+        AND total_quantity_done > 0
+        AND routing IS NOT NULL
+      ORDER BY production_order_number, work_order_id
     `);
     
-    const cycles = cyclesResult.rows;
-    console.log(`Found ${cycles.length} complete work cycles with authentic Fulfil field mapping`);
+    const workOrders = workOrdersResult.rows;
+    console.log(`Found ${workOrders.length} aggregated work orders from work_order_durations table`);
 
-    // STEP 1: Group cycles by operator + work center + routing + MO to calculate per-MO UPH
-    // CRITICAL: Multiple work orders within same work center category for each MO must have durations combined FIRST
+    // Group by operator + work center + routing + MO for per-MO UPH calculation
     const moLevelGroups = new Map<string, {
       operatorName: string;
       transformedWorkCenter: string;
@@ -81,21 +78,23 @@ export async function calculateUphFromFulfilFields() {
       latestUpdate: Date | null;
     }>();
 
-    for (const cycle of cycles) {
-      const operatorName = cycle.operator_name?.toString() || '';
-      const originalWorkCenter = cycle.work_center_name?.toString() || '';
+    for (const workOrder of workOrders) {
+      const operatorName = workOrder.operator_name?.toString() || '';
+      const originalWorkCenter = workOrder.work_center?.toString() || '';
       const transformedWorkCenter = transformWorkCenter(originalWorkCenter);
-      const routing = cycle.routing_name?.toString() || '';
-      const moNumber = cycle.production_order_number?.toString() || '';
-      const operationName = cycle.operation_name?.toString() || '';
-      const workOrderId = cycle.work_order_id?.toString() || '';
+      const routing = workOrder.routing?.toString() || '';
+      const moNumber = workOrder.mo_number?.toString() || '';
+      const workOrderId = workOrder.work_order_id?.toString() || '';
+      const operation = workOrder.operation_name?.toString() || '';
+      const duration = parseFloat(workOrder.total_duration_seconds?.toString() || '0');
+      const quantity = parseFloat(workOrder.total_quantity_done?.toString() || '0');
+      const cycleCount = parseInt(workOrder.cycle_count?.toString() || '0');
       
       if (!operatorName || !originalWorkCenter || !routing || !moNumber) {
         continue;
       }
       
-      // Group by operator + work center + routing + MO for per-MO UPH calculation
-      // This ensures multiple WOs in same work center category get their durations combined per MO
+      // Group by operator + work center + routing + MO 
       const key = `${operatorName}|${transformedWorkCenter}|${routing}|${moNumber}`;
       
       if (!moLevelGroups.has(key)) {
@@ -112,24 +111,13 @@ export async function calculateUphFromFulfilFields() {
           latestUpdate: null
         });
       }
-
+      
       const group = moLevelGroups.get(key)!;
-      
-      // CRITICAL FIX: Sum ALL durations from ALL work orders within same work center category for this MO
-      // This properly handles cases where MO has multiple WOs in Assembly (Sewing + Zipper Pull)
-      group.totalDuration += parseFloat(cycle.duration?.toString() || '0');
-      group.totalQuantity += parseFloat(cycle.quantity_done?.toString() || '0');
-      group.observations += 1;
-      group.operations.add(operationName);
+      group.totalDuration += duration;
+      group.totalQuantity += quantity;
+      group.observations += cycleCount;
+      group.operations.add(operation);
       group.workOrders.add(workOrderId);
-      
-      // Track latest update timestamp
-      if (cycle.updated_timestamp) {
-        const updateDate = new Date(cycle.updated_timestamp.toString());
-        if (!group.latestUpdate || updateDate > group.latestUpdate) {
-          group.latestUpdate = updateDate;
-        }
-      }
     }
 
     console.log(`Step 1: Grouped into ${moLevelGroups.size} per-MO combinations`);
