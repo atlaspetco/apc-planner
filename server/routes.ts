@@ -1292,90 +1292,219 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Test direct API connection first
-      const testEndpoint = "https://apc.fulfil.io/api/v2/model/production.order/search_read";
-      const testResponse = await fetch(testEndpoint, {
+      // Use the same working pattern as fulfil-current.ts: PUT method with X-API-KEY
+      console.log("Testing Fulfil API with working PUT pattern and X-API-KEY authentication...");
+      
+      const baseUrl = "https://apc.fulfil.io/api/v2";
+      const endpoint = `${baseUrl}/model/production.work/search_read`;
+      
+      const requestBody = {
+        filters: [["state", "in", ["request", "draft", "waiting", "assigned", "running"]]],
+        fields: [
+          "id", "rec_name", "state", "production", "operation.name", "work_center.name", 
+          "operator.name", "quantity_done", "planned_date", "priority"
+        ],
+        limit: 50,
+        offset: 0
+      };
+
+      console.log("Using PUT search_read with X-API-KEY authentication (same as working code)...");
+      console.log(`Endpoint: ${endpoint}`);
+      console.log(`Request body:`, JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(endpoint, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
         },
-        body: JSON.stringify({
-          "filters": [['state', 'in', ['draft', 'waiting', 'assigned', 'running']]],
-          "fields": ['id', 'rec_name', 'state', 'quantity', 'product.code', 'planned_date'],
-          "limit": 20
-        }),
-        signal: AbortSignal.timeout(10000)
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(15000)
       });
 
-      if (!testResponse.ok) {
-        const errorText = await testResponse.text();
-        console.error(`Fulfil API test failed: ${testResponse.status} - ${errorText}`);
-        
+      const responseText = await response.text();
+      console.log(`Response status: ${response.status}`);
+      console.log(`Response body: ${responseText.slice(0, 500)}`);
+
+      if (!response.ok) {
+        let errorDetails = responseText;
+        try {
+          const errorJson = JSON.parse(responseText);
+          errorDetails = JSON.stringify(errorJson, null, 2);
+        } catch {
+          // Keep as text if not JSON
+        }
+
         return res.status(500).json({
           success: false,
-          message: `Fulfil API connection failed (${testResponse.status}). The API token may have expired or endpoints may have changed. Please verify access with Fulfil support.`,
+          message: "Fulfil API call failed using working PUT/X-API-KEY pattern.",
           details: {
-            status: testResponse.status,
-            endpoint: testEndpoint,
-            error: errorText.slice(0, 200)
+            endpoint,
+            status: response.status,
+            error: errorDetails,
+            suggestion: response.status === 401 || response.status === 403
+              ? "The FULFIL_ACCESS_TOKEN appears to be expired or invalid. Please provide a fresh token." 
+              : response.status === 500
+              ? "Fulfil server error - the API service may be temporarily unavailable."
+              : "API endpoint or request format may need adjustment."
           }
         });
       }
 
-      const fulfilOrders = await testResponse.json();
-      console.log(`Successfully retrieved ${Array.isArray(fulfilOrders) ? fulfilOrders.length : 0} orders from Fulfil`);
+      // Parse successful response
+      let workOrders;
+      try {
+        workOrders = JSON.parse(responseText);
+        console.log(`✅ Successfully fetched ${Array.isArray(workOrders) ? workOrders.length : 1} work orders`);
+      } catch (parseError) {
+        return res.status(500).json({
+          success: false,
+          message: "Fulfil API returned invalid JSON",
+          details: {
+            parseError: parseError.message,
+            responseText: responseText.slice(0, 500)
+          }
+        });
+      }
 
-      if (!Array.isArray(fulfilOrders) || fulfilOrders.length === 0) {
+      // If we get here, the API call was successful
+
+      console.log(`Successfully retrieved ${Array.isArray(workOrders) ? workOrders.length : 0} work orders from Fulfil using search_read endpoint`);
+
+      if (!Array.isArray(workOrders) || workOrders.length === 0) {
         return res.json({
           success: true,
-          message: "Fulfil API connected successfully but no active production orders found. Check state filters in Fulfil system.",
+          message: "Fulfil API connected successfully but no active work orders found. Check state filters in Fulfil system.",
           imported: 0,
           apiWorking: true
         });
       }
 
+      // Extract unique production orders from work orders
+      const productionOrdersMap = new Map();
+      console.log(`Processing ${workOrders.length} work orders...`);
+      
+      for (const wo of workOrders) {
+        console.log(`Processing work order ${wo.id}:`, {
+          production: wo.production,
+          rec_name: wo.rec_name,
+          work_center: wo["work_center.name"],
+          operator: wo["operator.name"]
+        });
+        
+        // Handle both formats: production as ID number or [id, name] array
+        let prodId, prodName;
+        if (typeof wo.production === 'number') {
+          prodId = wo.production;
+          // Extract MO number from rec_name like "WO33046 | Sewing | MO178231"
+          const recNameParts = wo.rec_name?.split(' | ') || [];
+          prodName = recNameParts[2] || `MO${prodId}`;
+          console.log(`Found production ID ${prodId} with name ${prodName}`);
+        } else if (Array.isArray(wo.production) && wo.production.length >= 2) {
+          prodId = wo.production[0];
+          prodName = wo.production[1];
+          console.log(`Found production array format: ${prodId} - ${prodName}`);
+        } else {
+          console.log(`Skipping work order ${wo.id} - invalid production reference:`, wo.production);
+          continue;
+        }
+        
+        if (!productionOrdersMap.has(prodId)) {
+          productionOrdersMap.set(prodId, {
+            id: prodId,
+            rec_name: prodName,
+            state: wo.state,
+            workOrders: []
+          });
+          console.log(`Created new production order: ${prodName} (ID: ${prodId})`);
+        }
+        
+        productionOrdersMap.get(prodId).workOrders.push({
+          id: wo.id,
+          rec_name: wo.rec_name,
+          work_center: wo["work_center.name"] || 'Unknown',
+          operator: wo["operator.name"] || null,
+          state: wo.state,
+          quantity_done: wo.quantity_done || 0
+        });
+      }
+      
+      console.log(`Created ${productionOrdersMap.size} unique production orders from work orders`);
+      if (productionOrdersMap.size > 0) {
+        console.log("Sample production orders:", Array.from(productionOrdersMap.entries()).slice(0, 3).map(([id, data]) => ({
+          id,
+          name: data.rec_name,
+          workOrderCount: data.workOrders.length
+        })));
+      }
+
       const { db } = await import("./db.js");
-      const { productionOrders } = await import("../shared/schema.js");
+      const { productionOrders, workOrders: workOrdersTable } = await import("../shared/schema.js");
       
       // Clear test data and import real data
       await db.delete(productionOrders);
-      console.log("Cleared test production orders");
+      await db.delete(workOrdersTable);
+      console.log("Cleared test production orders and work orders");
 
       let imported = 0;
-      for (const order of fulfilOrders) {
+      let workOrdersImported = 0;
+      
+      for (const [prodId, prodData] of productionOrdersMap) {
         try {
-          await db.insert(productionOrders).values({
-            moNumber: order.rec_name || `MO${order.id}`,
-            productName: order['product.code'] || `Product ${order.id}`,
-            quantity: order.quantity || 0,
-            status: order.state || 'draft',
+          // Insert production order
+          const insertedPO = await db.insert(productionOrders).values({
+            moNumber: prodData.rec_name,
+            productName: prodData.rec_name,
+            quantity: 0, // Will be updated from actual MO data
+            status: prodData.state,
             routing: "Standard",
-            dueDate: order.planned_date ? new Date(order.planned_date) : null,
+            dueDate: null,
             priority: "Medium",
-            fulfilId: order.id,
-            rec_name: order.rec_name,
-            state: order.state,
-            planned_date: order.planned_date,
-            product_code: order['product.code']
-          });
+            fulfilId: prodId,
+            rec_name: prodData.rec_name,
+            state: prodData.state
+          }).returning();
+
+          const localPOId = insertedPO[0].id;
           imported++;
+
+          // Insert associated work orders
+          for (const wo of prodData.workOrders) {
+            try {
+              await db.insert(workOrdersTable).values({
+                productionOrderId: localPOId,
+                workCenter: wo.work_center,
+                operation: wo.rec_name.split(' | ')[1] || 'Unknown',
+                assignedOperatorId: null, // Will be assigned later
+                estimatedHours: 1,
+                status: wo.state,
+                fulfilId: wo.id,
+                rec_name: wo.rec_name,
+                routing: "Standard", // Required field - will be populated from actual routing data later
+                sequence: 1 // Required field - will be set based on operation order later
+              });
+              workOrdersImported++;
+            } catch (error) {
+              console.error(`Error importing work order ${wo.rec_name}:`, error.message);
+            }
+          }
         } catch (error) {
-          console.error(`Error importing order ${order.rec_name}:`, error);
+          console.error(`Error importing production order ${prodData.rec_name}:`, error);
         }
       }
 
-      console.log(`Successfully imported ${imported} real production orders from Fulfil`);
+      console.log(`Successfully imported ${imported} real production orders and ${workOrdersImported} work orders from Fulfil`);
       
       res.json({
         success: true,
-        message: `Successfully imported ${imported} real production orders from Fulfil`,
+        message: `Successfully imported ${imported} real production orders and ${workOrdersImported} work orders from Fulfil`,
         imported,
+        workOrdersImported,
         apiWorking: true,
-        sample: fulfilOrders.slice(0, 3).map(o => ({
+        sample: Array.from(productionOrdersMap.values()).slice(0, 3).map(o => ({
           moNumber: o.rec_name,
           state: o.state,
-          product: o['product.code']
+          workOrders: o.workOrders.length
         }))
       });
     } catch (error) {
