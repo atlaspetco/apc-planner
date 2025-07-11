@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,6 +67,9 @@ export default function OperatorSettings() {
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
     if (!uphData || !uphData.routings) return [];
     
+    console.log("Debug: Getting work centers for operator:", operatorName);
+    console.log("Debug: UPH data structure:", uphData);
+    
     // Flatten all work center data from the table-data structure with null checks
     const allWorkCenterRecords = uphData.routings.flatMap((routing: any) => {
       if (!routing.workCenters || !Array.isArray(routing.workCenters)) return [];
@@ -81,12 +84,17 @@ export default function OperatorSettings() {
       });
     });
     
+    console.log("Debug: All work center records:", allWorkCenterRecords);
+    
     // Find all work centers where this operator has UPH data
     const operatorWorkCenters = allWorkCenterRecords
       .filter((record: any) => record.operatorName === operatorName)
       .map((record: any) => record.workCenter);
     
-    return [...new Set(operatorWorkCenters)];
+    const uniqueWorkCenters = [...new Set(operatorWorkCenters)];
+    console.log("Debug: Work centers found for", operatorName, ":", uniqueWorkCenters);
+    
+    return uniqueWorkCenters;
   };
 
   const getOperatorOperationsWithData = (operatorName: string): string[] => {
@@ -148,6 +156,46 @@ export default function OperatorSettings() {
     
     console.log("Debug: Final routings found:", operatorRoutings);
     return operatorRoutings;
+  };
+
+  // Auto-configure operator settings based on UPH data
+  const autoConfigureOperatorSettings = (operatorName: string) => {
+    if (!operatorName || !selectedOperator) return;
+    
+    const workCentersWithData = getOperatorWorkCentersWithData(operatorName);
+    const operationsWithData = getOperatorOperationsWithData(operatorName);
+    const routingsWithData = getOperatorRoutingsWithData(operatorName);
+    
+    console.log("Auto-configuring for", operatorName, {
+      workCenters: workCentersWithData,
+      operations: operationsWithData,
+      routings: routingsWithData
+    });
+    
+    // Only update if there's actual data to configure
+    if (workCentersWithData.length > 0 || operationsWithData.length > 0 || routingsWithData.length > 0) {
+      const optimisticData = getOptimisticOperatorData();
+      const currentWorkCenters = optimisticData?.workCenters || [];
+      const currentOperations = optimisticData?.operations || [];
+      const currentRoutings = optimisticData?.routings || [];
+      
+      // Merge existing settings with auto-detected ones
+      const newWorkCenters = [...new Set([...currentWorkCenters, ...workCentersWithData])];
+      const newOperations = [...new Set([...currentOperations, ...operationsWithData])];
+      const newRoutings = [...new Set([...currentRoutings, ...routingsWithData])];
+      
+      // Update the operator with auto-detected settings
+      handleUpdateOperator({
+        workCenters: newWorkCenters,
+        operations: newOperations,
+        routings: newRoutings
+      });
+      
+      toast({
+        title: "Auto-configured settings",
+        description: `Enabled ${workCentersWithData.length} work centers, ${operationsWithData.length} operations, and ${routingsWithData.length} routings based on UPH data`,
+      });
+    }
   };
 
   const updateOperatorMutation = useMutation({
@@ -225,6 +273,32 @@ export default function OperatorSettings() {
     const optimisticData = optimisticUpdates.get(selectedOperator);
     return optimisticData ? { ...selectedOperatorData, ...optimisticData } : selectedOperatorData;
   };
+
+  // Auto-configure settings when operator is selected and UPH data is available
+  useEffect(() => {
+    if (selectedOperatorData && uphData && uphData.routings) {
+      const operatorName = selectedOperatorData.name;
+      const workCentersWithData = getOperatorWorkCentersWithData(operatorName);
+      const routingsWithData = getOperatorRoutingsWithData(operatorName);
+      
+      // Only auto-configure if the operator has data but no current settings configured
+      if ((workCentersWithData.length > 0 || routingsWithData.length > 0) && 
+          (!selectedOperatorData.workCenters?.length && !selectedOperatorData.routings?.length)) {
+        console.log("Auto-configuring operator on selection:", operatorName, {
+          workCenters: workCentersWithData,
+          routings: routingsWithData
+        });
+        
+        // Don't show toast for automatic configuration
+        const operationsWithData = getOperatorOperationsWithData(operatorName);
+        handleUpdateOperator({
+          workCenters: workCentersWithData,
+          operations: operationsWithData,
+          routings: routingsWithData
+        });
+      }
+    }
+  }, [selectedOperator, uphData]);
 
   const handleUpdateOperator = (updates: Partial<Operator>) => {
     if (selectedOperator) {
@@ -316,6 +390,14 @@ export default function OperatorSettings() {
                     )}
                   </div>
                   <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => autoConfigureOperatorSettings(getOptimisticOperatorData()?.name || '')}
+                      className="mr-2"
+                    >
+                      Auto-Configure
+                    </Button>
                     <Switch
                       id="isActive"
                       checked={getOptimisticOperatorData()?.isActive || false}
@@ -442,6 +524,7 @@ export default function OperatorSettings() {
                         {(workCenterData as any[]).map((wc: any) => {
                           const optimisticData = getOptimisticOperatorData();
                           const hasData = getOperatorWorkCentersWithData(optimisticData?.name || '').includes(wc.workCenter);
+                          // Auto-enable work centers if they have UPH data
                           const isChecked = optimisticData?.workCenters?.includes(wc.workCenter) || hasData;
                           
                           return (
@@ -498,6 +581,7 @@ export default function OperatorSettings() {
                           return relevantOperations.map((operation: string, index: number) => {
                             const hasData = operatorOperationsWithData.includes(operation);
                             const optimisticData = getOptimisticOperatorData();
+                            // Auto-enable operations if they have UPH data
                             const isChecked = optimisticData?.operations?.includes(operation) || hasData;
                             // Create truly unique key combining operator ID, operation, and index
                             const stableKey = `operation-${selectedOperatorData.id}-${index}-${operation.replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -561,6 +645,7 @@ export default function OperatorSettings() {
                         return relevantRoutings.map((routing: string) => {
                           const hasData = operatorRoutingsWithData.includes(routing);
                           const optimisticData = getOptimisticOperatorData();
+                          // Auto-enable routings if they have UPH data
                           const isChecked = optimisticData?.routings?.includes(routing) || hasData;
                           const stableKey = `routing-${selectedOperatorData.id}-${routing.replace(/\s+/g, '-')}`;
                           
