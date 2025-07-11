@@ -1283,41 +1283,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Import real data from Fulfil to replace test data
   app.post("/api/fulfil/import-real-data", async (req, res) => {
     try {
-      console.log("Starting import of real Fulfil data to replace test data...");
+      console.log("Starting import of real Fulfil data...");
       
       if (!process.env.FULFIL_ACCESS_TOKEN) {
         return res.status(401).json({ 
           success: false, 
-          message: "Fulfil API token not configured - please contact admin" 
+          message: "Fulfil API token not configured. Please contact admin to update FULFIL_ACCESS_TOKEN." 
         });
       }
 
-      // Simple direct API call to get recent production orders
-      const apiUrl = "https://apc.fulfil.io/api/v2/model/production.order";
-      const response = await fetch(`${apiUrl}?per_page=100&state=draft,waiting,assigned,running`, {
-        method: 'GET',
+      // Test direct API connection first
+      const testEndpoint = "https://apc.fulfil.io/api/v2/model/production.order/search_read";
+      const testResponse = await fetch(testEndpoint, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-        }
+        },
+        body: JSON.stringify({
+          "filters": [['state', 'in', ['draft', 'waiting', 'assigned', 'running']]],
+          "fields": ['id', 'rec_name', 'state', 'quantity', 'product.code', 'planned_date'],
+          "limit": 20
+        }),
+        signal: AbortSignal.timeout(10000)
       });
 
-      if (!response.ok) {
-        console.error(`Fulfil API error: ${response.status} ${response.statusText}`);
+      if (!testResponse.ok) {
+        const errorText = await testResponse.text();
+        console.error(`Fulfil API test failed: ${testResponse.status} - ${errorText}`);
+        
         return res.status(500).json({
           success: false,
-          message: `Fulfil API error: ${response.status} - Check API token and permissions`
+          message: `Fulfil API connection failed (${testResponse.status}). The API token may have expired or endpoints may have changed. Please verify access with Fulfil support.`,
+          details: {
+            status: testResponse.status,
+            endpoint: testEndpoint,
+            error: errorText.slice(0, 200)
+          }
         });
       }
 
-      const fulfilOrders = await response.json();
-      console.log(`Retrieved ${fulfilOrders.length} orders from Fulfil`);
+      const fulfilOrders = await testResponse.json();
+      console.log(`Successfully retrieved ${Array.isArray(fulfilOrders) ? fulfilOrders.length : 0} orders from Fulfil`);
 
       if (!Array.isArray(fulfilOrders) || fulfilOrders.length === 0) {
         return res.json({
           success: true,
-          message: "No active production orders found in Fulfil",
-          imported: 0
+          message: "Fulfil API connected successfully but no active production orders found. Check state filters in Fulfil system.",
+          imported: 0,
+          apiWorking: true
         });
       }
 
@@ -1333,18 +1347,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           await db.insert(productionOrders).values({
             moNumber: order.rec_name || `MO${order.id}`,
-            productName: order.product?.rec_name || order.product?.code || `Product ${order.id}`,
+            productName: order['product.code'] || `Product ${order.id}`,
             quantity: order.quantity || 0,
             status: order.state || 'draft',
-            routing: order.routing?.name || null,
+            routing: "Standard",
             dueDate: order.planned_date ? new Date(order.planned_date) : null,
             priority: "Medium",
             fulfilId: order.id,
             rec_name: order.rec_name,
             state: order.state,
             planned_date: order.planned_date,
-            create_date: order.create_date,
-            product_code: order.product?.code
+            product_code: order['product.code']
           });
           imported++;
         } catch (error) {
@@ -1358,18 +1371,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         message: `Successfully imported ${imported} real production orders from Fulfil`,
         imported,
+        apiWorking: true,
         sample: fulfilOrders.slice(0, 3).map(o => ({
           moNumber: o.rec_name,
           state: o.state,
-          product: o.product?.code
+          product: o['product.code']
         }))
       });
     } catch (error) {
       console.error("Error importing real data:", error);
+      
+      // Provide specific guidance based on error type
+      let message = "Failed to import real data from Fulfil";
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          message = "Fulfil API request timed out. Please check network connection or try again.";
+        } else if (error.message.includes('fetch')) {
+          message = "Unable to connect to Fulfil API. Please verify API token and network access.";
+        } else {
+          message = `Fulfil API error: ${error.message}`;
+        }
+      }
+      
       res.status(500).json({
         success: false,
-        message: "Failed to import real data from Fulfil",
-        error: error instanceof Error ? error.message : "Unknown error"
+        message,
+        error: error instanceof Error ? error.message : "Unknown error",
+        suggestion: "Please verify FULFIL_ACCESS_TOKEN is current and has proper permissions for production.order access."
       });
     }
   });
