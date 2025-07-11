@@ -2890,6 +2890,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
         
+        // Debug logging for Lifetime Pouch
+        if (row.routing === 'Lifetime Pouch') {
+          console.log(`Processing Lifetime Pouch: Operator ${row.operator} (ID: ${row.operatorId}), Work Center: ${row.workCenter}, UPH: ${row.unitsPerHour}`);
+        }
+        
         if (!routingData.has(row.routing)) {
           routingData.set(row.routing, new Map());
         }
@@ -2908,10 +2913,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
-        const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          // Use operator name directly from historicalUph data
-          const operatorRecord = consolidatedUphResults.find(r => r.operatorId === operatorId);
-          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
+        // Include ALL operators, not just those with UPH data for this routing
+        const operators = allOperators.map(operator => {
+          const operatorId = operator.id;
+          const operatorName = operator.name;
+          const workCenterData = routingOperators.get(operatorId) || {};
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
