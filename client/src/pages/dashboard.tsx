@@ -16,10 +16,7 @@ export default function Dashboard() {
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
   const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders", { status: JSON.stringify(statusFilter), timestamp: Date.now() }],
-    enabled: true,
-    retry: 3,
-    retryDelay: 1000,
+    queryKey: ["/api/production-orders"],
     staleTime: 0,
     gcTime: 0,
   });

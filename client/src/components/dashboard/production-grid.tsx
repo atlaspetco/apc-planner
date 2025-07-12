@@ -12,7 +12,7 @@ interface ProductionGridProps {
 const WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
 
 export default function ProductionGrid({ productionOrders, isLoading }: ProductionGridProps) {
-  console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders });
+  console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   if (isLoading) {
     return (
