@@ -19,79 +19,84 @@ import {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  // Main production orders endpoint - CRITICAL for dashboard
+  // Main production orders endpoint - fetch active MOs from Fulfil production.work API
   app.get("/api/production-orders", async (req, res) => {
     try {
-      // Parse status filter from query params - handle JSON string or array
-      let statusFilter: string[] | undefined;
-      if (req.query.status) {
-        try {
-          const statusParam = req.query.status as string;
-          statusFilter = typeof statusParam === 'string' && statusParam.startsWith('[') 
-            ? JSON.parse(statusParam) 
-            : Array.isArray(statusParam) ? statusParam : [statusParam];
-          console.log("Status filter applied:", statusFilter);
-        } catch (e) {
-          console.warn("Invalid status filter format, ignoring:", req.query.status);
-          statusFilter = undefined;
-        }
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ message: "Fulfil API key not configured" });
       }
+
+      // Fetch active work orders from Fulfil using correct endpoint
+      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request,draft,waiting,assigned,running&per_page=100', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+        }
+      });
+
+      if (!workOrdersResponse.ok) {
+        console.error(`Fulfil API error: ${workOrdersResponse.status}`);
+        // Fallback to local database if API fails
+        const localOrders = await storage.getProductionOrders();
+        console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
+        return res.json(localOrders);
+      }
+
+      const workOrdersData = await workOrdersResponse.json();
+      console.log(`Fetched ${workOrdersData.length} active work orders from production.work endpoint`);
+
+      // Group work orders by production order to create MOs
+      const productionOrderMap = new Map();
       
-      const excludeCompleted = req.query.excludeCompleted !== "false";
+      for (const wo of workOrdersData) {
+        const moNumber = wo.production?.rec_name || wo.production?.number || `MO${wo.production?.id}`;
+        
+        if (!productionOrderMap.has(moNumber)) {
+          productionOrderMap.set(moNumber, {
+            id: wo.production?.id || wo.id,
+            moNumber: moNumber,
+            productName: wo.production?.product?.code || moNumber,
+            quantity: wo.production?.quantity || wo.quantity || 0,
+            status: wo.state || 'draft',
+            state: wo.state || 'draft',
+            routing: wo.production?.routing?.name || 'Standard',
+            routingName: wo.production?.routing?.name || moNumber,
+            dueDate: wo.production?.planned_date || null,
+            fulfilId: wo.production?.id || wo.id,
+            rec_name: moNumber,
+            planned_date: wo.production?.planned_date || null,
+            product_code: wo.production?.product?.code || null,
+            workOrders: []
+          });
+        }
+        
+        // Add work order to production order
+        const po = productionOrderMap.get(moNumber);
+        po.workOrders.push({
+          id: wo.id,
+          workCenter: wo.work_center?.rec_name || wo.work_center?.name || 'Unknown',
+          operation: wo.operation?.rec_name || wo.operation?.name || 'Unknown',
+          state: wo.state,
+          quantity: wo.quantity || 0
+        });
+      }
+
+      const productionOrders = Array.from(productionOrderMap.values());
       
-      // Get production orders with proper sorting (newest first by ID/creation)
-      let productionOrders = await storage.getProductionOrders(undefined, excludeCompleted);
+      console.log(`Converted to ${productionOrders.length} production orders from active work orders`);
       
-      // Sort by newest first (highest ID = most recent in database)
-      productionOrders = productionOrders.sort((a, b) => b.id - a.id);
-      
-      // Get routing data from work orders table for each production order
-      const { db } = await import("./db.js");
-      const { workOrders } = await import("../shared/schema.js");
-      const { eq } = await import("drizzle-orm");
-      
-      // Enrich production orders with routing data from work orders and Fulfil API
-      const enrichedProductionOrders = await Promise.all(
-        productionOrders.map(async (po) => {
-          // Find work orders for this production order to get routing data
-          const woData = await db
-            .select({ routing: workOrders.routing })
-            .from(workOrders)
-            .where(eq(workOrders.productionOrderId, po.id))
-            .limit(1);
-          
-          const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
-          
-          // Use actual routing data from work_cycles table for authentic routing names
-          let routingFromProductCode = null;
-          if (po.product_code) {
-            if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
-            else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
-            else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
-            else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
-            else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
-            else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
-            else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
-            else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
-            else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
-          }
-          
-          return {
-            ...po,
-            productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
-            // Use routing from work orders, then product code mapping, then original routing - never default to "Standard"
-            routingName: routingFromWorkOrders || routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
-          };
-        })
-      );
-      
-      // Return all production orders - let frontend filter control display
-      console.log(`Returning ${enrichedProductionOrders.length} production orders for frontend filtering`);
-      
-      res.json(enrichedProductionOrders);
+      res.json(productionOrders);
     } catch (error) {
-      console.error("Error fetching production orders:", error);
-      res.status(500).json({ message: "Failed to fetch production orders" });
+      console.error("Error fetching production orders from Fulfil:", error);
+      // Fallback to local database
+      try {
+        const localOrders = await storage.getProductionOrders();
+        console.log(`Error fallback: Returning ${localOrders.length} production orders from local database`);
+        res.json(localOrders);
+      } catch (dbError) {
+        res.status(500).json({ message: "Failed to fetch production orders from both API and database" });
+      }
     }
   });
 
