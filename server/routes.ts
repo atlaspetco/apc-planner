@@ -307,8 +307,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(updated);
   });
 
-  // Sync work orders from Fulfil to local database for assignment functionality
-  app.post("/api/work-orders/sync-from-fulfil", async (req, res) => {
+  // Sync production orders and work orders from Fulfil to local database
+  app.post("/api/sync-fulfil-to-database", async (req, res) => {
     try {
       // Get current production orders from Fulfil with work orders
       const fulfilResponse = await fetch(`${req.protocol}://${req.get('host')}/api/fulfil/current-production-orders`);
@@ -318,105 +318,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ message: "Failed to fetch Fulfil data" });
       }
       
-      const { db } = await import("./db.js");
-      const { workOrders, productionOrders } = await import("../shared/schema.js");
-      const { eq } = await import("drizzle-orm");
-      
-      let syncedWorkOrders = 0;
-      
-      console.log(`Processing ${fulfilData.orders.length} production orders from Fulfil`);
-      
-      // Process each production order and its work orders
-      for (const order of fulfilData.orders) {
-        console.log(`Processing order ${order.moNumber} with ${order.work_orders?.length || 0} work orders`);
-        
-        // Find local production order by moNumber
-        const localPO = await db
-          .select()
-          .from(productionOrders)
-          .where(eq(productionOrders.moNumber, order.moNumber))
-          .limit(1);
-        
-        if (localPO.length === 0) {
-          console.log(`No local production order found for MO: ${order.moNumber}`);
-          continue;
-        }
-        
-        console.log(`Found local production order for ${order.moNumber}: ID ${localPO[0].id}`);
-        
-        const localProductionOrderId = localPO[0].id;
-        
-        // Sync work orders for this production order
-        for (const wo of order.work_orders || []) {
-          try {
-            // Check if work order already exists by fulfilId
-            const existing = await db
-              .select()
-              .from(workOrders)
-              .where(eq(workOrders.fulfilId, parseInt(wo.id)))
-              .limit(1);
-            
-            if (existing.length === 0) {
-              // Create new work order
-              await db.insert(workOrders).values({
-                productionOrderId: localProductionOrderId,
-                workCenter: wo.work_center,
-                operation: wo.operation,
-                routing: order.routingName || null, // Don't default to "Standard"
-                fulfilId: parseInt(wo.id),
-                quantityRequired: order.quantity || 100,
-                quantityDone: wo.quantity_done || 0,
-                status: wo.state === "request" ? "Pending" : wo.state,
-                sequence: 1, // Default sequence
-                estimatedHours: null, // Only use actual data from Fulfil, never estimate
-                actualHours: null,
-                operatorId: null,
-                operatorName: null,
-                startTime: null,
-                endTime: null,
-                createdAt: new Date(),
-                // Store Fulfil field mapping
-                state: wo.state,
-                rec_name: `WO${wo.id}`,
-                workCenterName: wo.work_center,
-                operationName: wo.operation
-              });
-              
-              syncedWorkOrders++;
-              console.log(`Created work order ${wo.id} for ${order.moNumber}`);
-            } else {
-              // Update existing work order
-              await db
-                .update(workOrders)
-                .set({
-                  workCenter: wo.work_center,
-                  operation: wo.operation,
-                  routing: order.routingName || null, // Don't default to "Standard"
-                  quantityDone: wo.quantity_done || 0,
-                  status: wo.state === "request" ? "Pending" : wo.state,
-                  state: wo.state,
-                  workCenterName: wo.work_center,
-                  operationName: wo.operation
-                })
-                .where(eq(workOrders.fulfilId, parseInt(wo.id)));
-              
-              console.log(`Updated work order ${wo.id} for ${order.moNumber}`);
-            }
-          } catch (error) {
-            console.error(`Error syncing work order ${wo.id}:`, error);
-          }
-        }
-      }
+      const { syncFulfilToDatabase } = await import("./sync-fulfil-to-database.js");
+      const result = await syncFulfilToDatabase(fulfilData.orders);
       
       res.json({
         success: true,
-        message: `Synced ${syncedWorkOrders} work orders from Fulfil to local database`,
-        syncedWorkOrders
+        message: `Synced ${result.syncedPOs} production orders and ${result.syncedWOs} work orders`,
+        ...result
       });
-      
     } catch (error) {
-      console.error("Error syncing work orders:", error);
-      res.status(500).json({ message: "Error syncing work orders from Fulfil" });
+      console.error("Error syncing Fulfil data to database:", error);
+      res.status(500).json({ message: "Failed to sync Fulfil data" });
+    }
+  });
+
+  // Get qualified operators for a work center and routing combination
+  app.get("/api/operators/qualified/:workCenter/:routing", async (req, res) => {
+    try {
+      const { workCenter, routing } = req.params;
+      const { getQualifiedOperators } = await import("./operator-constraints.js");
+      
+      const qualifiedOperators = await getQualifiedOperators(workCenter, routing);
+      res.json(qualifiedOperators);
+    } catch (error) {
+      console.error("Error getting qualified operators:", error);
+      res.status(500).json({ message: "Failed to get qualified operators" });
+    }
+  });
+
+  // Legacy sync endpoint (deprecated)
+  app.post("/api/work-orders/sync-from-fulfil", async (req, res) => {
+    try {
+      // Redirect to new sync endpoint
+      const syncResponse = await fetch(`${req.protocol}://${req.get('host')}/api/sync-fulfil-to-database`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const syncData = await syncResponse.json();
+      
+      res.json({
+        success: syncData.success,
+        message: `Legacy sync: ${syncData.message}`,
+        workOrdersSynced: syncData.syncedWOs
+      });
+    } catch (error) {
+      console.error("Error in legacy sync endpoint:", error);
+      res.status(500).json({ message: "Failed to sync work orders" });
     }
   });
 

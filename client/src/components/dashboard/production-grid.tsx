@@ -55,66 +55,87 @@ const useUphEstimates = (productionOrderIds: number[]) => {
   });
 };
 
-// Sample UPH data for demonstration when operators are assigned
-const SAMPLE_UPH_DATA = {
-  'Fi Snap': {
-    'Assembly': { 'Courtney Banh': 21.7, 'Devin Cann': 18.5 },
-    'Packaging': { 'Courtney Banh': 185.5, 'Devin Cann': 221.9 }
-  },
-  'Lifetime Pouch': {
-    'Assembly': { 'Courtney Banh': 19.2, 'Devin Cann': 16.8 },
-    'Packaging': { 'Courtney Banh': 195.3, 'Devin Cann': 221.9 }
-  },
-  'Lifetime Pro Harness': {
-    'Assembly': { 'Courtney Banh': 21.7, 'Devin Cann': 18.5 },
-    'Cutting': { 'Courtney Banh': 297.3, 'Devin Cann': 245.8 }
+const useQualifiedOperators = (workCenter: string, routing: string) => {
+  return useQuery<Array<{operatorId: number, operatorName: string, avgUph: number, observations: number}>>({
+    queryKey: ["/api/operators/qualified", workCenter, routing],
+    enabled: !!(workCenter && routing),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+// Component for operator dropdown with qualified operators only
+const QualifiedOperatorSelect = ({ 
+  workCenter, 
+  routing, 
+  placeholder = "Operator" 
+}: { 
+  workCenter: string; 
+  routing: string; 
+  placeholder?: string;
+}) => {
+  const { data: qualifiedOperators, isLoading } = useQualifiedOperators(workCenter, routing);
+  
+  if (isLoading) {
+    return (
+      <Select disabled>
+        <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+          <SelectValue placeholder="Loading..." />
+        </SelectTrigger>
+      </Select>
+    );
   }
+
+  if (!qualifiedOperators || qualifiedOperators.length === 0) {
+    return (
+      <Select disabled>
+        <SelectTrigger className="w-full h-7 text-xs bg-gray-100 border-gray-300">
+          <SelectValue placeholder="No qualified operators" />
+        </SelectTrigger>
+      </Select>
+    );
+  }
+
+  return (
+    <Select>
+      <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="unassigned">Unassigned</SelectItem>
+        {qualifiedOperators.map((operator) => (
+          <SelectItem key={operator.operatorId} value={operator.operatorId.toString()}>
+            {operator.operatorName} ({operator.avgUph.toFixed(0)} UPH)
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 };
 
 // Component to display estimated time under operator assignments
 const EstimatedTime = ({ 
   estimate, 
   workCenter, 
-  hasOperator,
-  order,
-  operatorName 
+  hasOperator
 }: { 
   estimate?: UphEstimate; 
   workCenter: string; 
   hasOperator: boolean;
-  order?: any;
-  operatorName?: string;
 }) => {
-  // If we have actual estimates from the UPH service, use those
-  if (hasOperator && estimate?.workCenterEstimates[workCenter]) {
-    const centerEstimate = estimate.workCenterEstimates[workCenter];
-    if (centerEstimate.estimatedHours > 0 && centerEstimate.hasActualData) {
-      return (
-        <div className="text-xs text-green-600 mt-1 font-medium">
-          {centerEstimate.estimatedHours.toFixed(1)}h assigned
-        </div>
-      );
-    }
-  }
-  
-  // For demonstration: show estimated time when operators are assigned using sample UPH data
-  if (hasOperator && operatorName && order?.routing && order?.quantity) {
-    const routingData = SAMPLE_UPH_DATA[order.routing as keyof typeof SAMPLE_UPH_DATA];
-    if (routingData && routingData[workCenter as keyof typeof routingData]) {
-      const workCenterData = routingData[workCenter as keyof typeof routingData];
-      const uph = workCenterData[operatorName as keyof typeof workCenterData];
-      if (uph) {
-        const estimatedHours = order.quantity / uph;
-        return (
-          <div className="text-xs text-green-600 mt-1 font-medium">
-            {estimatedHours.toFixed(1)}h assigned
-          </div>
-        );
-      }
-    }
+  if (!hasOperator || !estimate?.workCenterEstimates[workCenter]) {
+    return null;
   }
 
-  return null;
+  const centerEstimate = estimate.workCenterEstimates[workCenter];
+  if (centerEstimate.estimatedHours === 0 || !centerEstimate.hasActualData) {
+    return null;
+  }
+
+  return (
+    <div className="text-xs text-green-600 mt-1 font-medium">
+      {centerEstimate.estimatedHours.toFixed(1)}h assigned
+    </div>
+  );
 };
 
 export default function ProductionGrid({ productionOrders, isLoading }: ProductionGridProps) {
@@ -237,51 +258,27 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                     </td>
                     <td className="p-4 text-center">
                       {allWorkOrdersByCenter['Cutting'].length > 0 ? (
-                        <Select>
-                          <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
-                            <SelectValue placeholder="Cutting" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                            <SelectItem value="operator1">Courtney Banh</SelectItem>
-                            <SelectItem value="operator2">Devin Cann</SelectItem>
-                            <SelectItem value="operator3">Sam Alter</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                          {allWorkOrdersByCenter['Cutting'].length} WOs
+                        </span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
                     <td className="p-4 text-center">
                       {allWorkOrdersByCenter['Assembly'].length > 0 ? (
-                        <Select>
-                          <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
-                            <SelectValue placeholder="Assembly" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                            <SelectItem value="operator1">Courtney Banh</SelectItem>
-                            <SelectItem value="operator2">Devin Cann</SelectItem>
-                            <SelectItem value="operator3">Sam Alter</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                          {allWorkOrdersByCenter['Assembly'].length} WOs
+                        </span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
                     <td className="p-4 text-center">
                       {allWorkOrdersByCenter['Packaging'].length > 0 ? (
-                        <Select>
-                          <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
-                            <SelectValue placeholder="Packaging" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                            <SelectItem value="operator1">Courtney Banh</SelectItem>
-                            <SelectItem value="operator2">Devin Cann</SelectItem>
-                            <SelectItem value="operator3">Sam Alter</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                          {allWorkOrdersByCenter['Packaging'].length} WOs
+                        </span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
@@ -302,17 +299,11 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                       <td className="p-4 text-center">
                         {order.workOrders?.filter(wo => wo.workCenter === 'Cutting').length > 0 ? (
                           <div className="flex flex-col items-center">
-                            <Select>
-                              <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                                <SelectValue placeholder="Operator" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">Unassigned</SelectItem>
-                                <SelectItem value="operator1">Courtney Banh</SelectItem>
-                                <SelectItem value="operator2">Devin Cann</SelectItem>
-                                <SelectItem value="operator3">Sam Alter</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <QualifiedOperatorSelect 
+                              workCenter="Cutting" 
+                              routing={order.routing || 'Unknown Routing'} 
+                              placeholder="Operator" 
+                            />
                             <EstimatedTime 
                               estimate={estimatesMap.get(order.id)} 
                               workCenter="Cutting" 
@@ -326,17 +317,11 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                       <td className="p-4 text-center">
                         {order.workOrders?.filter(wo => wo.workCenter === 'Assembly').length > 0 ? (
                           <div className="flex flex-col items-center">
-                            <Select>
-                              <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                                <SelectValue placeholder="Operator" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">Unassigned</SelectItem>
-                                <SelectItem value="operator1">Courtney Banh</SelectItem>
-                                <SelectItem value="operator2">Devin Cann</SelectItem>
-                                <SelectItem value="operator3">Sam Alter</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <QualifiedOperatorSelect 
+                              workCenter="Assembly" 
+                              routing={order.routing || 'Unknown Routing'} 
+                              placeholder="Operator" 
+                            />
                             <EstimatedTime 
                               estimate={estimatesMap.get(order.id)} 
                               workCenter="Assembly" 
@@ -350,17 +335,11 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                       <td className="p-4 text-center">
                         {order.workOrders?.filter(wo => wo.workCenter === 'Packaging').length > 0 ? (
                           <div className="flex flex-col items-center">
-                            <Select>
-                              <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                                <SelectValue placeholder="Operator" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">Unassigned</SelectItem>
-                                <SelectItem value="operator1">Courtney Banh</SelectItem>
-                                <SelectItem value="operator2">Devin Cann</SelectItem>
-                                <SelectItem value="operator3">Sam Alter</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <QualifiedOperatorSelect 
+                              workCenter="Packaging" 
+                              routing={order.routing || 'Unknown Routing'} 
+                              placeholder="Operator" 
+                            />
                             <EstimatedTime 
                               estimate={estimatesMap.get(order.id)} 
                               workCenter="Packaging" 
