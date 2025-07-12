@@ -219,10 +219,14 @@ export default function OperatorCard({
           <div className="grid grid-cols-2 gap-2">
             {availableOperations.map((operation) => {
               const isEnabled = localOperator.operations?.includes(operation) || false;
+              const hasData = operatorCapabilities.operations?.includes(operation) || false;
               
               return (
                 <div key={operation} className="flex items-center justify-between p-2 border rounded">
-                  <span className="text-sm">{operation}</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm">{operation}</span>
+                    {hasData && <Badge variant="outline" className="text-xs bg-blue-50">Has Data</Badge>}
+                  </div>
                   <Switch
                     checked={isEnabled}
                     onCheckedChange={(checked) => handleToggle('operations', checked, operation)}

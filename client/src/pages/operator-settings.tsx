@@ -77,6 +77,32 @@ export default function OperatorSettings() {
       .map((routing: any) => routing.routingName);
   };
 
+  const getOperatorOperationsWithData = (operatorName: string): string[] => {
+    if (!uphData?.routings) return [];
+    
+    const operations = new Set<string>();
+    
+    // Search through UPH data to find operations this operator has actually performed
+    uphData.routings.forEach((routing: any) => {
+      const operator = routing.operators?.find((op: any) => op.operatorName === operatorName);
+      if (operator?.workCenterPerformance) {
+        // UPH data contains operation information in the operation field
+        Object.entries(operator.workCenterPerformance).forEach(([workCenter, uphValue]: [string, any]) => {
+          if (uphValue !== null && uphValue !== undefined) {
+            // If this operator has UPH data for this work center, they can do all operations in that work center
+            // Get operations for this work center from workCenterData
+            const workCenterInfo = workCenterData?.find((wc: any) => wc.workCenter === workCenter);
+            if (workCenterInfo?.operations) {
+              workCenterInfo.operations.forEach((op: string) => operations.add(op));
+            }
+          }
+        });
+      }
+    });
+    
+    return Array.from(operations);
+  };
+
   // Get all available routings
   const getAllAvailableRoutings = (): string[] => {
     if (!routingsData?.routings) return [];
@@ -140,6 +166,7 @@ export default function OperatorSettings() {
       ...operator,
       operatorCapabilities: {
         workCenters: getOperatorWorkCentersWithData(operator.name),
+        operations: getOperatorOperationsWithData(operator.name),
         routings: getOperatorRoutingsWithData(operator.name),
         observationCount: getOperatorObservationCount(operator.name),
       }
