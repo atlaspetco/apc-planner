@@ -8,16 +8,16 @@ import { sql, eq, desc } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
 
-// Helper function to consolidate work centers into main categories
-function consolidateWorkCenter(workCenter: string): string {
+// Helper function to clean work center names (no aggregation)
+function cleanWorkCenter(workCenter: string): string {
   if (!workCenter) return 'Unknown';
   
-  const center = workCenter.toLowerCase();
-  if (center.includes('cut')) return 'Cutting';
-  if (center.includes('sew') || center.includes('assembly') || center.includes('rope')) return 'Assembly';
-  if (center.includes('pack')) return 'Packaging';
+  // Only clean up compound names, keep original work centers
+  if (workCenter.includes(' / ')) {
+    return workCenter.split(' / ')[0].trim();
+  }
   
-  return workCenter; // Return original if no consolidation needed
+  return workCenter.trim(); // Return original work center name
 }
 import { 
   statusFilterSchema, 
@@ -1315,7 +1315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Found ${workCyclesData.length} unique work center/operation combinations from work cycles`);
 
-      // Group operations by work center, handling complex work center names
+      // Group operations by work center - keep original names, no aggregation
       const workCenterMap = new Map<string, Set<string>>();
       
       for (const row of workCyclesData) {
@@ -1324,9 +1324,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let workCenter = row.workCenter.trim();
         const operation = row.operation.trim();
         
-        // Simplify compound work centers like "Sewing / Assembly" to main category
+        // Only clean up compound work centers like "Sewing / Assembly" -> "Sewing"
+        // But keep Rope, Sewing, etc. as separate work centers (no Assembly aggregation)
         if (workCenter.includes(' / ')) {
-          // Use the first part as the primary work center
           workCenter = workCenter.split(' / ')[0].trim();
         }
         

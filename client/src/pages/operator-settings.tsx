@@ -216,7 +216,7 @@ export default function OperatorSettings() {
                   Operators ({operators.length})
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 max-h-96 overflow-y-auto">
+              <CardContent className="space-y-2">
                 {sortedOperators.map((operator) => {
                   const activityStatus = getActivityStatus(operator);
                   return (
