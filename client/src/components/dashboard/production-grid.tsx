@@ -42,6 +42,35 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
     }
     setExpandedRoutings(newExpanded);
   };
+
+  // Handle operator assignment
+  const handleOperatorAssign = async (workOrderId: number, operatorId: number, quantity: number, routing: string, workCenter: string, operation: string) => {
+    try {
+      const response = await fetch('/api/work-orders/assign-operator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workOrderId: workOrderId.toString(),
+          operatorId: operatorId === 0 ? null : operatorId.toString(),
+          quantity,
+          routing,
+          workCenter,
+          operation
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('Assignment successful:', result.message);
+        // Optionally refresh data or update local state
+      } else {
+        console.error('Assignment failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Assignment error:', error);
+    }
+  };
   
   if (isLoading) {
     return (

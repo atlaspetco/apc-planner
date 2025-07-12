@@ -172,14 +172,14 @@ export function OperatorDropdown({
                 <div className="flex items-center space-x-1 ml-2">
                   {operator.observations > 0 && operator.averageUph > 0 ? (
                     <div className="flex items-center space-x-1">
+                      {quantity > 0 && (
+                        <span className="text-xs text-green-700 font-medium">
+                          {calculateEstimatedTime(operator.averageUph)}
+                        </span>
+                      )}
                       <Badge variant="secondary" className="text-xs px-1 py-0">
                         {operator.averageUph.toFixed(1)} UPH
                       </Badge>
-                      {quantity > 0 && (
-                        <Badge variant="outline" className="text-xs px-1 py-0 bg-green-50 text-green-700 border-green-300">
-                          {calculateEstimatedTime(operator.averageUph)}
-                        </Badge>
-                      )}
                     </div>
                   ) : (
                     <Badge variant="outline" className="text-xs px-1 py-0">
