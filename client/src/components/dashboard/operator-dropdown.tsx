@@ -157,12 +157,12 @@ export function OperatorDropdown({
         disabled={loading}
       >
         <SelectTrigger className="w-full h-8 text-xs bg-white border-gray-300">
-          <SelectValue placeholder={loading ? "Loading..." : "Assign Operator"} />
+          <SelectValue placeholder={loading ? "Loading..." : ""} />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="unassigned">
             <div className="flex items-center justify-between w-full">
-              <span>Unassigned</span>
+              <span></span>
             </div>
           </SelectItem>
           {qualifiedOperators.map(operator => (
@@ -173,7 +173,7 @@ export function OperatorDropdown({
                   {operator.observations > 0 && operator.averageUph > 0 ? (
                     <div className="flex items-center space-x-1">
                       {quantity > 0 && (
-                        <span className="text-xs text-green-700 font-medium">
+                        <span className="text-sm text-green-700 font-semibold">
                           {calculateEstimatedTime(operator.averageUph)}
                         </span>
                       )}
