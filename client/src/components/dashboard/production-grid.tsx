@@ -113,23 +113,24 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                         <div className="flex flex-col items-start">
                           <span>{routing}</span>
                           <span className="text-sm text-blue-600">({orders.length} MOs)</span>
+                          <div className="flex space-x-1 mt-1">
+                            {Object.entries(statusCounts).map(([status, count]) => (
+                              <Badge key={status} className={`text-xs ${
+                                status === 'assigned' ? 'bg-blue-500 text-white' :
+                                status === 'waiting' ? 'bg-blue-400 text-white' :
+                                status === 'running' ? 'bg-green-500 text-white' :
+                                status === 'done' ? 'bg-gray-500 text-white' :
+                                'bg-gray-400 text-white'
+                              }`}>
+                                {count} {status}
+                              </Badge>
+                            ))}
+                          </div>
                         </div>
                       </button>
                     </td>
                     <td className="p-4 text-center">
-                      <div className="flex justify-center space-x-1">
-                        {Object.entries(statusCounts).map(([status, count]) => (
-                          <Badge key={status} className={`text-xs ${
-                            status === 'assigned' ? 'bg-blue-500 text-white' :
-                            status === 'waiting' ? 'bg-blue-400 text-white' :
-                            status === 'running' ? 'bg-green-500 text-white' :
-                            status === 'done' ? 'bg-gray-500 text-white' :
-                            'bg-gray-400 text-white'
-                          }`}>
-                            {count} {status}
-                          </Badge>
-                        ))}
-                      </div>
+                      {/* Status column now empty since badges moved to routing name */}
                     </td>
                     <td className="p-4 text-center">
                       <span className="font-medium text-gray-900">{totalQty}</span>
