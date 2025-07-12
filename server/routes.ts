@@ -26,9 +26,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Fetch active work orders from Fulfil - API doesn't support multiple states in one call
-      // So we'll fetch the two main active states: 'request' and 'draft'
-      const [requestResponse, draftResponse] = await Promise.all([
+      // Fetch active work orders from Fulfil - need to include all active states
+      // Including 'request', 'draft', 'waiting', 'assigned', and 'running'
+      const [requestResponse, draftResponse, runningResponse, waitingResponse, assignedResponse] = await Promise.all([
         fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request&per_page=50', {
           method: 'GET',
           headers: {
@@ -42,24 +42,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
             'Content-Type': 'application/json',
             'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
           }
+        }),
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=running&per_page=50', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+          }
+        }),
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=waiting&per_page=50', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+          }
+        }),
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=assigned&per_page=50', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+          }
         })
       ]);
 
-      if (!requestResponse.ok || !draftResponse.ok) {
-        console.error(`Fulfil API error: request=${requestResponse.status}, draft=${draftResponse.status}`);
+      if (!requestResponse.ok || !draftResponse.ok || !runningResponse.ok || !waitingResponse.ok || !assignedResponse.ok) {
+        console.error(`Fulfil API error: request=${requestResponse.status}, draft=${draftResponse.status}, running=${runningResponse.status}, waiting=${waitingResponse.status}, assigned=${assignedResponse.status}`);
         // Fallback to local database if API fails
         const localOrders = await storage.getProductionOrders();
         console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
         return res.json(localOrders);
       }
 
-      const [requestData, draftData] = await Promise.all([
+      const [requestData, draftData, runningData, waitingData, assignedData] = await Promise.all([
         requestResponse.json(),
-        draftResponse.json()
+        draftResponse.json(),
+        runningResponse.json(),
+        waitingResponse.json(),
+        assignedResponse.json()
       ]);
 
-      // Combine the results
-      const workOrdersData = [...requestData, ...draftData];
+      // Combine the results from all states
+      const workOrdersData = [...requestData, ...draftData, ...runningData, ...waitingData, ...assignedData];
       console.log(`Fetched ${workOrdersData.length} active work orders from production.work endpoint`);
       console.log('Sample work order data:', workOrdersData.slice(0, 2));
 
@@ -123,6 +147,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const productionOrders = Array.from(productionOrderMap.values());
+      
+      // Now fetch actual production order states from production.order endpoint
+      // to get the correct status (running, done, etc.) instead of work order states
+      try {
+        const productionIds = Array.from(new Set(workOrdersData.map(wo => wo.production).filter(Boolean)));
+        if (productionIds.length > 0) {
+          // Fetch production order states in batches
+          const batchSize = 20;
+          for (let i = 0; i < productionIds.length; i += batchSize) {
+            const batch = productionIds.slice(i, i + batchSize);
+            const idsParam = batch.join(',');
+            
+            try {
+              const productionResponse = await fetch(`https://apc.fulfil.io/api/v2/model/production.order?id=in(${idsParam})&fields=id,state`, {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+                }
+              });
+              
+              if (productionResponse.ok) {
+                const productionData = await productionResponse.json();
+                
+                // Update production order states
+                for (const prodOrder of productionData) {
+                  const relatedMOs = productionOrders.filter(po => 
+                    workOrdersData.some(wo => wo.production === prodOrder.id && wo.rec_name?.includes(po.moNumber))
+                  );
+                  
+                  for (const mo of relatedMOs) {
+                    mo.status = prodOrder.state;
+                    mo.state = prodOrder.state;
+                    console.log(`Updated ${mo.moNumber} status to: ${prodOrder.state}`);
+                  }
+                }
+              }
+            } catch (batchError) {
+              console.log(`Failed to fetch production states for batch: ${idsParam}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Failed to update production order states, using work order states as fallback');
+      }
       
       console.log(`Converted to ${productionOrders.length} production orders from active work orders`);
       
