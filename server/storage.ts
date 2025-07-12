@@ -387,13 +387,9 @@ export class DatabaseStorage implements IStorage {
   async getProductionOrders(statusFilter?: string[], excludeCompleted = true): Promise<ProductionOrder[]> {
     if (statusFilter && statusFilter.length > 0) {
       return db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
-    } else if (excludeCompleted) {
-      // By default, show only assigned MOs (matching user's 38 assigned requirement)
-      return db.select().from(productionOrders).where(
-        eq(productionOrders.status, 'assigned')
-      );
     }
     
+    // When no specific filter is applied, show all production orders (let frontend filter control this)
     return db.select().from(productionOrders);
   }
 
