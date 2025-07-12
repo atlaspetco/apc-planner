@@ -10,7 +10,7 @@ import path from 'path';
 
 const GITHUB_TOKEN = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
 const REPO_OWNER = 'atlaspetco';
-const REPO_NAME = 'planner';
+const REPO_NAME = 'APC-planner';
 
 if (!GITHUB_TOKEN) {
   console.error('GITHUB_PERSONAL_ACCESS_TOKEN not found');
