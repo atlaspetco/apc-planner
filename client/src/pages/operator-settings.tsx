@@ -177,34 +177,46 @@ export default function OperatorSettings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {operators.map((operator: Operator) => {
-                const activityStatus = getActivityStatus(operator);
-                const observationCount = getOperatorObservationCount(operator.name);
-                return (
-                  <div
-                    key={operator.id}
-                    className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                      selectedOperatorId === operator.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => setSelectedOperatorId(operator.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-2 h-2 rounded-full ${activityStatus.color}`}></div>
-                        <span className="font-medium text-sm">{operator.name}</span>
+              {operators
+                .map((operator: Operator) => ({
+                  ...operator,
+                  observationCount: getOperatorObservationCount(operator.name),
+                  activityStatus: getActivityStatus(operator)
+                }))
+                .sort((a, b) => {
+                  // First sort by active status (active first)
+                  if (a.isActive !== b.isActive) {
+                    return a.isActive ? -1 : 1;
+                  }
+                  // Within same activity group, sort by observation count (highest first)
+                  return b.observationCount - a.observationCount;
+                })
+                .map((operator) => {
+                  return (
+                    <div
+                      key={operator.id}
+                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                        selectedOperatorId === operator.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      onClick={() => setSelectedOperatorId(operator.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-2 h-2 rounded-full ${operator.activityStatus.color}`}></div>
+                          <span className="font-medium text-sm">{operator.name}</span>
+                        </div>
+                        <Badge variant={operator.isActive ? "default" : "secondary"} className="text-xs">
+                          {operator.isActive ? "Active" : "Inactive"}
+                        </Badge>
                       </div>
-                      <Badge variant={operator.isActive ? "default" : "secondary"} className="text-xs">
-                        {operator.isActive ? "Active" : "Inactive"}
-                      </Badge>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {operator.observationCount > 0 ? `${operator.observationCount} observations` : operator.activityStatus.text}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {observationCount > 0 ? `${observationCount} observations` : activityStatus.text}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </CardContent>
           </Card>
         </div>
