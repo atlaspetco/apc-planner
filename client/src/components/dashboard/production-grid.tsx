@@ -73,11 +73,9 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
             <tr>
               <th className="text-left p-4 font-medium text-gray-900">Routing / Production Order</th>
               <th className="text-center p-4 font-medium text-gray-900">Qty</th>
-              {WORK_CENTERS.map(workCenter => (
-                <th key={workCenter} className="text-center p-4 font-medium text-gray-900 min-w-[150px]">
-                  {workCenter}
-                </th>
-              ))}
+              <th className="text-center p-4 font-medium text-gray-900 min-w-[150px]">Cutting</th>
+              <th className="text-center p-4 font-medium text-gray-900 min-w-[150px]">Assembly</th>
+              <th className="text-center p-4 font-medium text-gray-900 min-w-[150px]">Packaging</th>
             </tr>
           </thead>
 
@@ -133,28 +131,57 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                     <td className="p-4 text-center">
                       <span className="font-medium text-gray-900">{totalQty}</span>
                     </td>
-                    {WORK_CENTERS.map(workCenter => {
-                      const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
-                      return (
-                        <td key={workCenter} className="p-4 text-center">
-                          {workOrdersInCenter.length > 0 ? (
-                            <Select>
-                              <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
-                                <SelectValue placeholder={`${workCenter}`} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">Unassigned</SelectItem>
-                                <SelectItem value="operator1">Courtney Banh</SelectItem>
-                                <SelectItem value="operator2">Devin Cann</SelectItem>
-                                <SelectItem value="operator3">Sam Alter</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                      );
-                    })}
+                    <td className="p-4 text-center">
+                      {allWorkOrdersByCenter['Cutting'].length > 0 ? (
+                        <Select>
+                          <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
+                            <SelectValue placeholder="Cutting" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            <SelectItem value="operator1">Courtney Banh</SelectItem>
+                            <SelectItem value="operator2">Devin Cann</SelectItem>
+                            <SelectItem value="operator3">Sam Alter</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-center">
+                      {allWorkOrdersByCenter['Assembly'].length > 0 ? (
+                        <Select>
+                          <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
+                            <SelectValue placeholder="Assembly" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            <SelectItem value="operator1">Courtney Banh</SelectItem>
+                            <SelectItem value="operator2">Devin Cann</SelectItem>
+                            <SelectItem value="operator3">Sam Alter</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-center">
+                      {allWorkOrdersByCenter['Packaging'].length > 0 ? (
+                        <Select>
+                          <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
+                            <SelectValue placeholder="Packaging" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            <SelectItem value="operator1">Courtney Banh</SelectItem>
+                            <SelectItem value="operator2">Devin Cann</SelectItem>
+                            <SelectItem value="operator3">Sam Alter</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
                   </tr>
 
                   {/* Individual MO rows (when expanded) */}
@@ -168,28 +195,57 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                       <td className="p-4 text-center">
                         <span className="font-medium text-gray-900">{order.quantity}</span>
                       </td>
-                      {WORK_CENTERS.map(workCenter => {
-                        const workOrdersInCenter = order.workOrders?.filter(wo => wo.workCenter === workCenter) || [];
-                        return (
-                          <td key={workCenter} className="p-4 text-center">
-                            {workOrdersInCenter.length > 0 ? (
-                              <Select>
-                                <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                                  <SelectValue placeholder="Operator" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                                  <SelectItem value="operator1">Courtney Banh</SelectItem>
-                                  <SelectItem value="operator2">Devin Cann</SelectItem>
-                                  <SelectItem value="operator3">Sam Alter</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                        );
-                      })}
+                      <td className="p-4 text-center">
+                        {order.workOrders?.filter(wo => wo.workCenter === 'Cutting').length > 0 ? (
+                          <Select>
+                            <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+                              <SelectValue placeholder="Operator" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">Unassigned</SelectItem>
+                              <SelectItem value="operator1">Courtney Banh</SelectItem>
+                              <SelectItem value="operator2">Devin Cann</SelectItem>
+                              <SelectItem value="operator3">Sam Alter</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        {order.workOrders?.filter(wo => wo.workCenter === 'Assembly').length > 0 ? (
+                          <Select>
+                            <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+                              <SelectValue placeholder="Operator" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">Unassigned</SelectItem>
+                              <SelectItem value="operator1">Courtney Banh</SelectItem>
+                              <SelectItem value="operator2">Devin Cann</SelectItem>
+                              <SelectItem value="operator3">Sam Alter</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        {order.workOrders?.filter(wo => wo.workCenter === 'Packaging').length > 0 ? (
+                          <Select>
+                            <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+                              <SelectValue placeholder="Operator" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">Unassigned</SelectItem>
+                              <SelectItem value="operator1">Courtney Banh</SelectItem>
+                              <SelectItem value="operator2">Devin Cann</SelectItem>
+                              <SelectItem value="operator3">Sam Alter</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </React.Fragment>
