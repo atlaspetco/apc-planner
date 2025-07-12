@@ -38,7 +38,8 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
-            <p className="text-gray-600">No production orders found</p>
+            <p className="text-gray-600">No active production orders found</p>
+            <p className="text-sm text-gray-500 mt-2">System is ready for new production orders</p>
           </div>
         </CardContent>
       </Card>

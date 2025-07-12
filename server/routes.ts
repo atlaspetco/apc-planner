@@ -26,8 +26,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Fetch active work orders from Fulfil using correct endpoint 
-      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?per_page=100', {
+      // Fetch only active (not done) work orders from Fulfil - exclude old test data
+      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request,draft,waiting,assigned,running&per_page=100', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
