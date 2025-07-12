@@ -26,8 +26,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Fetch work orders from Fulfil - this approach is working and shows authentic data
-      const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=500', {
+      // Fetch work orders from Fulfil (use basic call without field filtering)
+      const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?per_page=500', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -86,7 +86,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Group work orders by production order to create MOs
       const productionOrderMap = new Map();
       
-      for (const wo of workOrdersData) {
+      // Show more recent production orders (MO numbers > 8000 based on available data)
+      const recentWorkOrders = workOrdersData.filter(wo => {
+        const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
+        const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${wo.id}`;
+        const moNumberValue = parseInt(moNumber.replace('MO', '')) || 0;
+        return moNumberValue > 8000; // Show recent MOs (above 8000)
+      });
+      
+      console.log(`Filtered to ${recentWorkOrders.length} recent work orders (MO > 8000) from ${workOrdersData.length} total`);
+
+      for (const wo of recentWorkOrders) {
         // Parse rec_name to extract MO number: "WO33391 | Cutting - Webbing | MO184337"
         const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
         const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${wo.id}`;
