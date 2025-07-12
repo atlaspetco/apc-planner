@@ -57,17 +57,19 @@ export default function OperatorSettings() {
 
   // Helper functions to determine auto-enabled settings based on UPH data
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
-    if (!uphData || !uphData.routings) return [];
+    if (!uphData || !uphData.routings || !Array.isArray(uphData.routings)) return [];
     
     // Flatten all work center data from the table-data structure
-    const allWorkCenterRecords = uphData.routings.flatMap((routing: any) => 
-      routing.workCenters.flatMap((wc: any) => 
-        wc.operators.map((op: any) => ({
+    const allWorkCenterRecords = uphData.routings.flatMap((routing: any) => {
+      if (!routing.workCenters || !Array.isArray(routing.workCenters)) return [];
+      return routing.workCenters.flatMap((wc: any) => {
+        if (!wc.operators || !Array.isArray(wc.operators)) return [];
+        return wc.operators.map((op: any) => ({
           operatorName: op.operatorName,
           workCenter: wc.workCenterName
-        }))
-      )
-    );
+        }));
+      });
+    });
     
     // Find all work centers where this operator has UPH data
     const operatorWorkCenters = allWorkCenterRecords
@@ -78,7 +80,7 @@ export default function OperatorSettings() {
   };
 
   const getOperatorOperationsWithData = (operatorName: string): string[] => {
-    if (!uphData || !uphData.routings) return [];
+    if (!uphData || !uphData.routings || !Array.isArray(uphData.routings)) return [];
     
     // Since operations aren't directly tracked in historical UPH data,
     // we'll derive them from work centers that have data
