@@ -146,9 +146,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!workOrdersByMO.has(moId)) {
           workOrdersByMO.set(moId, []);
         }
+        // Map Rope and Sewing to Assembly for display, but keep original for assignment logic
+        const originalWorkCenter = cleanWorkCenter(wo['work_center.name'] || 'Unknown');
+        const displayWorkCenter = (originalWorkCenter === 'Rope' || originalWorkCenter === 'Sewing') ? 'Assembly' : originalWorkCenter;
+        
         workOrdersByMO.get(moId).push({
           id: wo.id,
-          workCenter: cleanWorkCenter(wo['work_center.name'] || 'Unknown'),
+          workCenter: displayWorkCenter,
+          originalWorkCenter: originalWorkCenter, // Keep for assignment logic
           operation: wo['operation.name'] || wo.rec_name || `WO${wo.id}`,
           state: wo.state || 'unknown',
           quantity: 0 // Work orders inherit quantity from MO
@@ -2755,7 +2760,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
           // Use operator name directly from historicalUph data
-          const operatorRecord = consolidatedUphResults.find(r => r.operatorId === operatorId);
+          const operatorRecord = cleanedUphResults.find(r => r.operatorId === operatorId);
           const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
@@ -2768,8 +2773,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const avgUph = uphValues.reduce((sum, val) => sum + val, 0) / uphValues.length;
               workCenterPerformance[workCenter] = Math.round(avgUph * 100) / 100;
               
-              // Sum up observations for this work center using consolidated data
-              const operatorWorkCenterRecords = consolidatedUphResults.filter(r => 
+              // Sum up observations for this work center using cleaned data
+              const operatorWorkCenterRecords = cleanedUphResults.filter(r => 
                 r.operatorId === operatorId && 
                 r.routing === routingName && 
                 r.workCenter === workCenter

@@ -7,9 +7,11 @@ import type { ProductionOrder } from "@shared/schema";
 interface ProductionGridProps {
   productionOrders: ProductionOrder[];
   isLoading: boolean;
+  workCenters?: string[];
 }
 
-const WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
+// Work centers will be loaded dynamically from API
+const DEFAULT_WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
 
 // Group orders by routing
 const groupOrdersByRouting = (orders: ProductionOrder[]) => {
@@ -25,7 +27,7 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
   return grouped;
 };
 
-export default function ProductionGrid({ productionOrders, isLoading }: ProductionGridProps) {
+export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS }: ProductionGridProps) {
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
@@ -74,7 +76,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
               <th className="text-left p-4 font-medium text-gray-900">Routing / Production Order</th>
               <th className="text-center p-4 font-medium text-gray-900">Qty</th>
               <th className="text-center p-4 font-medium text-gray-900">Status</th>
-              {WORK_CENTERS.map(workCenter => (
+              {workCenters.map(workCenter => (
                 <th key={workCenter} className="text-center p-4 font-medium text-gray-900 min-w-[150px]">
                   {workCenter}
                 </th>
@@ -93,7 +95,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
               }, {} as Record<string, number>);
               
               // Get all work orders for this routing grouped by work center
-              const allWorkOrdersByCenter = WORK_CENTERS.reduce((acc, workCenter) => {
+              const allWorkOrdersByCenter = workCenters.reduce((acc, workCenter) => {
                 acc[workCenter] = orders.flatMap(order => 
                   order.workOrders?.filter(wo => wo.workCenter === workCenter) || []
                 );
@@ -137,7 +139,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                     <td className="p-4 text-center">
                       {/* Status column now empty since badges moved to routing name */}
                     </td>
-                    {WORK_CENTERS.map(workCenter => {
+                    {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
                       return (
                         <td key={workCenter} className="p-4 text-center">
@@ -186,7 +188,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                           {order.status}
                         </Badge>
                       </td>
-                      {WORK_CENTERS.map(workCenter => {
+                      {workCenters.map(workCenter => {
                         const workOrdersInCenter = order.workOrders?.filter(wo => wo.workCenter === workCenter) || [];
                         return (
                           <td key={workCenter} className="p-4 text-center">
