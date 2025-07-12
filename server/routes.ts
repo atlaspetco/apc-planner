@@ -29,14 +29,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Fetch active work orders from Fulfil - API doesn't support multiple states in one call
       // So we'll fetch the two main active states: 'request' and 'draft'
       const [requestResponse, draftResponse] = await Promise.all([
-        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request&per_page=50&fields=id,rec_name,state,production', {
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request&per_page=50', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
             'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
           }
         }),
-        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=draft&per_page=50&fields=id,rec_name,state,production', {
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=draft&per_page=50', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -82,10 +82,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const workCenter = recNameParts.length >= 2 ? recNameParts[1] : 'Unknown';
         const woNumber = recNameParts.length >= 1 ? recNameParts[0] : `WO${wo.id}`;
         
-        // Extract product information from rec_name and fallback methods
+        // For now, use the CSV mapping system since API fields require special handling
         const productCode = extractProductCode(moNumber, wo.rec_name || '');
         const productName = productCode || moNumber;
         const routing = getRoutingForProduct(productCode);
+        
+        console.log(`MO: ${moNumber}, Product Code: ${productCode}, Routing: ${routing}`);
         
         // Use production order quantity from API if available, default to work order total quantity
         const totalQuantity = wo.production?.quantity || wo.quantity || 0;

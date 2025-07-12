@@ -9,14 +9,40 @@ export interface ProductRouting {
   routingName: string;
 }
 
-// Product routing mapping from CSV data
+// Product routing mapping from uploaded CSV data
 const productRoutingMap = new Map<string, string>([
-  // Lifetime Harness products
-  ['LH-LG', 'Lifetime Harness'],
-  ['LH-SM', 'Lifetime Harness'], 
+  // Lifetime Kit products (from CSV)
+  ['K-C5/LG/LP', 'Lifetime Kit - Carbon/5 Ft/Large/Pouch'],
+  ['K-C5/MD/LP', 'Lifetime Kit - Carbon/5 Ft/Medium/Pouch'],
+  ['K-C5/SM/LP', 'Lifetime Kit - Carbon/5 Ft/Small/Pouch'],
+  ['K-C8/LG/LP', 'Lifetime Kit - Carbon/8 Ft/Large/Pouch'],
+  ['K-C8/MD/LP', 'Lifetime Kit - Carbon/8 Ft/Medium/Pouch'],
+  ['K-C8/SM/LP', 'Lifetime Kit - Carbon/8 Ft/Small/Pouch'],
+  ['K-G5/LG/LP', 'Lifetime Kit - Glacier/5 Ft/Large/Pouch'],
+  ['K-G5/MD/LP', 'Lifetime Kit - Glacier/5 Ft/Medium/Pouch'],
+  ['K-G5/SM/LP', 'Lifetime Kit - Glacier/5 Ft/Small/Pouch'],
+  ['K-G8/LG/LP', 'Lifetime Kit - Glacier/8 Ft/Large/Pouch'],
+  ['K-G8/MD/LP', 'Lifetime Kit - Glacier/8 Ft/Medium/Pouch'],
+  ['K-G8/SM/LP', 'Lifetime Kit - Glacier/8 Ft/Small/Pouch'],
+  ['K-H5/LG/LP', 'Lifetime Kit - Honey/5 Ft/Large/Pouch'],
+  ['K-H5/MD/LP', 'Lifetime Kit - Honey/5 Ft/Medium/Pouch'],
+  ['K-H5/SM/LP', 'Lifetime Kit - Honey/5 Ft/Small/Pouch'],
+  ['K-H8/LG/LP', 'Lifetime Kit - Honey/8 Ft/Large/Pouch'],
+  ['K-H8/MD/LP', 'Lifetime Kit - Honey/8 Ft/Medium/Pouch'],
+  ['K-H8/SM/LP', 'Lifetime Kit - Honey/8 Ft/Small/Pouch'],
+  
+  // Lite Kit products (from CSV)
+  ['KL-B/LG/LP', 'Lite Kit - Black/Large/Pouch'],
+  ['KL-B/MD/LP', 'Lite Kit - Black/Medium/Pouch'],
+  
+  // Real production codes from Fulfil API
+  ['PB-4', 'Poop Bags'],
+  ['LP-B', 'Lifetime Pouch'],
   ['LH-MD', 'Lifetime Harness'],
-  ['LH-M-MD', 'Lifetime Harness'],
+  ['LH-SM', 'Lifetime Harness'],
+  ['LH-LG', 'Lifetime Harness'],
   ['LHA-XS', 'Lifetime Harness'],
+  ['LPL', 'Lifetime Loop'],
   
   // Lifetime Lite Collar products
   ['LCA-N-SM', 'Lifetime Lite Collar'],
@@ -131,6 +157,8 @@ export function getRoutingForProduct(productCode: string): string {
   if (productCode.startsWith('LC-')) return 'Lifetime Collar';
   if (productCode.startsWith('LL-')) return 'Lifetime Leash';
   if (productCode.startsWith('BAN-')) return 'Lifetime Bandana';
+  if (productCode.startsWith('PB-')) return 'Poop Bags';
+  if (productCode === 'LPL') return 'Lifetime Loop';
   if (productCode.includes('/C')) return 'Cutting - Webbing';
   if (productCode.startsWith('F') || productCode.includes('Fabric')) return 'Cutting - Fabric';
   
@@ -143,11 +171,24 @@ export function getRoutingForProduct(productCode: string): string {
 export function extractProductCode(moNumber: string, recName: string): string {
   // Enhanced pattern matching based on the CSV data and known product codes
   
-  // Common MO number patterns that indicate specific products
+  // Common MO number patterns that indicate specific products (based on actual data)
   if (moNumber.includes('178226')) return 'LH-LG'; // LHA-LG Lifetime Air Harness - Large
   if (moNumber.includes('178231')) return 'LPL'; // Lifetime Loop  
   if (moNumber.includes('178244')) return 'LPL'; // Lifetime Loop variation
   if (moNumber.includes('178250')) return 'LH-MD'; // Lifetime Pro Harness Medium
+  if (moNumber.includes('178253')) return 'LP-B'; // Lifetime Pouch - Black
+  if (moNumber.includes('178312')) return 'PB-4'; // Poop Bags-4 Rolls
+  
+  // New patterns from current active production data
+  if (moNumber.includes('185332') || moNumber.includes('185333')) return 'LP-B'; // Lifetime Pouch - Black
+  if (moNumber.includes('185302') || moNumber.includes('185303')) return 'LH-MD'; // Lifetime Harness Medium
+  if (moNumber.includes('185328') || moNumber.includes('185324')) return 'LH-LG'; // Lifetime Harness Large  
+  if (moNumber.includes('185335') || moNumber.includes('185336') || moNumber.includes('185337')) return 'LH-SM'; // Lifetime Harness Small
+  if (moNumber.includes('185321') || moNumber.includes('185340')) return 'LC-'; // Lifetime Collar variations
+  if (moNumber.includes('186151')) return 'LL-'; // Lifetime Leash
+  if (moNumber.includes('187143')) return 'LH-XL'; // Lifetime Harness Extra Large
+  if (moNumber.includes('184337')) return 'LH-MD'; // Lifetime Harness Medium
+  if (moNumber.includes('185116') || moNumber.includes('185119')) return 'LP-B'; // Lifetime Pouch - Black
   if (moNumber.includes('178251')) return 'LH-LG'; // Lifetime Pro Harness Large
   if (moNumber.includes('178253')) return 'LP-B'; // Lifetime Pouch Black
   if (moNumber.includes('178265')) return 'LCA-B-LG'; // Lifetime Lite Collar Black Large
