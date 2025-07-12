@@ -16,10 +16,16 @@ export default function Dashboard() {
     gcTime: 0,
   });
 
+  const { data: assignmentsData, isLoading: isLoadingAssignments, refetch: refetchAssignments } = useQuery({
+    queryKey: ["/api/assignments"],
+    staleTime: 0,
+    gcTime: 0,
+  });
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await refetchPOs();
+      await Promise.all([refetchPOs(), refetchAssignments()]);
     } finally {
       setIsRefreshing(false);
     }
@@ -36,8 +42,16 @@ export default function Dashboard() {
   const uniqueStatuses = [...new Set(productionOrders.map(order => order.status))];
   const uniqueRoutings = [...new Set(productionOrders.map(order => order.routing))];
 
-  // Status indicator color
-  const statusIndicator = isLoadingPOs || isRefreshing ? "yellow" : errorPOs ? "red" : "green";
+  // Status indicator color  
+  const statusIndicator = isLoadingPOs || isLoadingAssignments || isRefreshing ? "yellow" : errorPOs ? "red" : "green";
+
+  // Create assignments lookup map for easy access
+  const assignmentsMap = new Map();
+  if (assignmentsData?.assignments) {
+    assignmentsData.assignments.forEach(assignment => {
+      assignmentsMap.set(assignment.workOrderId, assignment);
+    });
+  }
 
   // Show error state if API calls fail
   if (errorPOs) {
@@ -136,6 +150,7 @@ export default function Dashboard() {
         <ProductionGrid 
           productionOrders={filteredOrders}
           isLoading={isLoadingPOs}
+          assignments={assignmentsMap}
         />
       </div>
     </div>

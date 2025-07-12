@@ -75,6 +75,15 @@ export const operators = pgTable("operators", {
   fulfilId: integer("fulfil_id"), // Reference to Fulfil.io employee ID
 });
 
+export const workOrderAssignments = pgTable("work_order_assignments", {
+  id: serial("id").primaryKey(),
+  workOrderId: integer("work_order_id").notNull(), // Fulfil work order ID (not local DB ID)
+  operatorId: integer("operator_id").references(() => operators.id, { onDelete: "cascade" }).notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  assignedBy: text("assigned_by").default("dashboard"), // Could track which user made assignment
+  isActive: boolean("is_active").default(true)
+});
+
 export const uphData = pgTable("uph_data", {
   id: serial("id").primaryKey(),
   operatorId: integer("operator_id").references(() => operators.id, { onDelete: "cascade" }),

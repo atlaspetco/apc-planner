@@ -20,6 +20,7 @@ interface OperatorDropdownProps {
   operation: string;
   quantity: number;
   currentOperatorId?: number | null;
+  currentOperatorName?: string;
   onAssignmentChange?: (workOrderId: number, operatorId: number | null, estimatedHours: number | null) => void;
   onAssign?: (operatorId: number) => void; // For bulk assignment
   className?: string;
@@ -33,6 +34,7 @@ export function OperatorDropdown({
   operation,
   quantity,
   currentOperatorId,
+  currentOperatorName,
   onAssignmentChange,
   onAssign,
   className

@@ -9,6 +9,7 @@ interface ProductionGridProps {
   productionOrders: ProductionOrder[];
   isLoading: boolean;
   workCenters?: string[];
+  assignments?: Map<number, any>;
 }
 
 // Work centers will be loaded dynamically from API
@@ -28,7 +29,7 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
   return grouped;
 };
 
-export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS }: ProductionGridProps) {
+export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS, assignments = new Map() }: ProductionGridProps) {
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
@@ -232,21 +233,25 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                           <td key={workCenter} className="p-4 text-center">
                             {workOrdersInCenter.length > 0 ? (
                               <div className="space-y-1">
-                                {workOrdersInCenter.map(workOrder => (
-                                  <OperatorDropdown
-                                    key={workOrder.id}
-                                    workOrderId={workOrder.id}
-                                    workCenter={workOrder.originalWorkCenter || workCenter}
-                                    routing={order.routing || ''}
-                                    operation={workOrder.operation}
-                                    quantity={order.quantity}
-                                    currentOperatorId={workOrder.assignedOperatorId}
-                                    onAssignmentChange={(workOrderId, operatorId, estimatedHours) => {
-                                      // Handle assignment change - could update local state or refetch data
-                                      console.log('Assignment changed:', { workOrderId, operatorId, estimatedHours });
-                                    }}
-                                  />
-                                ))}
+                                {workOrdersInCenter.map(workOrder => {
+                                  const currentAssignment = assignments.get(workOrder.id);
+                                  return (
+                                    <OperatorDropdown
+                                      key={workOrder.id}
+                                      workOrderId={workOrder.id}
+                                      workCenter={workOrder.originalWorkCenter || workCenter}
+                                      routing={order.routing || ''}
+                                      operation={workOrder.operation}
+                                      quantity={order.quantity}
+                                      currentOperatorId={currentAssignment?.operatorId}
+                                      currentOperatorName={currentAssignment?.operatorName}
+                                      onAssignmentChange={(workOrderId, operatorId, estimatedHours) => {
+                                        // Handle assignment change - could update local state or refetch data
+                                        console.log('Assignment changed:', { workOrderId, operatorId, estimatedHours });
+                                      }}
+                                    />
+                                  );
+                                })}
                               </div>
                             ) : (
                               <span className="text-gray-400">-</span>
