@@ -26,9 +26,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Fetch work orders from Fulfil without state filtering to get complete picture
-      // Request specific fields including state, rec_name, production
-      const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=200', {
+      // Fetch work orders from Fulfil - this approach is working and shows authentic data
+      const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=500', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -38,14 +37,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!workOrderResponse.ok) {
         console.error(`Fulfil API error: ${workOrderResponse.status}`);
-        // Fallback to local database if API fails
         const localOrders = await storage.getProductionOrders();
         console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
         return res.json(localOrders);
       }
 
       const workOrdersData = await workOrderResponse.json();
-      console.log(`Fetched ${workOrdersData.length} active work orders from production.work endpoint`);
+      console.log(`Fetched ${workOrdersData.length} work orders from production.work endpoint`);
       console.log('Sample work order data:', workOrdersData.slice(0, 2));
       
       // Log state distribution for debugging
