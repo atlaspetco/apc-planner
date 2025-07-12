@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ProductionOrder } from "@shared/schema";
 
 interface ProductionGridProps {
@@ -10,8 +11,34 @@ interface ProductionGridProps {
 
 const WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
 
+// Group orders by routing
+const groupOrdersByRouting = (orders: ProductionOrder[]) => {
+  const grouped = orders.reduce((acc, order) => {
+    const routing = order.routing || 'Unknown Routing';
+    if (!acc[routing]) {
+      acc[routing] = [];
+    }
+    acc[routing].push(order);
+    return acc;
+  }, {} as Record<string, ProductionOrder[]>);
+  
+  return grouped;
+};
+
 export default function ProductionGrid({ productionOrders, isLoading }: ProductionGridProps) {
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
+  
+  const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
+  
+  const toggleRouting = (routing: string) => {
+    const newExpanded = new Set(expandedRoutings);
+    if (newExpanded.has(routing)) {
+      newExpanded.delete(routing);
+    } else {
+      newExpanded.add(routing);
+    }
+    setExpandedRoutings(newExpanded);
+  };
   
   if (isLoading) {
     return (
@@ -35,6 +62,8 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
     );
   }
 
+  const groupedOrders = groupOrdersByRouting(productionOrders);
+
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div className="overflow-x-auto">
@@ -42,8 +71,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
           {/* Header */}
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left p-4 font-medium text-gray-900">Production Order</th>
-              <th className="text-left p-4 font-medium text-gray-900">Routing</th>
+              <th className="text-left p-4 font-medium text-gray-900">Routing / Production Order</th>
               <th className="text-center p-4 font-medium text-gray-900">Status</th>
               <th className="text-center p-4 font-medium text-gray-900">Qty</th>
               {WORK_CENTERS.map(workCenter => (
@@ -56,57 +84,138 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
 
           {/* Body */}
           <tbody>
-            {productionOrders.map((order) => (
-              <tr key={order.id} className="border-b hover:bg-gray-50">
-                <td className="p-4">
-                  <div className="font-medium text-gray-900">{order.moNumber}</div>
-                  <div className="text-sm text-gray-500">{order.productName || order.moNumber}</div>
-                </td>
-                <td className="p-4">
-                  <span className="text-sm text-gray-900">{order.routing || 'Unknown Routing'}</span>
-                </td>
-                <td className="p-4 text-center">
-                  <Badge variant={
-                    order.status === 'assigned' ? 'default' :
-                    order.status === 'running' ? 'secondary' :
-                    order.status === 'done' ? 'outline' :
-                    'secondary'
-                  }>
-                    {order.status}
-                  </Badge>
-                </td>
-                <td className="p-4 text-center font-medium">{order.quantity}</td>
-                
-                {/* Work Center Columns */}
-                {WORK_CENTERS.map(workCenter => {
-                  const workOrder = order.workOrders?.find(wo => 
-                    wo.workCenter?.toLowerCase().includes(workCenter.toLowerCase())
-                  );
-                  
-                  return (
-                    <td key={workCenter} className="p-4 text-center">
-                      {workOrder ? (
-                        <div className="space-y-2">
-                          <div className="text-xs text-gray-600">{workOrder.operation}</div>
-                          <Select>
-                            <SelectTrigger className="w-36 h-8 text-xs">
-                              <SelectValue placeholder="Select Operator" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="operator1">Courtney Banh</SelectItem>
-                              <SelectItem value="operator2">Devin Cann</SelectItem>
-                              <SelectItem value="operator3">Sam Alter</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-sm">No work order</span>
-                      )}
+            {Object.entries(groupedOrders).map(([routing, orders]) => {
+              const isExpanded = expandedRoutings.has(routing);
+              const totalQty = orders.reduce((sum, order) => sum + order.quantity, 0);
+              const statusCounts = orders.reduce((acc, order) => {
+                acc[order.status] = (acc[order.status] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
+              
+              // Get all work orders for this routing grouped by work center
+              const allWorkOrdersByCenter = WORK_CENTERS.reduce((acc, workCenter) => {
+                acc[workCenter] = orders.flatMap(order => 
+                  order.workOrders?.filter(wo => wo.workCenter === workCenter) || []
+                );
+                return acc;
+              }, {} as Record<string, any[]>);
+
+              return (
+                <React.Fragment key={routing}>
+                  {/* Routing header row */}
+                  <tr className="bg-blue-50 border-b-2 border-blue-200">
+                    <td className="p-4">
+                      <button 
+                        onClick={() => toggleRouting(routing)}
+                        className="flex items-center space-x-2 font-medium text-blue-900 hover:text-blue-700"
+                      >
+                        {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        <span>{routing}</span>
+                        <span className="text-sm text-blue-600">({orders.length} MOs)</span>
+                      </button>
                     </td>
-                  );
-                })}
-              </tr>
-            ))}
+                    <td className="p-4 text-center">
+                      <div className="flex justify-center space-x-1">
+                        {Object.entries(statusCounts).map(([status, count]) => (
+                          <Badge key={status} variant={
+                            status === 'assigned' ? 'default' :
+                            status === 'running' ? 'secondary' :
+                            status === 'done' ? 'outline' :
+                            'secondary'
+                          } className="text-xs">
+                            {count} {status}
+                          </Badge>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="p-4 text-center">
+                      <span className="font-medium text-blue-900">{totalQty}</span>
+                    </td>
+                    {WORK_CENTERS.map(workCenter => {
+                      const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
+                      return (
+                        <td key={workCenter} className="p-4 text-center">
+                          {workOrdersInCenter.length > 0 ? (
+                            <div className="space-y-1">
+                              <Select>
+                                <SelectTrigger className="w-full h-8 text-xs bg-blue-100 border-blue-300">
+                                  <SelectValue placeholder={`Assign all ${workCenter} (${workOrdersInCenter.length})`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                                  <SelectItem value="operator1">Courtney Banh</SelectItem>
+                                  <SelectItem value="operator2">Devin Cann</SelectItem>
+                                  <SelectItem value="operator3">Sam Alter</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <div className="text-xs text-blue-600">
+                                {workOrdersInCenter.length} operations
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Individual MO rows (when expanded) */}
+                  {isExpanded && orders.map((order) => (
+                    <tr key={order.id} className="border-b hover:bg-gray-50 bg-gray-25">
+                      <td className="p-4 pl-12">
+                        <div className="font-medium text-gray-900">{order.moNumber}</div>
+                        <div className="text-sm text-gray-500">{order.productName || order.moNumber}</div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <Badge variant={
+                          order.status === 'assigned' ? 'default' :
+                          order.status === 'running' ? 'secondary' :
+                          order.status === 'done' ? 'outline' :
+                          'secondary'
+                        } className="text-xs">
+                          {order.status}
+                        </Badge>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className="font-medium text-gray-900">{order.quantity}</span>
+                      </td>
+                      {WORK_CENTERS.map(workCenter => {
+                        const workOrdersInCenter = order.workOrders?.filter(wo => wo.workCenter === workCenter) || [];
+                        return (
+                          <td key={workCenter} className="p-4 text-center">
+                            {workOrdersInCenter.length > 0 ? (
+                              <div className="space-y-1">
+                                {workOrdersInCenter.map(workOrder => (
+                                  <div key={workOrder.id} className="text-xs">
+                                    <Select>
+                                      <SelectTrigger className="w-full h-7 text-xs">
+                                        <SelectValue placeholder="Assign operator" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                                        <SelectItem value="operator1">Courtney Banh</SelectItem>
+                                        <SelectItem value="operator2">Devin Cann</SelectItem>
+                                        <SelectItem value="operator3">Sam Alter</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <div className="text-gray-500 mt-1">
+                                      {workOrder.operation} ({workOrder.state})
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
