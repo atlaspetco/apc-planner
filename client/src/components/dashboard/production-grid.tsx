@@ -10,6 +10,7 @@ interface ProductionGridProps {
   isLoading: boolean;
   workCenters?: string[];
   assignments?: Map<number, any>;
+  onAssignmentChange?: () => void;
 }
 
 // Work centers will be loaded dynamically from API
@@ -29,7 +30,7 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
   return grouped;
 };
 
-export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS, assignments = new Map() }: ProductionGridProps) {
+export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS, assignments = new Map(), onAssignmentChange }: ProductionGridProps) {
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
@@ -246,8 +247,9 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                       currentOperatorId={currentAssignment?.operatorId}
                                       currentOperatorName={currentAssignment?.operatorName}
                                       onAssignmentChange={(workOrderId, operatorId, estimatedHours) => {
-                                        // Handle assignment change - could update local state or refetch data
+                                        // Trigger refresh of assignments data
                                         console.log('Assignment changed:', { workOrderId, operatorId, estimatedHours });
+                                        onAssignmentChange?.();
                                       }}
                                     />
                                   );

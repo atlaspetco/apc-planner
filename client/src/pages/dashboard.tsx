@@ -151,6 +151,7 @@ export default function Dashboard() {
           productionOrders={filteredOrders}
           isLoading={isLoadingPOs}
           assignments={assignmentsMap}
+          onAssignmentChange={refetchAssignments}
         />
       </div>
     </div>
