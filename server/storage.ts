@@ -5,8 +5,6 @@ import {
   operators, 
   uphData, 
   batches,
-  historicalUph,
-  workCycles,
   type User, 
   type InsertUser,
   type ProductionOrder,
@@ -97,7 +95,7 @@ export class MemStorage implements IStorage {
     ];
 
     testOperators.forEach(op => {
-      const operator = { ...op, id: this.currentId++, isActive: true, uphCalculationWindow: 30, slackUserId: null, lastActiveDate: new Date() };
+      const operator = { ...op, id: this.currentId++, isActive: true, uphCalculationWindow: 30, email: null, lastActiveDate: new Date() };
       this.operators.set(operator.id, operator);
     });
 
@@ -388,11 +386,15 @@ export class DatabaseStorage implements IStorage {
 
   async getProductionOrders(statusFilter?: string[], excludeCompleted = true): Promise<ProductionOrder[]> {
     if (statusFilter && statusFilter.length > 0) {
-      return await db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
+      return db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
+    } else if (excludeCompleted) {
+      // By default, show only assigned MOs (matching user's 38 assigned requirement)
+      return db.select().from(productionOrders).where(
+        eq(productionOrders.status, 'assigned')
+      );
     }
     
-    // When no specific filter is applied, show all production orders (let frontend filter control this)
-    return await db.select().from(productionOrders);
+    return db.select().from(productionOrders);
   }
 
   async getProductionOrder(id: number): Promise<ProductionOrder | undefined> {
@@ -418,11 +420,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWorkOrders(): Promise<WorkOrder[]> {
-    return await db.select().from(workOrders).orderBy(workOrders.id);
+    return db.select().from(workOrders).orderBy(workOrders.id);
   }
 
   async getWorkOrdersByProductionOrder(productionOrderId: number): Promise<WorkOrder[]> {
-    return await db.select().from(workOrders).where(eq(workOrders.productionOrderId, productionOrderId));
+    return db.select().from(workOrders).where(eq(workOrders.productionOrderId, productionOrderId));
   }
 
   async getWorkOrder(id: number): Promise<WorkOrder | undefined> {
@@ -449,9 +451,9 @@ export class DatabaseStorage implements IStorage {
 
   async getOperators(activeOnly = true): Promise<Operator[]> {
     if (activeOnly) {
-      return await db.select().from(operators).where(eq(operators.isActive, true));
+      return db.select().from(operators).where(eq(operators.isActive, true));
     }
-    return await db.select().from(operators);
+    return db.select().from(operators);
   }
 
   async getOperator(id: number): Promise<Operator | undefined> {
@@ -484,37 +486,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateOperator(id: number, updates: Partial<Operator>): Promise<Operator | undefined> {
-    // Map frontend field names to database field names
-    const fieldMapping: Record<string, string> = {
-      'productRoutings': 'routings'
-    };
-    
-    // Filter out undefined values and non-updateable fields, and map field names
-    const filteredUpdates = Object.fromEntries(
-      Object.entries(updates)
-        .filter(([key, value]) => value !== undefined && key !== 'id')
-        .map(([key, value]) => [fieldMapping[key] || key, value])
-    );
-    
-    if (Object.keys(filteredUpdates).length === 0) {
-      // If no valid updates, just return the existing operator
-      return this.getOperator(id);
-    }
-
-    console.log('Updating operator:', { id, originalUpdates: updates, filteredUpdates });
-
-    try {
-      const [operator] = await db
-        .update(operators)
-        .set(filteredUpdates)
-        .where(eq(operators.id, id))
-        .returning();
-      return operator || undefined;
-    } catch (error) {
-      console.error('Error updating operator:', error);
-      console.error('Filtered updates:', filteredUpdates);
-      throw error;
-    }
+    const [operator] = await db
+      .update(operators)
+      .set(updates)
+      .where(eq(operators.id, id))
+      .returning();
+    return operator || undefined;
   }
 
   async getAvailableOperators(workCenter: string, operation: string, routing: string): Promise<Operator[]> {
@@ -541,10 +518,10 @@ export class DatabaseStorage implements IStorage {
     if (operation) conditions.push(eq(uphData.operation, operation));
     
     if (conditions.length > 0) {
-      return await query.where(and(...conditions));
+      return query.where(and(...conditions));
     }
     
-    return await query;
+    return query;
   }
 
   async getOperatorUph(operatorId: number, workCenter: string, operation: string, routing: string): Promise<UphData | undefined> {
@@ -577,7 +554,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBatches(): Promise<Batch[]> {
-    return await db.select().from(batches);
+    return db.select().from(batches);
   }
 
   async getBatch(id: number): Promise<Batch | undefined> {

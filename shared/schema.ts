@@ -64,7 +64,7 @@ export const workOrders = pgTable("work_orders", {
 export const operators = pgTable("operators", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  slackUserId: text("slack_user_id"),
+  email: text("email"),
   availableHours: integer("available_hours").default(40),
   workCenters: text("work_centers").array(), // Array of work centers they're trained in
   routings: text("routings").array(), // Array of routings they know
@@ -75,30 +75,15 @@ export const operators = pgTable("operators", {
   fulfilId: integer("fulfil_id"), // Reference to Fulfil.io employee ID
 });
 
-export const workOrderAssignments = pgTable("work_order_assignments", {
-  id: serial("id").primaryKey(),
-  workOrderId: integer("work_order_id").notNull(), // Fulfil work order ID (not local DB ID)
-  operatorId: integer("operator_id").references(() => operators.id, { onDelete: "cascade" }).notNull(),
-  assignedAt: timestamp("assigned_at").defaultNow(),
-  assignedBy: text("assigned_by").default("dashboard"), // Could track which user made assignment
-  isActive: boolean("is_active").default(true)
-});
-
 export const uphData = pgTable("uph_data", {
   id: serial("id").primaryKey(),
   operatorId: integer("operator_id").references(() => operators.id, { onDelete: "cascade" }),
-  operatorName: text("operator_name").notNull(),
   workCenter: text("work_center").notNull(),
   operation: text("operation").notNull(),
-  productRouting: text("product_routing").notNull(),
-  uph: real("uph").notNull(), // Units per hour
-  observationCount: integer("observation_count").default(1),
-  totalDurationHours: real("total_duration_hours"),
-  totalQuantity: integer("total_quantity"),
-  dataSource: text("data_source").default("manual"),
+  routing: text("routing").notNull(),
+  unitsPerHour: real("units_per_hour").notNull(),
   calculationPeriod: integer("calculation_period").default(30), // days
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  lastUpdated: timestamp("last_updated").defaultNow(),
 });
 
 export const batches = pgTable("batches", {
@@ -134,9 +119,7 @@ export const workCycles = pgTable("work_cycles", {
   work_id: integer("work_id"), // work/id
   work_operator_id: integer("work_operator_id"), // work/operator/id
   work_center_id: integer("work_center_id"), // work_center/id
-  state: text("state"), // work cycle state (done, etc.)
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Fulfil reference tables for ID to name mappings
@@ -151,26 +134,6 @@ export const fulfilOperations = pgTable("fulfil_operations", {
   id: integer("id").primaryKey(), // Fulfil operation ID
   name: text("name").notNull(), // Operation name from Fulfil
   workCenterId: integer("work_center_id"), // Associated work center ID
-  lastUpdated: timestamp("last_updated").defaultNow(),
-});
-
-// Production Routing table - mirrors exact Fulfil API schema
-export const productionRouting = pgTable("production_routing", {
-  id: integer("id").primaryKey(), // Fulfil routing ID
-  active: boolean("active").default(true), // Active status
-  create_date: timestamp("create_date"), // Created At (Timestamp) - readonly
-  create_uid: integer("create_uid"), // Create User - readonly
-  messages: json("messages"), // Messages - readonly  
-  metadata: json("metadata"), // Metadata
-  metafields: json("metafields"), // Metafields
-  name: text("name").notNull(), // Name - required
-  private_notes: json("private_notes"), // Private Notes - readonly
-  public_notes: json("public_notes"), // Public Notes - readonly
-  rec_blurb: json("rec_blurb"), // Blurb - readonly
-  rec_name: text("rec_name"), // Record Name (Title) - readonly
-  steps: json("steps"), // Steps - one2many
-  write_date: timestamp("write_date"), // Updated At (Timestamp) - readonly
-  write_uid: integer("write_uid"), // Write User - readonly
   lastUpdated: timestamp("last_updated").defaultNow(),
 });
 
@@ -189,7 +152,6 @@ export const fulfilOperators = pgTable("fulfil_operators", {
 // Historical UPH calculations from completed work orders
 export const historicalUph = pgTable("historical_uph", {
   id: serial("id").primaryKey(),
-  operatorId: integer("operator_id"), // Operator ID for consistent matching
   routing: text("routing").notNull(), // Template/Routing name from MO
   operation: text("operation").notNull(),
   operator: text("operator"), // Operator name (nullable for routing-only calculations)
@@ -292,7 +254,7 @@ export type InsertUphCalculationData = z.infer<typeof insertUphCalculationDataSc
 export const statusFilterSchema = z.array(z.enum(["Requests", "Draft", "Waiting", "Assigned", "Running"]));
 
 export const operatorAssignmentSchema = z.object({
-  workOrderId: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]),
+  workOrderId: z.number(),
   operatorId: z.number(),
 });
 
