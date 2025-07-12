@@ -71,10 +71,12 @@ async function syncProject() {
     'server/index.ts',
     'server/routes.ts',
     'server/fulfil-current.ts',
+    'server/rec-name-parser.ts',
+    'server/work-order-enrichment.ts', 
+    'server/enhanced-uph-calculation.ts',
     'client/src/App.tsx',
-    'client/src/components/dashboard/planning-grid.tsx',
-    'client/src/components/dashboard/batch-section.tsx',
-    'client/src/components/dashboard/operator-summary.tsx',
+    'client/src/components/dashboard/production-grid.tsx',
+    'client/src/pages/dashboard.tsx',
     'client/src/pages/uph-analytics.tsx',
     'shared/schema.ts'
   ];
