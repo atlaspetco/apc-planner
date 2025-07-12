@@ -72,8 +72,8 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
           <thead className="bg-gray-50 border-b">
             <tr>
               <th className="text-left p-4 font-medium text-gray-900">Routing / Production Order</th>
-              <th className="text-center p-4 font-medium text-gray-900">Status</th>
               <th className="text-center p-4 font-medium text-gray-900">Qty</th>
+              <th className="text-center p-4 font-medium text-gray-900">Status</th>
               {WORK_CENTERS.map(workCenter => (
                 <th key={workCenter} className="text-center p-4 font-medium text-gray-900 min-w-[150px]">
                   {workCenter}
@@ -111,8 +111,10 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                       >
                         {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         <div className="flex flex-col items-start">
-                          <span>{routing}</span>
-                          <span className="text-sm text-blue-600">({orders.length} MOs)</span>
+                          <div className="flex items-center space-x-2">
+                            <span>{routing}</span>
+                            <span className="text-sm text-blue-600">({orders.length} MOs)</span>
+                          </div>
                           <div className="flex space-x-1 mt-1">
                             {Object.entries(statusCounts).map(([status, count]) => (
                               <Badge key={status} className={`text-xs ${
@@ -130,10 +132,10 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                       </button>
                     </td>
                     <td className="p-4 text-center">
-                      {/* Status column now empty since badges moved to routing name */}
+                      <span className="font-medium text-gray-900">{totalQty}</span>
                     </td>
                     <td className="p-4 text-center">
-                      <span className="font-medium text-gray-900">{totalQty}</span>
+                      {/* Status column now empty since badges moved to routing name */}
                     </td>
                     {WORK_CENTERS.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
@@ -172,6 +174,9 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                         <div className="text-sm text-gray-500">{order.productName || order.moNumber}</div>
                       </td>
                       <td className="p-4 text-center">
+                        <span className="font-medium text-gray-900">{order.quantity}</span>
+                      </td>
+                      <td className="p-4 text-center">
                         <Badge variant={
                           order.status === 'assigned' ? 'default' :
                           order.status === 'running' ? 'secondary' :
@@ -180,9 +185,6 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                         } className="text-xs">
                           {order.status}
                         </Badge>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className="font-medium text-gray-900">{order.quantity}</span>
                       </td>
                       {WORK_CENTERS.map(workCenter => {
                         const workOrdersInCenter = order.workOrders?.filter(wo => wo.workCenter === workCenter) || [];
