@@ -484,15 +484,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateOperator(id: number, updates: Partial<Operator>): Promise<Operator | undefined> {
-    // Filter out undefined values and non-updateable fields
+    // Map frontend field names to database field names
+    const fieldMapping: Record<string, string> = {
+      'productRoutings': 'routings'
+    };
+    
+    // Filter out undefined values and non-updateable fields, and map field names
     const filteredUpdates = Object.fromEntries(
-      Object.entries(updates).filter(([key, value]) => value !== undefined && key !== 'id')
+      Object.entries(updates)
+        .filter(([key, value]) => value !== undefined && key !== 'id')
+        .map(([key, value]) => [fieldMapping[key] || key, value])
     );
     
     if (Object.keys(filteredUpdates).length === 0) {
       // If no valid updates, just return the existing operator
       return this.getOperator(id);
     }
+
+    console.log('Updating operator:', { id, originalUpdates: updates, filteredUpdates });
 
     try {
       const [operator] = await db
