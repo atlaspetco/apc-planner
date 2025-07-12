@@ -19,82 +19,114 @@ import {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  // Main production orders endpoint - return fake/sample data for testing
+  // Main production orders endpoint - fetch active MOs from Fulfil production.work API
   app.get("/api/production-orders", async (req, res) => {
     try {
-      console.log('Returning fake sample data for testing');
-      
-      // Generate fake production orders for demonstration
-      const fakeProductionOrders = [
-        {
-          id: 1001,
-          rec_name: "MO10001",
-          state: 'waiting',
-          workOrders: [
-            { id: 2001, rec_name: "WO2001 | Cutting | MO10001", state: 'assigned' },
-            { id: 2002, rec_name: "WO2002 | Assembly | MO10001", state: 'waiting' }
-          ]
-        },
-        {
-          id: 1002,
-          rec_name: "MO10002", 
-          state: 'assigned',
-          workOrders: [
-            { id: 2003, rec_name: "WO2003 | Cutting | MO10002", state: 'running' },
-            { id: 2004, rec_name: "WO2004 | Packaging | MO10002", state: 'waiting' }
-          ]
-        },
-        {
-          id: 1003,
-          rec_name: "MO10003",
-          state: 'running', 
-          workOrders: [
-            { id: 2005, rec_name: "WO2005 | Assembly | MO10003", state: 'running' }
-          ]
-        }
-      ];
-
-      const productionOrders = fakeProductionOrders;
-
-      
-      if (!Array.isArray(productionOrders)) {
-        console.error('Unexpected production data format:', productionOrders);
-        return res.status(500).json({ message: "Invalid production data format" });
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Step 3: Build fake dataset for demonstration
-      const plannedProductionOrders = productionOrders.map(po => {        
-        const associatedWorkOrders = po.workOrders.map(wo => ({
+      // Fetch active work orders from Fulfil - API doesn't support multiple states in one call
+      // So we'll fetch the two main active states: 'request' and 'draft'
+      const [requestResponse, draftResponse] = await Promise.all([
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request&per_page=50', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+          }
+        }),
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=draft&per_page=50', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+          }
+        })
+      ]);
+
+      if (!requestResponse.ok || !draftResponse.ok) {
+        console.error(`Fulfil API error: request=${requestResponse.status}, draft=${draftResponse.status}`);
+        // Fallback to local database if API fails
+        const localOrders = await storage.getProductionOrders();
+        console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
+        return res.json(localOrders);
+      }
+
+      const [requestData, draftData] = await Promise.all([
+        requestResponse.json(),
+        draftResponse.json()
+      ]);
+
+      // Combine the results
+      const workOrdersData = [...requestData, ...draftData];
+      console.log(`Fetched ${workOrdersData.length} active work orders from production.work endpoint`);
+      console.log('Sample work order data:', workOrdersData.slice(0, 2));
+
+      if (!Array.isArray(workOrdersData)) {
+        console.error('Unexpected API response format:', workOrdersData);
+        return res.status(500).json({ message: "Invalid API response format" });
+      }
+
+      // Import product routing mapper
+      const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
+
+      // Group work orders by production order to create MOs
+      const productionOrderMap = new Map();
+      
+      for (const wo of workOrdersData) {
+        // Parse rec_name to extract MO number: "WO33391 | Cutting - Webbing | MO184337"
+        const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
+        const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${wo.id}`;
+        
+        const workCenter = recNameParts.length >= 2 ? recNameParts[1] : 'Unknown';
+        const woNumber = recNameParts.length >= 1 ? recNameParts[0] : `WO${wo.id}`;
+        
+        // For now, use the CSV mapping system since API fields require special handling
+        const productCode = extractProductCode(moNumber, wo.rec_name || '');
+        const productName = productCode || moNumber;
+        const routing = getRoutingForProduct(productCode);
+        
+        console.log(`MO: ${moNumber}, Product Code: ${productCode}, Routing: ${routing}`);
+        
+        // Use production order quantity from API if available, default to work order total quantity
+        const totalQuantity = wo.production?.quantity || wo.quantity || 0;
+        
+        if (!productionOrderMap.has(moNumber)) {
+          productionOrderMap.set(moNumber, {
+            id: wo.id,
+            moNumber: moNumber,
+            productName: productName,
+            quantity: totalQuantity,
+            status: wo.state || 'draft',
+            state: wo.state || 'draft',
+            routing: routing,
+            routingName: routing,
+            dueDate: null,
+            fulfilId: wo.id,
+            rec_name: moNumber,
+            planned_date: null,
+            product_code: productCode,
+            workOrders: []
+          });
+        }
+        
+        // Add work order to production order
+        const po = productionOrderMap.get(moNumber);
+        po.workOrders.push({
           id: wo.id,
-          workCenter: wo.rec_name ? wo.rec_name.split(' | ')[1] || 'Unknown' : 'Unknown',
-          operation: wo.rec_name ? wo.rec_name.split(' | ')[0] || `WO${wo.id}` : `WO${wo.id}`,
+          workCenter: workCenter,
+          operation: woNumber,
           state: wo.state,
-          quantity: 100 + Math.floor(Math.random() * 200), // Random quantity 100-300
-          assignedOperator: null,
-          estimatedHours: Math.floor(Math.random() * 8) + 1 // Random 1-8 hours
-        }));
+          quantity: wo.quantity || 0
+        });
+      }
 
-        return {
-          id: po.id,
-          moNumber: po.rec_name,
-          productName: `Sample Product ${po.id}`,
-          quantity: 100 + Math.floor(Math.random() * 400), // Random quantity 100-500
-          status: po.state,
-          state: po.state,
-          routing: 'Sample Product Routing',
-          routingName: 'Sample Product Routing',
-          dueDate: new Date(Date.now() + Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-          fulfilId: po.id,
-          rec_name: po.rec_name,
-          planned_date: new Date(Date.now() + Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-          product_code: `PROD-${po.id}`,
-          productionId: po.id,
-          workOrders: associatedWorkOrders
-        };
-      });
-
-      console.log(`Built ${plannedProductionOrders.length} fake production orders for demonstration`);
-      return res.json(plannedProductionOrders);
+      const productionOrders = Array.from(productionOrderMap.values());
+      
+      console.log(`Converted to ${productionOrders.length} production orders from active work orders`);
+      
+      res.json(productionOrders);
     } catch (error) {
       console.error("Error fetching production orders from Fulfil:", error);
       // Fallback to local database
