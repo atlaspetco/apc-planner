@@ -228,125 +228,9 @@ export class FulfilAPIService {
         routing: po.routing || {},
         create_date: po.create_date
       }));
-    } catch (error) {
-      console.error("Error fetching recent production orders:", error);
-      return [];
-    }
-  }
-
-  async fetchProductionOrders(limit: number = 1000, state?: string): Promise<FulfilProductionOrder[]> {
-    try {
-      if (!this.apiKey) return [];
-
-      // Use correct GET endpoint with state parameter as per API schema
-      let endpoint = `${this.baseUrl}/api/v2/model/production`;
-      
-      const params = new URLSearchParams();
-      params.append('per_page', limit.toString());
-      if (state) {
-        params.append('state', state);
-      }
-      
-      endpoint += `?${params.toString()}`;
-
-      console.log(`Fetching ${limit} production orders with state: ${state || 'all'} from: ${endpoint}`);
-      
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: this.headers,
-        signal: AbortSignal.timeout(30000)
-      });
-
-      if (response.status !== 200) {
-        console.error(`Error fetching production orders: ${response.status} - ${await response.text()}`);
-        return [];
-      }
-
-      const productionOrders = await response.json();
-      console.log(`Fetched ${Array.isArray(productionOrders) ? productionOrders.length : 'unknown'} production orders`);
-      
-      if (!Array.isArray(productionOrders)) {
-        console.error("Unexpected response format:", productionOrders);
-        return [];
-      }
-
-      // Show a sample for debugging
-      if (productionOrders.length > 0) {
-        console.log("=== PRODUCTION ORDER SAMPLE ===");
-        console.log(JSON.stringify(productionOrders[0], null, 2));
-        console.log("=== END SAMPLE ===");
-      }
-
-      // Transform to expected format (API should already be filtered by state)
-      return productionOrders.map((po: any) => ({
-        id: po.id,
-        rec_name: po.rec_name || `MO${po.id}`,
-        state: po.state || 'unknown',
-        quantity: po.quantity || 0,
-        planned_date: po.planned_date,
-        'product.code': po['product.code'],
-        'routing.name': po['routing.name'],
-        product: po.product || {},
-        routing: po.routing || {},
-        create_date: po.create_date
-      }));
 
     } catch (error) {
-      console.error("Error fetching production orders:", error);
-      return [];
-    }
-  }
-
-  async fetchWorkOrders(params: { production?: number } = {}): Promise<FulfilWorkOrder[]> {
-    try {
-      if (!this.apiKey) return [];
-
-      let endpoint = `${this.baseUrl}/api/v2/model/production.work`;
-      
-      const urlParams = new URLSearchParams();
-      urlParams.append('per_page', '100');
-      if (params.production) {
-        urlParams.append('production', params.production.toString());
-      }
-      
-      endpoint += `?${urlParams.toString()}`;
-
-      console.log(`Fetching work orders from: ${endpoint}`);
-      
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: this.headers,
-        signal: AbortSignal.timeout(30000)
-      });
-
-      if (response.status !== 200) {
-        console.error(`Error fetching work orders: ${response.status} - ${await response.text()}`);
-        return [];
-      }
-
-      const workOrders = await response.json();
-      
-      if (!Array.isArray(workOrders)) {
-        console.error("Unexpected work orders response format:", workOrders);
-        return [];
-      }
-
-      return workOrders.map((wo: any) => ({
-        id: wo.id,
-        production: wo.production || params.production || 0,
-        rec_name: wo.rec_name || `WO${wo.id}`,
-        state: wo.state || 'unknown',
-        work_center: wo.work_center,
-        operation: wo.operation,
-        'work_center.name': wo['work_center.name'],
-        'operation.name': wo['operation.name'],
-        'operator.name': wo['operator.name'],
-        quantity_done: wo.quantity_done || 0,
-        planned_date: wo.planned_date,
-        create_date: wo.create_date
-      }));
-    } catch (error) {
-      console.error("Error fetching work orders:", error);
+      console.error('Error fetching recent manufacturing orders:', error);
       return [];
     }
   }
@@ -580,7 +464,7 @@ export class FulfilAPIService {
       const requestBody = {
         filters: filters,
         fields: [
-          'id', 'rec_name', 'state', 'duration', 'quantity_done', 'write_date'
+          'id', 'rec_name', 'state', 'duration', 'write_date'
         ],
         limit: limit,
         offset: offset,
@@ -624,7 +508,7 @@ export class FulfilAPIService {
       return data.map((cycle: any) => {
         // Parse duration from Fulfil's timedelta format
         let duration = 0;
-        const durationField = cycle.duration || cycle['duration'];
+        const durationField = cycle['work/cycles/duration'];
         if (durationField) {
           if (typeof durationField === 'number') {
             duration = durationField;
@@ -633,13 +517,6 @@ export class FulfilAPIService {
           } else if (typeof durationField === 'string') {
             duration = parseFloat(durationField);
           }
-        }
-
-        // Parse quantity_done from the cycle data
-        let quantityDone = 0;
-        const quantityField = cycle.quantity_done || cycle['quantity_done'];
-        if (quantityField !== null && quantityField !== undefined) {
-          quantityDone = Number(quantityField) || 0;
         }
 
         // Parse operator and work center from rec_name (e.g., "Assembly - Rope | Evan Crosby | Rope")
@@ -653,7 +530,6 @@ export class FulfilAPIService {
           rec_name: cycle.rec_name || `Cycle ${cycle.id}`,
           state: cycle.state || 'unknown',
           duration: duration,
-          quantity_done: quantityDone,
           operator: operatorName ? { 
             rec_name: operatorName,
             write_date: cycle.write_date 

@@ -363,7 +363,7 @@ export class MemStorage implements IStorage {
 }
 
 import { db } from "./db";
-import { eq, and, inArray, notInArray, not } from "drizzle-orm";
+import { eq, and, inArray, not } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
@@ -385,26 +385,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProductionOrders(statusFilter?: string[], excludeCompleted = true): Promise<ProductionOrder[]> {
-    console.log(`Getting production orders with status filter: ${statusFilter}, excludeCompleted: ${excludeCompleted}`);
-    
-    let query = db.select().from(productionOrders);
-    
     if (statusFilter && statusFilter.length > 0) {
-      console.log(`Filtering by statuses: ${statusFilter.join(', ')}`);
-      query = query.where(inArray(productionOrders.status, statusFilter));
+      return db.select().from(productionOrders).where(inArray(productionOrders.status, statusFilter));
     } else if (excludeCompleted) {
-      console.log("Excluding Done/Cancelled orders");
-      query = query.where(
-        notInArray(productionOrders.status, ['done', 'cancelled'])
+      // By default, show only assigned MOs (matching user's 38 assigned requirement)
+      return db.select().from(productionOrders).where(
+        eq(productionOrders.status, 'assigned')
       );
     }
     
-    // Add ordering by ID descending for consistent results
-    query = query.orderBy(productionOrders.id);
-    
-    const result = await query;
-    console.log(`Found ${result.length} production orders`);
-    return result;
+    return db.select().from(productionOrders);
   }
 
   async getProductionOrder(id: number): Promise<ProductionOrder | undefined> {

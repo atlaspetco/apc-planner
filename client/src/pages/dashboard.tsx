@@ -11,17 +11,17 @@ import MOWorkCenters from "@/components/dashboard/mo-work-centers";
 
 
 export default function Dashboard() {
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>(["assigned", "waiting", "running", "draft"]);
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [selectedMOs, setSelectedMOs] = useState<number[]>([]);
 
   const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
-    queryKey: ["/api/production-orders", statusFilter.join(",")],
+    queryKey: ["/api/production-orders", { status: JSON.stringify(statusFilter), timestamp: Date.now() }],
     enabled: true,
     retry: 3,
     retryDelay: 1000,
-    staleTime: 30000, // Cache for 30 seconds
-    gcTime: 300000, // Keep in memory for 5 minutes
+    staleTime: 0,
+    gcTime: 0,
   });
 
   // Get current production orders from Fulfil API

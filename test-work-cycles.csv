@@ -1,4 +1,0 @@
-work/cycles/duration,work/cycles/rec_name,work/cycles/operator/rec_name,work/cycles/operator/write_date,work/cycles/work_center/rec_name,work/cycles/quantity_done,work/production/number,work/production/product/code,work/production/routing/rec_name,work/rec_name,work/operation/rec_name,work/operation/id,work/id,work/operator/id,work_center/id,work/production/id,id
-0:45:30,Assembly - LHA | Courtney Banh | Sewing,Courtney Banh,2025-01-15 08:30:00,Sewing,50,MO178226,LHA-XS,Lifetime Air Harness,WO285,Assembly - LHA,123,285,30,1,5428,30001
-1:20:15,Cutting - Fabric | Evan Crosby | Cutting,Evan Crosby,2025-01-15 09:15:00,Cutting,25,MO178227,LHP-LG,Lifetime Pro Harness,WO286,Cutting - Fabric,124,286,35,2,5429,30002
-0:30:45,Packaging - Final | Sally Rudolfs | Packaging,Sally Rudolfs,2025-01-15 10:00:00,Packaging,100,MO178228,LLB-MD,Lifetime Lite Bowl,WO287,Packaging - Final,125,287,37,3,5430,30003

@@ -52,7 +52,7 @@ export class FulfilCurrentService {
         headers: this.headers,
         body: JSON.stringify({
           "filters": [
-            ['state', 'in', ['draft', 'waiting', 'assigned', 'running']]
+            ['state', '=', 'assigned']
           ],
           "fields": [
             'id', 'rec_name', 'number', 'state', 'quantity', 'quantity_done', 'quantity_remaining',

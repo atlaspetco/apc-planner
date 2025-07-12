@@ -199,31 +199,5 @@ export async function importWorkCyclesFinal(
   
   console.log(`===========================\n`);
   
-  // After importing work cycles, aggregate by Work Order ID
-  if (imported > 0) {
-    console.log("Starting Work Order aggregation...");
-    progressCallback?.(csvData.length, csvData.length + 100, "Aggregating work cycles by Work Order...");
-    
-    try {
-      const { aggregateWorkOrderDurations } = await import("./work-order-aggregator.js");
-      const aggregationResult = await aggregateWorkOrderDurations((current, total, message) => {
-        const baseProgress = csvData.length;
-        const aggregationProgress = Math.round((current / total) * 100);
-        progressCallback?.(baseProgress + aggregationProgress, csvData.length + 100, message);
-      });
-      
-      console.log(`Work Order aggregation complete: ${aggregationResult.aggregated} work orders processed`);
-      
-      if (aggregationResult.errors.length > 0) {
-        errors.push(...aggregationResult.errors);
-      }
-      
-    } catch (error) {
-      const errorMsg = `Work Order aggregation failed: ${error instanceof Error ? error.message : String(error)}`;
-      errors.push(errorMsg);
-      console.error(errorMsg);
-    }
-  }
-  
   return { imported, skipped, errors };
 }
