@@ -110,19 +110,22 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                         className="flex items-center space-x-2 font-medium text-gray-900 hover:text-gray-700"
                       >
                         {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                        <span>{routing}</span>
-                        <span className="text-sm text-blue-600">({orders.length} MOs)</span>
+                        <div className="flex flex-col items-start">
+                          <span>{routing}</span>
+                          <span className="text-sm text-blue-600">({orders.length} MOs)</span>
+                        </div>
                       </button>
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex justify-center space-x-1">
                         {Object.entries(statusCounts).map(([status, count]) => (
-                          <Badge key={status} variant={
-                            status === 'assigned' ? 'default' :
-                            status === 'running' ? 'secondary' :
-                            status === 'done' ? 'outline' :
-                            'secondary'
-                          } className="text-xs bg-blue-600 text-white">
+                          <Badge key={status} className={`text-xs ${
+                            status === 'assigned' ? 'bg-blue-500 text-white' :
+                            status === 'waiting' ? 'bg-blue-400 text-white' :
+                            status === 'running' ? 'bg-green-500 text-white' :
+                            status === 'done' ? 'bg-gray-500 text-white' :
+                            'bg-gray-400 text-white'
+                          }`}>
                             {count} {status}
                           </Badge>
                         ))}
