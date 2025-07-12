@@ -33,7 +33,9 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
 export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS, assignments = new Map(), onAssignmentChange }: ProductionGridProps) {
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
-  const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
+  // Start with all routings expanded to show individual work order assignments
+  const allRoutings = new Set(Object.keys(groupOrdersByRouting(productionOrders)));
+  const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(allRoutings);
   
   const toggleRouting = (routing: string) => {
     const newExpanded = new Set(expandedRoutings);
@@ -241,12 +243,13 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                               <div className="space-y-1">
                                 {workOrdersInCenter.map(workOrder => {
                                   const currentAssignment = assignments.get(workOrder.id);
-                                  console.log(`WO ${workOrder.id} assignment lookup:`, { 
+                                  console.log(`Individual WO ${workOrder.id} assignment lookup:`, { 
                                     workOrderId: workOrder.id, 
                                     workOrderType: typeof workOrder.id,
                                     workOrderObject: workOrder,
                                     currentAssignment,
-                                    assignmentsSize: assignments.size 
+                                    assignmentsSize: assignments.size,
+                                    isExpanded: true
                                   });
                                   
                                   // Debug: Ensure workOrder.id is valid before passing to OperatorDropdown
@@ -256,21 +259,25 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                   }
                                   
                                   return (
-                                    <OperatorDropdown
-                                      key={workOrder.id}
-                                      workOrderId={workOrder.id}
-                                      workCenter={workOrder.originalWorkCenter || workCenter}
-                                      routing={order.routing || ''}
-                                      operation={workOrder.operation || ''}
-                                      quantity={order.quantity}
-                                      currentOperatorId={currentAssignment?.operatorId}
-                                      currentOperatorName={currentAssignment?.operatorName}
-                                      onAssignmentChange={(workOrderId, operatorId, estimatedHours) => {
-                                        // Trigger refresh of assignments data
-                                        console.log('Assignment changed:', { workOrderId, operatorId, estimatedHours });
-                                        onAssignmentChange?.();
-                                      }}
-                                    />
+                                    <div key={workOrder.id} className="mb-1">
+                                      <div className="text-xs text-gray-500 mb-1">
+                                        WO {workOrder.id} • {workOrder.operation}
+                                      </div>
+                                      <OperatorDropdown
+                                        workOrderId={workOrder.id}
+                                        workCenter={workOrder.originalWorkCenter || workCenter}
+                                        routing={order.routing || ''}
+                                        operation={workOrder.operation || ''}
+                                        quantity={order.quantity}
+                                        currentOperatorId={currentAssignment?.operatorId}
+                                        currentOperatorName={currentAssignment?.operatorName}
+                                        onAssignmentChange={(workOrderId, operatorId, estimatedHours) => {
+                                          // Trigger refresh of assignments data
+                                          console.log('Individual assignment changed:', { workOrderId, operatorId, estimatedHours });
+                                          onAssignmentChange?.();
+                                        }}
+                                      />
+                                    </div>
                                   );
                                 })}
                               </div>
