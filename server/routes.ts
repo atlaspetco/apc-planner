@@ -26,25 +26,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Fetch work orders from Fulfil - temporarily include done orders for testing
-      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?per_page=20', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-        }
-      });
+      // Fetch active work orders from Fulfil - API doesn't support multiple states in one call
+      // So we'll fetch the two main active states: 'request' and 'draft'
+      const [requestResponse, draftResponse] = await Promise.all([
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request&per_page=50&fields=id,rec_name,state,production', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+          }
+        }),
+        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=draft&per_page=50&fields=id,rec_name,state,production', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+          }
+        })
+      ]);
 
-      if (!workOrdersResponse.ok) {
-        console.error(`Fulfil API error: ${workOrdersResponse.status}`);
+      if (!requestResponse.ok || !draftResponse.ok) {
+        console.error(`Fulfil API error: request=${requestResponse.status}, draft=${draftResponse.status}`);
         // Fallback to local database if API fails
         const localOrders = await storage.getProductionOrders();
         console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
         return res.json(localOrders);
       }
 
-      const workOrdersData = await workOrdersResponse.json();
-      console.log(`Fetched ${workOrdersData.length} work orders from production.work endpoint`);
+      const [requestData, draftData] = await Promise.all([
+        requestResponse.json(),
+        draftResponse.json()
+      ]);
+
+      // Combine the results
+      const workOrdersData = [...requestData, ...draftData];
+      console.log(`Fetched ${workOrdersData.length} active work orders from production.work endpoint`);
       console.log('Sample work order data:', workOrdersData.slice(0, 2));
 
       if (!Array.isArray(workOrdersData)) {
@@ -71,12 +87,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const productName = productCode || moNumber;
         const routing = getRoutingForProduct(productCode);
         
+        // Use production order quantity from API if available, default to work order total quantity
+        const totalQuantity = wo.production?.quantity || wo.quantity || 0;
+        
         if (!productionOrderMap.has(moNumber)) {
           productionOrderMap.set(moNumber, {
             id: wo.id,
             moNumber: moNumber,
             productName: productName,
-            quantity: wo.quantity || 0,
+            quantity: totalQuantity,
             status: wo.state || 'draft',
             state: wo.state || 'draft',
             routing: routing,
