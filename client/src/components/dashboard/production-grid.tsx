@@ -142,7 +142,10 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     </td>
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
-                      const totalQuantity = workOrdersInCenter.reduce((sum, wo) => sum + (wo.quantity || 0), 0);
+                      // Use manufacturing order quantities instead of work order quantities (which are often 0)
+                      const totalQuantity = orders
+                        .filter(order => (order.workOrders || []).some(wo => wo.workCenter === workCenter))
+                        .reduce((sum, order) => sum + (order.quantity || 0), 0);
                       
                       return (
                         <td key={workCenter} className="p-4 text-center">

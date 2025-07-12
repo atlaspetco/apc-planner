@@ -75,6 +75,23 @@ export function OperatorDropdown({
     }
   }, [workCenter, routing, operation]);
 
+  // Calculate estimated time based on quantity and operator UPH
+  const calculateEstimatedTime = (operatorUph: number): string => {
+    if (!quantity || operatorUph <= 0) return "No estimate";
+    
+    const hours = quantity / operatorUph;
+    const wholeHours = Math.floor(hours);
+    const minutes = Math.round((hours - wholeHours) * 60);
+    
+    if (wholeHours === 0) {
+      return `${minutes}m`;
+    } else if (minutes === 0) {
+      return `${wholeHours}h`;
+    } else {
+      return `${wholeHours}h${minutes}m`;
+    }
+  };
+
   const handleAssignment = async (operatorId: string) => {
     if (onAssign) {
       // For bulk assignment, use the onAssign callback
@@ -153,12 +170,18 @@ export function OperatorDropdown({
               <div className="flex items-center justify-between w-full min-w-0">
                 <span className="truncate">{operator.name}</span>
                 <div className="flex items-center space-x-1 ml-2">
-                  {operator.observations > 0 && operator.averageUph > 0 && (
-                    <Badge variant="secondary" className="text-xs px-1 py-0">
-                      {operator.averageUph.toFixed(1)} UPH
-                    </Badge>
-                  )}
-                  {(operator.observations === 0 || operator.averageUph === 0) && (
+                  {operator.observations > 0 && operator.averageUph > 0 ? (
+                    <div className="flex items-center space-x-1">
+                      <Badge variant="secondary" className="text-xs px-1 py-0">
+                        {operator.averageUph.toFixed(1)} UPH
+                      </Badge>
+                      {quantity > 0 && (
+                        <Badge variant="outline" className="text-xs px-1 py-0 bg-green-50 text-green-700 border-green-300">
+                          {calculateEstimatedTime(operator.averageUph)}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
                     <Badge variant="outline" className="text-xs px-1 py-0">
                       No data
                     </Badge>
