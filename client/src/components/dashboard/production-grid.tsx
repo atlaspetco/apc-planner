@@ -1,5 +1,4 @@
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProductionOrder } from "@shared/schema";
@@ -16,120 +15,101 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
   
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Production Planning Grid</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading production orders...</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="bg-white rounded-lg shadow">
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading production orders...</p>
+        </div>
+      </div>
     );
   }
 
   if (!productionOrders || productionOrders.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Production Planning Grid</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <p className="text-gray-600">No active production orders found</p>
-            <p className="text-sm text-gray-500 mt-2">System is ready for new production orders</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="bg-white rounded-lg shadow">
+        <div className="text-center py-8">
+          <p className="text-gray-600">No active production orders found</p>
+          <p className="text-sm text-gray-500 mt-2">System is ready for new production orders</p>
+        </div>
+      </div>
     );
   }
 
-  // Group production orders by routing
-  const routingGroups = productionOrders.reduce((acc, po) => {
-    const routing = po.routingName || 'Standard';
-    if (!acc[routing]) {
-      acc[routing] = [];
-    }
-    acc[routing].push(po);
-    return acc;
-  }, {} as Record<string, ProductionOrder[]>);
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Production Planning Grid</CardTitle>
-        <p className="text-sm text-gray-600">
-          {productionOrders.length} production orders across {Object.keys(routingGroups).length} routings
-        </p>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            {/* Header */}
-            <thead>
-              <tr className="border-b bg-gray-50">
-                <th className="text-left p-3 font-medium">Production Order</th>
-                <th className="text-left p-3 font-medium">Routing</th>
-                <th className="text-center p-3 font-medium">Status</th>
-                <th className="text-center p-3 font-medium">Qty</th>
-                {WORK_CENTERS.map(wc => (
-                  <th key={wc} className="text-center p-3 font-medium">{wc}</th>
-                ))}
-              </tr>
-            </thead>
-            
-            {/* Body */}
-            <tbody>
-              {productionOrders
-                .sort((a, b) => b.id - a.id) // Sort by ID descending (newest first)
-                .map((po) => (
-                <tr key={po.id} className="border-b hover:bg-gray-50">
-                  <td className="p-3">
-                    <div>
-                      <div className="font-medium">{po.moNumber}</div>
-                      <div className="text-sm text-gray-600">{po.productName}</div>
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    <Badge variant="outline">
-                      {po.routing || po.routingName || 'Standard'}
-                    </Badge>
-                  </td>
-                  <td className="p-3 text-center">
-                    <Badge 
-                      variant={
-                        po.status === 'running' ? 'default' :
-                        po.status === 'draft' ? 'secondary' :
-                        po.status === 'request' ? 'destructive' :
-                        'outline'
-                      }
-                    >
-                      {po.status}
-                    </Badge>
-                  </td>
-                  <td className="p-3 text-center">{po.quantity}</td>
-                  {WORK_CENTERS.map(workCenter => (
-                    <td key={workCenter} className="p-3 text-center">
-                      <Select>
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder="Assign..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unassigned">Unassigned</SelectItem>
-                          <SelectItem value="operator1">Operator 1</SelectItem>
-                          <SelectItem value="operator2">Operator 2</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </td>
-                  ))}
-                </tr>
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          {/* Header */}
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="text-left p-4 font-medium text-gray-900">Production Order</th>
+              <th className="text-left p-4 font-medium text-gray-900">Routing</th>
+              <th className="text-center p-4 font-medium text-gray-900">Status</th>
+              <th className="text-center p-4 font-medium text-gray-900">Qty</th>
+              {WORK_CENTERS.map(workCenter => (
+                <th key={workCenter} className="text-center p-4 font-medium text-gray-900 min-w-[150px]">
+                  {workCenter}
+                </th>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+            </tr>
+          </thead>
+
+          {/* Body */}
+          <tbody>
+            {productionOrders.map((order) => (
+              <tr key={order.id} className="border-b hover:bg-gray-50">
+                <td className="p-4">
+                  <div className="font-medium text-gray-900">{order.moNumber}</div>
+                  <div className="text-sm text-gray-500">{order.productName || order.moNumber}</div>
+                </td>
+                <td className="p-4">
+                  <span className="text-sm text-gray-900">{order.routing || 'Unknown Routing'}</span>
+                </td>
+                <td className="p-4 text-center">
+                  <Badge variant={
+                    order.status === 'assigned' ? 'default' :
+                    order.status === 'running' ? 'secondary' :
+                    order.status === 'done' ? 'outline' :
+                    'secondary'
+                  }>
+                    {order.status}
+                  </Badge>
+                </td>
+                <td className="p-4 text-center font-medium">{order.quantity}</td>
+                
+                {/* Work Center Columns */}
+                {WORK_CENTERS.map(workCenter => {
+                  const workOrder = order.workOrders?.find(wo => 
+                    wo.workCenter?.toLowerCase().includes(workCenter.toLowerCase())
+                  );
+                  
+                  return (
+                    <td key={workCenter} className="p-4 text-center">
+                      {workOrder ? (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-600">{workOrder.operation}</div>
+                          <Select>
+                            <SelectTrigger className="w-36 h-8 text-xs">
+                              <SelectValue placeholder="Select Operator" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="operator1">Courtney Banh</SelectItem>
+                              <SelectItem value="operator2">Devin Cann</SelectItem>
+                              <SelectItem value="operator3">Sam Alter</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">No work order</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
