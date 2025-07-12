@@ -2830,9 +2830,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
       
-      // Calculate summary statistics using consolidated data
+      // Calculate summary statistics using cleaned data
       const workCenterUph = new Map<string, number[]>();
-      consolidatedUphResults.forEach(row => {
+      cleanedUphResults.forEach(row => {
         const existing = workCenterUph.get(row.workCenter) || [];
         existing.push(row.unitsPerHour);
         workCenterUph.set(row.workCenter, existing);
@@ -2848,8 +2848,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         routings: routings.sort((a, b) => a.routingName.localeCompare(b.routingName)),
         summary: {
-          totalOperators: new Set(consolidatedUphResults.map(r => r.operatorId)).size,
-          totalCombinations: consolidatedUphResults.length,
+          totalOperators: new Set(cleanedUphResults.map(r => r.operatorId)).size,
+          totalCombinations: cleanedUphResults.length,
           totalRoutings: allRoutings.length,
           avgUphByCeter: avgUphByCenter
         },
