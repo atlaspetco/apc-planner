@@ -1,0 +1,49 @@
+Build a Production Planning Grid application with the following detailed requirements:
+
+## Core Functionality:
+
+The Production Planning Grid is designed to clearly display and manage operator assignments and projected completion times for Manufacturing Orders (MOs) across three primary work centers: **Cutting**, **Assembly**, and **Packaging**.
+
+## Grid Structure:
+
+* **Columns:** Represent work centers (**Cutting**, **Assembly**, **Packaging**).
+* **Rows:** Represent unique **Product Routings** from currently active (incomplete) MOs.
+
+## Operator Assignment:
+
+* Each cell (intersection of Routing row and Work Center column) initially defaults to the assumption that one operator handles all associated production.
+* Each cell includes a dropdown allowing the assignment of specific operators for granular management at the individual MO level.
+
+## UPH (Units Per Hour) Calculation:
+
+* Aggregate historical completed Work Cycle durations (in seconds) by Operator + Routing + Work Center from MOs in the "Done" state.
+* Convert aggregated duration to hours and calculate UPH:
+  $\text{UPH} = \frac{\text{Total Quantity Produced}}{\frac{\text{Aggregated Duration (seconds)}}{3600}}$
+* Average UPH per Operator, Routing, and Work Center combination based on a user-defined historical window specified in Operator Settings (e.g., last 30 days).
+
+## Forecasting Completion Times:
+
+* For each active MO, calculate estimated completion time based on:
+  $\text{Estimated Time (hrs)} = \frac{\text{MO Quantity}}{\text{Operator UPH}}$
+* Clearly display the estimated time within the corresponding cell.
+
+## Operator Settings:
+
+* Allow operators to define their historical averaging window (e.g., 30, 60, or 90 days).
+* Include toggles enabling or disabling assignment for specific Routings or Work Centers.
+* Specify operator scheduling constraints:
+
+  * Maximum weekly hours (e.g., 40 hours).
+  * Percentage of maximum hours scheduled (e.g., 90% of 40 hours = 36 hours per week).
+
+## UI & User Experience:
+
+* Ensure grid readability and intuitive operator assignment with dynamic dropdown selection.
+* Instantly recalculate estimated completion times upon operator assignment changes.
+* Provide visual indicators for workloads exceeding operator weekly constraints.
+
+## Future Proofing (V2 Readiness):
+
+* Build data structures and calculation logic ready to integrate OpenAI auto-assignment based on operator constraints and optimized scheduling.
+
+This grid must provide clear, accurate, actionable production planning metrics to improve resource allocation and production efficiency.

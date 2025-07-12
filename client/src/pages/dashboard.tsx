@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import FilterControls from "@/components/dashboard/filter-controls";
 import SummaryCards from "@/components/dashboard/summary-cards";
-import PlanningGrid from "@/components/dashboard/planning-grid";
+import ProductionGrid from "@/components/dashboard/production-grid";
 import OperatorSummary from "@/components/dashboard/operator-summary";
 import MOWorkCenters from "@/components/dashboard/mo-work-centers";
 
@@ -125,12 +125,10 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Main Planning Grid */}
-        <PlanningGrid 
+        {/* Main Production Grid */}
+        <ProductionGrid 
           productionOrders={productionOrders || []}
           isLoading={isLoadingPOs}
-          selectedMOs={selectedMOs}
-          onMOSelection={handleMOSelection}
         />
 
         {/* Operator Summary */}

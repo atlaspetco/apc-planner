@@ -37,21 +37,22 @@ export function LiveStatusIndicator() {
   const getStatusColor = () => {
     if (importStatus?.status === 'error') return 'text-red-500';
     if (importStatus?.status === 'importing') return 'text-yellow-500';
-    if (importStatus?.status === 'calculating') return 'text-blue-500';
+    if (importStatus?.status === 'calculating' || importStatus?.isCalculating) return 'text-blue-500';
     return 'text-green-500';
   };
 
   const getStatusIcon = () => {
     if (importStatus?.status === 'error') return <AlertCircle className="h-3 w-3" />;
     if (importStatus?.status === 'importing') return <Clock className="h-3 w-3 animate-pulse" />;
-    if (importStatus?.status === 'calculating') return <Activity className="h-3 w-3 animate-pulse" />;
+    if (importStatus?.status === 'calculating' || importStatus?.isCalculating) return <Activity className="h-3 w-3 animate-pulse" />;
     return <Activity className="h-3 w-3" />;
   };
 
   const getStatusText = () => {
     if (importStatus?.status === 'error') return 'Error';
     if (importStatus?.status === 'importing') return 'Importing';
-    if (importStatus?.status === 'calculating') return 'Calculating';
+    if (importStatus?.status === 'calculating') return 'Processing';
+    if (importStatus?.isCalculating) return 'Processing';
     return 'Live';
   };
 
@@ -75,6 +76,7 @@ export function LiveStatusIndicator() {
           <div className={`w-2 h-2 rounded-full ${
             importStatus?.status === 'error' ? 'bg-red-500' :
             importStatus?.status === 'importing' ? 'bg-yellow-500 animate-pulse' :
+            (importStatus?.status === 'calculating' || importStatus?.isCalculating) ? 'bg-blue-500 animate-pulse' :
             'bg-green-500'
           }`} />
           {getStatusIcon()}
