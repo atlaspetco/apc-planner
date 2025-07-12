@@ -52,19 +52,14 @@ export function OperatorDropdown({
   const assignedOperators = bulkAssignmentInfo.map(info => info.assignment.operatorName).filter(Boolean);
   const uniqueOperators = [...new Set(assignedOperators)];
   
-  // Debug logging
-  console.log(`OperatorDropdown for WO ${workOrderId || 'BULK'}:`, {
-    workOrderId,
-    workOrderIds,
-    hasSingleWO: !!workOrderId,
-    hasBulkWOs: !!workOrderIds,
-    bulkAssignments: bulkAssignmentInfo.length,
-    assignedOperators: uniqueOperators,
-    currentOperatorId,
-    currentOperatorName,
-    workCenter,
-    operation
-  });
+  // Debug logging  
+  if (uniqueOperators.length > 0) {
+    console.log(`✅ BULK ASSIGNMENT DETECTED for ${workCenter}:`, {
+      workOrderIds,
+      assignedOperators: uniqueOperators,
+      displayText: uniqueOperators.length === 1 ? `${uniqueOperators[0]} assigned` : `${uniqueOperators.length} operators assigned`
+    });
+  }
   const [qualifiedOperators, setQualifiedOperators] = useState<QualifiedOperator[]>([]);
   const [loading, setLoading] = useState(false);
   const [estimatedHours, setEstimatedHours] = useState<number | null>(null);
@@ -180,7 +175,7 @@ export function OperatorDropdown({
   return (
     <div className={`space-y-1 ${className || ''}`}>
       <Select 
-        value={workOrderIds ? (uniqueOperators.length === 1 ? "bulk-assigned" : "unassigned") : (currentOperatorId?.toString() || "unassigned")} 
+        value={workOrderIds ? (uniqueOperators.length > 0 ? "bulk-assigned" : "unassigned") : (currentOperatorId?.toString() || "unassigned")} 
         onValueChange={handleAssignment}
         disabled={loading}
       >
@@ -203,10 +198,15 @@ export function OperatorDropdown({
               <span>Unassigned</span>
             </div>
           </SelectItem>
-          {workOrderIds && uniqueOperators.length === 1 && (
+          {workOrderIds && uniqueOperators.length > 0 && (
             <SelectItem value="bulk-assigned" disabled>
               <div className="flex items-center justify-between w-full">
-                <span className="text-green-700 font-medium">{uniqueOperators[0]} assigned</span>
+                <span className="text-green-700 font-medium">
+                  {uniqueOperators.length === 1 ? 
+                    `${uniqueOperators[0]} assigned` : 
+                    `${uniqueOperators.length} operators assigned`
+                  }
+                </span>
               </div>
             </SelectItem>
           )}
