@@ -39,6 +39,14 @@ export function OperatorDropdown({
   onAssign,
   className
 }: OperatorDropdownProps) {
+  
+  // Debug logging
+  console.log(`OperatorDropdown for WO ${workOrderId}:`, {
+    currentOperatorId,
+    currentOperatorName,
+    workCenter,
+    operation
+  });
   const [qualifiedOperators, setQualifiedOperators] = useState<QualifiedOperator[]>([]);
   const [loading, setLoading] = useState(false);
   const [estimatedHours, setEstimatedHours] = useState<number | null>(null);

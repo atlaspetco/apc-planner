@@ -4,6 +4,7 @@ import { RefreshCw, Factory } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ProductionGrid from "@/components/dashboard/production-grid";
+import { OperatorWorkloadSummary } from "@/components/dashboard/operator-workload-summary";
 
 export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -50,6 +51,12 @@ export default function Dashboard() {
   if (assignmentsData?.assignments) {
     assignmentsData.assignments.forEach(assignment => {
       assignmentsMap.set(assignment.workOrderId, assignment);
+    });
+    console.log('Assignments Map created:', { 
+      totalAssignments: assignmentsData.assignments.length,
+      mapSize: assignmentsMap.size,
+      sampleKeys: Array.from(assignmentsMap.keys()).slice(0, 5),
+      sampleEntries: Array.from(assignmentsMap.entries()).slice(0, 3)
     });
   }
 
@@ -147,6 +154,9 @@ export default function Dashboard() {
 
       {/* Main content */}
       <div className="max-w-7xl mx-auto px-6 py-6">
+        {/* Operator Workload Summary */}
+        <OperatorWorkloadSummary assignments={assignmentsMap} />
+        
         <ProductionGrid 
           productionOrders={filteredOrders}
           isLoading={isLoadingPOs}

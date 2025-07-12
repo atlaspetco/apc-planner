@@ -236,6 +236,11 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                               <div className="space-y-1">
                                 {workOrdersInCenter.map(workOrder => {
                                   const currentAssignment = assignments.get(workOrder.id);
+                                  console.log(`WO ${workOrder.id} assignment lookup:`, { 
+                                    workOrderId: workOrder.id, 
+                                    currentAssignment,
+                                    assignmentsSize: assignments.size 
+                                  });
                                   return (
                                     <OperatorDropdown
                                       key={workOrder.id}
