@@ -27,7 +27,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Fetch active work orders from Fulfil using correct endpoint
-      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request,draft,waiting,assigned,running&per_page=100', {
+      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?state=draft&per_page=100', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -50,23 +50,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const productionOrderMap = new Map();
       
       for (const wo of workOrdersData) {
-        const moNumber = wo.production?.rec_name || wo.production?.number || `MO${wo.production?.id}`;
+        // Parse rec_name to extract MO number: "WO33391 | Cutting - Webbing | MO184337"
+        const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
+        const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${wo.id}`;
+        const workCenter = recNameParts.length >= 2 ? recNameParts[1] : 'Unknown';
+        const woNumber = recNameParts.length >= 1 ? recNameParts[0] : `WO${wo.id}`;
         
         if (!productionOrderMap.has(moNumber)) {
           productionOrderMap.set(moNumber, {
-            id: wo.production?.id || wo.id,
+            id: wo.id,
             moNumber: moNumber,
-            productName: wo.production?.product?.code || moNumber,
-            quantity: wo.production?.quantity || wo.quantity || 0,
+            productName: moNumber, // Use MO number as product name for now
+            quantity: wo.quantity || 0,
             status: wo.state || 'draft',
             state: wo.state || 'draft',
-            routing: wo.production?.routing?.name || 'Standard',
-            routingName: wo.production?.routing?.name || moNumber,
-            dueDate: wo.production?.planned_date || null,
-            fulfilId: wo.production?.id || wo.id,
+            routing: 'Standard', // Will be enhanced with actual routing data
+            routingName: moNumber,
+            dueDate: null,
+            fulfilId: wo.id,
             rec_name: moNumber,
-            planned_date: wo.production?.planned_date || null,
-            product_code: wo.production?.product?.code || null,
+            planned_date: null,
+            product_code: null,
             workOrders: []
           });
         }
@@ -75,8 +79,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const po = productionOrderMap.get(moNumber);
         po.workOrders.push({
           id: wo.id,
-          workCenter: wo.work_center?.rec_name || wo.work_center?.name || 'Unknown',
-          operation: wo.operation?.rec_name || wo.operation?.name || 'Unknown',
+          workCenter: workCenter,
+          operation: woNumber,
           state: wo.state,
           quantity: wo.quantity || 0
         });
