@@ -191,11 +191,14 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 operation=""
                                 quantity={totalQuantity}
                                 workOrderIds={workOrdersInCenter.map(wo => wo.id)}
-                                onAssign={(operatorId) => {
+                                assignments={assignments}
+                                onAssign={async (operatorId) => {
                                   // Bulk assign to all work orders in this work center for this routing
-                                  workOrdersInCenter.forEach(wo => {
-                                    handleOperatorAssign(wo.id, operatorId, wo.quantity || totalQuantity, routing, workCenter, wo.operation);
-                                  });
+                                  for (const wo of workOrdersInCenter) {
+                                    await handleOperatorAssign(wo.id, operatorId, wo.quantity || totalQuantity, routing, workCenter, wo.operation);
+                                  }
+                                  // Refresh assignments after bulk assignment
+                                  onAssignmentChange?.();
                                 }}
                                 className="w-full"
                               />

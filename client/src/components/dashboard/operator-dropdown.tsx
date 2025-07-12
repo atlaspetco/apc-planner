@@ -21,6 +21,7 @@ interface OperatorDropdownProps {
   quantity: number;
   currentOperatorId?: number | null;
   currentOperatorName?: string;
+  assignments?: Map<number, any>; // For bulk assignment display
   onAssignmentChange?: (workOrderId: number, operatorId: number | null, estimatedHours: number | null) => void;
   onAssign?: (operatorId: number) => void; // For bulk assignment
   className?: string;
@@ -35,10 +36,21 @@ export function OperatorDropdown({
   quantity,
   currentOperatorId,
   currentOperatorName,
+  assignments,
   onAssignmentChange,
   onAssign,
   className
 }: OperatorDropdownProps) {
+  
+  // For bulk assignments, analyze current assignments
+  const bulkAssignmentInfo = workOrderIds && assignments ? 
+    workOrderIds.map(woId => {
+      const assignment = assignments.get(woId);
+      return { workOrderId: woId, assignment };
+    }).filter(info => info.assignment) : [];
+  
+  const assignedOperators = bulkAssignmentInfo.map(info => info.assignment.operatorName).filter(Boolean);
+  const uniqueOperators = [...new Set(assignedOperators)];
   
   // Debug logging
   console.log(`OperatorDropdown for WO ${workOrderId || 'BULK'}:`, {
@@ -46,6 +58,8 @@ export function OperatorDropdown({
     workOrderIds,
     hasSingleWO: !!workOrderId,
     hasBulkWOs: !!workOrderIds,
+    bulkAssignments: bulkAssignmentInfo.length,
+    assignedOperators: uniqueOperators,
     currentOperatorId,
     currentOperatorName,
     workCenter,
@@ -171,7 +185,15 @@ export function OperatorDropdown({
         disabled={loading}
       >
         <SelectTrigger className="w-full h-8 text-xs bg-white border-gray-300">
-          <SelectValue placeholder={loading ? "Loading..." : ""} />
+          <SelectValue placeholder={
+            loading ? "Loading..." : 
+            workOrderIds ? (
+              uniqueOperators.length > 0 ? 
+                `${uniqueOperators.length === 1 ? uniqueOperators[0] : `${uniqueOperators.length} operators`} assigned` :
+                "Assign operator to all"
+            ) : 
+            "Select operator"
+          } />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="unassigned">
