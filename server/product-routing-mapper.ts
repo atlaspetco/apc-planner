@@ -38,10 +38,19 @@ const productRoutingMap = new Map<string, string>([
   // Real production codes from Fulfil API
   ['PB-4', 'Poop Bags'],
   ['LP-B', 'Lifetime Pouch'],
+  ['LP-I', 'Lifetime Pouch'],
+  ['LP-M', 'Lifetime Pouch'],
+  ['LP-W', 'Lifetime Pouch'],
   ['LH-MD', 'Lifetime Harness'],
   ['LH-SM', 'Lifetime Harness'],
   ['LH-LG', 'Lifetime Harness'],
-  ['LHA-XS', 'Lifetime Harness'],
+  ['LHA-XS', 'Lifetime Air Harness'],
+  ['LHP-LG', 'Lifetime Pro Harness'],
+  ['LHP-MD', 'Lifetime Pro Harness'],
+  ['LCP-W1-MD', 'Lifetime Pro Collar'],
+  ['LCP-O-LG', 'Lifetime Pro Collar'],
+  ['LCP-O1-F3', 'LCP Handle'],
+  ['LBB-B', 'Belt Bag'],
   ['LPL', 'Lifetime Loop'],
   
   // Lifetime Lite Collar products
@@ -149,9 +158,12 @@ export function getRoutingForProduct(productCode: string): string {
   const routing = productRoutingMap.get(productCode);
   if (routing) return routing;
   
-  // Pattern matching for common prefixes
-  if (productCode.startsWith('LH-') || productCode.startsWith('LHA-')) return 'Lifetime Harness';
+  // Pattern matching for common prefixes (order matters - more specific patterns first)
+  if (productCode.startsWith('LHA-')) return 'Lifetime Air Harness';
+  if (productCode.startsWith('LHP-')) return 'Lifetime Pro Harness';
+  if (productCode.startsWith('LH-')) return 'Lifetime Harness';
   if (productCode.startsWith('LCA-')) return 'Lifetime Lite Collar';
+  if (productCode.startsWith('LCP-')) return 'Lifetime Pro Collar';
   if (productCode.startsWith('LLA-')) return 'LLA';
   if (productCode.startsWith('LP-')) return 'Lifetime Pouch';
   if (productCode.startsWith('LC-')) return 'Lifetime Collar';

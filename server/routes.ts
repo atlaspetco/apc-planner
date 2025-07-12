@@ -168,7 +168,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Extract product information from manufacturing order
         const productCode = mo['product.code'] || '';
         const productName = mo['product.name'] || mo.rec_name;
-        const routing = mo['routing.name'] || getRoutingForProduct(productCode);
+        
+        // Use our corrected routing logic, especially for LHA- products which Fulfil incorrectly maps
+        let routing = mo['routing.name'] || getRoutingForProduct(productCode);
+        
+        // Override incorrect Fulfil routing for specific product codes
+        if (productCode.startsWith('LHA-')) {
+          console.log(`LHA Override: Original routing='${routing}', Product code='${productCode}'`);
+          routing = 'Lifetime Air Harness';
+          console.log(`LHA Override: New routing='${routing}'`);
+        }
         
         // Parse planned_date if it exists
         let plannedDate = null;
@@ -176,7 +185,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           plannedDate = new Date(mo.planned_date.iso_string);
         }
         
-        console.log(`MO: ${mo.rec_name}, Product: ${productName}, Code: ${productCode}, Routing: ${routing}`);
+        console.log(`MO: ${mo.rec_name}, Product: ${productName}, Code: '${productCode}', Routing: ${routing}`);
+        
+        // Debug LHA products specifically
+        if (productName.includes('Air Harness')) {
+          console.log(`DEBUG Air Harness: MO=${mo.rec_name}, ProductCode='${productCode}', RoutingFromAPI='${mo['routing.name']}', FinalRouting='${routing}'`);
+        }
         
         return {
           id: mo.id,
