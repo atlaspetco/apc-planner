@@ -26,8 +26,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Fetch only active (not done) work orders from Fulfil - exclude old test data
-      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request,draft,waiting,assigned,running&per_page=100', {
+      // Fetch work orders from Fulfil - temporarily include done orders for testing
+      const workOrdersResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?per_page=20', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -44,7 +44,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const workOrdersData = await workOrdersResponse.json();
-      console.log(`Fetched ${workOrdersData.length} active work orders from production.work endpoint`);
+      console.log(`Fetched ${workOrdersData.length} work orders from production.work endpoint`);
+      console.log('Sample work order data:', workOrdersData.slice(0, 2));
 
       if (!Array.isArray(workOrdersData)) {
         console.error('Unexpected API response format:', workOrdersData);
