@@ -60,8 +60,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             "routing.name",
             "works"
           ],
-          limit: 20,
-          order: [["id", "DESC"]]  // Newest orders first
+          limit: 50,
+          order: [["state", "ASC"], ["id", "DESC"]]  // Show assigned first, then waiting, newest within each state
         })
       });
 
