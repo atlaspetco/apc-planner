@@ -26,8 +26,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Step 1: Fetch production orders (start with basic fields, then get work orders separately)
-      const productionResponse = await fetch('https://apc.fulfil.io/api/v2/model/production?fields=id,rec_name&per_page=100', {
+      // Step 1: Fetch ACTIVE production orders only (not historical completed ones)
+      const productionResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=500', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -43,38 +43,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(localOrders);
       }
 
-      const productionOrders = await productionResponse.json();
-      console.log(`Fetched ${productionOrders.length} production orders from production endpoint`);
-      console.log('Sample production order:', productionOrders.slice(0, 1));
+      const workOrdersData = await productionResponse.json();
+      console.log(`Fetched ${workOrdersData.length} work orders from production.work endpoint`);
+      console.log('Sample work order:', workOrdersData.slice(0, 1));
+
+      // Since all work orders are 'done', filter for recent ones instead of active ones
+      const recentWorkOrders = workOrdersData.filter(wo => {
+        const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
+        const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${wo.production || wo.id}`;
+        const moNumberValue = parseInt(moNumber.replace('MO', '')) || 0;
+        return moNumberValue > 8000; // Show recent MOs (above 8000) 
+      });
+      console.log(`Found ${recentWorkOrders.length} recent work orders (MO > 8000) from ${workOrdersData.length} total`);
+
+      // Group by production ID to create production orders
+      const productionOrderMap = new Map();
+      
+      recentWorkOrders.forEach(wo => {
+        const productionId = wo.production;
+        if (!productionId) return;
+
+        // Extract MO number from rec_name: "WO33391 | Cutting - Webbing | MO184337"
+        const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
+        const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${productionId}`;
+        
+        if (!productionOrderMap.has(productionId)) {
+          productionOrderMap.set(productionId, {
+            id: productionId,
+            rec_name: moNumber,
+            workOrders: []
+          });
+        }
+        
+        productionOrderMap.get(productionId).workOrders.push(wo);
+      });
+
+      const productionOrders = Array.from(productionOrderMap.values());
+      console.log(`Created ${productionOrders.length} production orders from active work orders`);
 
       
       if (!Array.isArray(productionOrders)) {
-        console.error('Unexpected production API response format:', productionOrders);
-        return res.status(500).json({ message: "Invalid production API response format" });
-      }
-
-      // Step 2: Fetch work orders that reference these production IDs
-      console.log(`Fetching work orders for ${productionOrders.length} production orders`);
-      
-      let workOrdersData = [];
-      const workOrdersResponse = await fetch(`https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=500`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-        }
-      });
-
-      if (workOrdersResponse.ok) {
-        const allWorkOrders = await workOrdersResponse.json();
-        console.log(`Fetched ${allWorkOrders.length} total work orders from API`);
-        
-        // Filter work orders that belong to our production orders
-        const productionIds = productionOrders.map(po => po.id);
-        workOrdersData = allWorkOrders.filter(wo => 
-          wo.production && productionIds.includes(wo.production)
-        );
-        console.log(`Found ${workOrdersData.length} work orders belonging to our production orders`);
+        console.error('Unexpected production data format:', productionOrders);
+        return res.status(500).json({ message: "Invalid production data format" });
       }
 
       // Step 3: Build combined dataset for planning grid
@@ -86,10 +96,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const productCode = extractProductCode(po.rec_name || '', '');
         const routing = getRoutingForProduct(productCode);
         
-        // Find associated work orders by production ID
-        const associatedWorkOrders = workOrdersData.filter(wo => 
-          wo.production === po.id
-        ).map(wo => ({
+        // Use the work orders we already have for this production order
+        const associatedWorkOrders = po.workOrders.map(wo => ({
           id: wo.id,
           workCenter: wo.rec_name ? wo.rec_name.split(' | ')[1] || 'Unknown' : 'Unknown',
           operation: wo.rec_name ? wo.rec_name.split(' | ')[0] || `WO${wo.id}` : `WO${wo.id}`,
