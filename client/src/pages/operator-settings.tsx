@@ -341,7 +341,7 @@ export default function OperatorSettings() {
                 {/* Product Routings */}
                 <div className="space-y-3">
                   <h3 className="text-lg font-medium">Product Routings</h3>
-                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-2">
                     {routingsData?.routings?.map((routing: string) => {
                       const hasUphData = getOperatorRoutingsWithData(selectedOperator.name).includes(routing);
                       return (
