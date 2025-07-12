@@ -47,7 +47,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         body: JSON.stringify({
           filters: [
-            ["state", "=", "waiting"]  // Get waiting orders that have work orders
+            ["state", "in", ["waiting", "assigned"]]  // Get waiting and assigned orders that have work orders
           ],
           fields: [
             "id",
@@ -75,6 +75,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const manufacturingOrdersData = await manufacturingOrderResponse.json();
       console.log(`Fetched ${manufacturingOrdersData.length} active manufacturing orders from manufacturing_order endpoint`);
+      
+      // Log state distribution
+      const stateCounts = {};
+      manufacturingOrdersData.forEach(mo => {
+        stateCounts[mo.state] = (stateCounts[mo.state] || 0) + 1;
+      });
+      console.log('State distribution:', stateCounts);
       console.log('Sample MO data:', manufacturingOrdersData.slice(0, 2));
 
       if (!Array.isArray(manufacturingOrdersData)) {
