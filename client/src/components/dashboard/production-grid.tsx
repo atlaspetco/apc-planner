@@ -103,11 +103,11 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
               return (
                 <React.Fragment key={routing}>
                   {/* Routing header row */}
-                  <tr className="bg-blue-50 border-b-2 border-blue-200">
+                  <tr className="bg-gray-50 border-b border-gray-200">
                     <td className="p-4">
                       <button 
                         onClick={() => toggleRouting(routing)}
-                        className="flex items-center space-x-2 font-medium text-blue-900 hover:text-blue-700"
+                        className="flex items-center space-x-2 font-medium text-gray-900 hover:text-gray-700"
                       >
                         {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         <span>{routing}</span>
@@ -122,14 +122,14 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                             status === 'running' ? 'secondary' :
                             status === 'done' ? 'outline' :
                             'secondary'
-                          } className="text-xs">
+                          } className="text-xs bg-blue-600 text-white">
                             {count} {status}
                           </Badge>
                         ))}
                       </div>
                     </td>
                     <td className="p-4 text-center">
-                      <span className="font-medium text-blue-900">{totalQty}</span>
+                      <span className="font-medium text-gray-900">{totalQty}</span>
                     </td>
                     {WORK_CENTERS.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
@@ -138,8 +138,8 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                           {workOrdersInCenter.length > 0 ? (
                             <div className="space-y-1">
                               <Select>
-                                <SelectTrigger className="w-full h-8 text-xs bg-blue-100 border-blue-300">
-                                  <SelectValue placeholder={`Assign all ${workCenter} (${workOrdersInCenter.length})`} />
+                                <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
+                                  <SelectValue placeholder={`${workCenter}`} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="unassigned">Unassigned</SelectItem>
@@ -162,7 +162,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
 
                   {/* Individual MO rows (when expanded) */}
                   {isExpanded && orders.map((order) => (
-                    <tr key={order.id} className="border-b hover:bg-gray-50 bg-gray-25">
+                    <tr key={order.id} className="border-b hover:bg-gray-50">
                       <td className="p-4 pl-12">
                         <div className="font-medium text-gray-900">{order.moNumber}</div>
                         <div className="text-sm text-gray-500">{order.productName || order.moNumber}</div>
@@ -189,8 +189,8 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                                 {workOrdersInCenter.map(workOrder => (
                                   <div key={workOrder.id} className="text-xs">
                                     <Select>
-                                      <SelectTrigger className="w-full h-7 text-xs">
-                                        <SelectValue placeholder="Assign operator" />
+                                      <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+                                        <SelectValue placeholder="Operator" />
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="unassigned">Unassigned</SelectItem>
