@@ -7,6 +7,7 @@ import { productionOrders, workOrders, operators, uphData, workCycles, uphCalcul
 import { sql, eq, desc } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
+import { uphEstimationService } from "./uph-estimation.js";
 
 // Helper function to consolidate work centers into main categories
 function consolidateWorkCenter(workCenter: string): string {
@@ -559,6 +560,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Assignment error:", error);
       res.status(400).json({ message: "Failed to assign operator" });
+    }
+  });
+
+  // UPH-based estimated completion time for production orders
+  app.get("/api/production-orders/:id/estimate", async (req, res) => {
+    try {
+      const productionOrderId = parseInt(req.params.id);
+      if (isNaN(productionOrderId) || productionOrderId <= 0) {
+        return res.status(400).json({ message: "Invalid production order ID" });
+      }
+
+      const estimate = await uphEstimationService.getProductionOrderEstimates(productionOrderId);
+      
+      if (!estimate) {
+        return res.status(404).json({ message: "Production order not found" });
+      }
+
+      res.json(estimate);
+    } catch (error) {
+      console.error("Error calculating UPH estimates:", error);
+      res.status(500).json({ message: "Error calculating estimates" });
+    }
+  });
+
+  // Batch UPH estimates for multiple production orders
+  app.post("/api/production-orders/batch-estimates", async (req, res) => {
+    try {
+      const { productionOrderIds } = req.body;
+      
+      if (!Array.isArray(productionOrderIds)) {
+        return res.status(400).json({ message: "productionOrderIds must be an array" });
+      }
+
+      const estimates = await uphEstimationService.getBatchEstimates(productionOrderIds);
+      res.json(estimates);
+    } catch (error) {
+      console.error("Error calculating batch UPH estimates:", error);
+      res.status(500).json({ message: "Error calculating batch estimates" });
     }
   });
 

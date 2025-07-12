@@ -2,7 +2,23 @@ import React, { useState } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import type { ProductionOrder } from "@shared/schema";
+
+interface UphEstimate {
+  productionOrderId: number;
+  moNumber: string;
+  workCenterEstimates: {
+    [workCenter: string]: {
+      estimatedHours: number;
+      operatorName: string | null;
+      workOrderIds: number[];
+      hasActualData: boolean;
+    };
+  };
+  totalEstimatedHours: number;
+}
 
 interface ProductionGridProps {
   productionOrders: ProductionOrder[];
@@ -25,10 +41,98 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
   return grouped;
 };
 
+// Hook to fetch UPH estimates for multiple production orders
+const useUphEstimates = (productionOrderIds: number[]) => {
+  return useQuery({
+    queryKey: ['/api/production-orders/batch-estimates', productionOrderIds],
+    queryFn: () => apiRequest({
+      url: '/api/production-orders/batch-estimates',
+      method: 'POST',
+      body: { productionOrderIds }
+    }),
+    enabled: productionOrderIds.length > 0,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+// Sample UPH data for demonstration when operators are assigned
+const SAMPLE_UPH_DATA = {
+  'Fi Snap': {
+    'Assembly': { 'Courtney Banh': 21.7, 'Devin Cann': 18.5 },
+    'Packaging': { 'Courtney Banh': 185.5, 'Devin Cann': 221.9 }
+  },
+  'Lifetime Pouch': {
+    'Assembly': { 'Courtney Banh': 19.2, 'Devin Cann': 16.8 },
+    'Packaging': { 'Courtney Banh': 195.3, 'Devin Cann': 221.9 }
+  },
+  'Lifetime Pro Harness': {
+    'Assembly': { 'Courtney Banh': 21.7, 'Devin Cann': 18.5 },
+    'Cutting': { 'Courtney Banh': 297.3, 'Devin Cann': 245.8 }
+  }
+};
+
+// Component to display estimated time under operator assignments
+const EstimatedTime = ({ 
+  estimate, 
+  workCenter, 
+  hasOperator,
+  order,
+  operatorName 
+}: { 
+  estimate?: UphEstimate; 
+  workCenter: string; 
+  hasOperator: boolean;
+  order?: any;
+  operatorName?: string;
+}) => {
+  // If we have actual estimates from the UPH service, use those
+  if (hasOperator && estimate?.workCenterEstimates[workCenter]) {
+    const centerEstimate = estimate.workCenterEstimates[workCenter];
+    if (centerEstimate.estimatedHours > 0 && centerEstimate.hasActualData) {
+      return (
+        <div className="text-xs text-green-600 mt-1 font-medium">
+          {centerEstimate.estimatedHours.toFixed(1)}h assigned
+        </div>
+      );
+    }
+  }
+  
+  // For demonstration: show estimated time when operators are assigned using sample UPH data
+  if (hasOperator && operatorName && order?.routing && order?.quantity) {
+    const routingData = SAMPLE_UPH_DATA[order.routing as keyof typeof SAMPLE_UPH_DATA];
+    if (routingData && routingData[workCenter as keyof typeof routingData]) {
+      const workCenterData = routingData[workCenter as keyof typeof routingData];
+      const uph = workCenterData[operatorName as keyof typeof workCenterData];
+      if (uph) {
+        const estimatedHours = order.quantity / uph;
+        return (
+          <div className="text-xs text-green-600 mt-1 font-medium">
+            {estimatedHours.toFixed(1)}h assigned
+          </div>
+        );
+      }
+    }
+  }
+
+  return null;
+};
+
 export default function ProductionGrid({ productionOrders, isLoading }: ProductionGridProps) {
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
+  
+  // Get UPH estimates for all production orders
+  const productionOrderIds = productionOrders?.map(order => order.id) || [];
+  const { data: uphEstimates, isLoading: isLoadingEstimates } = useUphEstimates(productionOrderIds);
+  
+  // Create a map of estimates by production order ID
+  const estimatesMap = new Map<number, UphEstimate>();
+  if (uphEstimates && Array.isArray(uphEstimates)) {
+    uphEstimates.forEach((estimate: UphEstimate) => {
+      estimatesMap.set(estimate.productionOrderId, estimate);
+    });
+  }
   
   const toggleRouting = (routing: string) => {
     const newExpanded = new Set(expandedRoutings);
@@ -197,51 +301,72 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                       </td>
                       <td className="p-4 text-center">
                         {order.workOrders?.filter(wo => wo.workCenter === 'Cutting').length > 0 ? (
-                          <Select>
-                            <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                              <SelectValue placeholder="Operator" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unassigned">Unassigned</SelectItem>
-                              <SelectItem value="operator1">Courtney Banh</SelectItem>
-                              <SelectItem value="operator2">Devin Cann</SelectItem>
-                              <SelectItem value="operator3">Sam Alter</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="flex flex-col items-center">
+                            <Select>
+                              <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+                                <SelectValue placeholder="Operator" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unassigned">Unassigned</SelectItem>
+                                <SelectItem value="operator1">Courtney Banh</SelectItem>
+                                <SelectItem value="operator2">Devin Cann</SelectItem>
+                                <SelectItem value="operator3">Sam Alter</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <EstimatedTime 
+                              estimate={estimatesMap.get(order.id)} 
+                              workCenter="Cutting" 
+                              hasOperator={true} 
+                            />
+                          </div>
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="p-4 text-center">
                         {order.workOrders?.filter(wo => wo.workCenter === 'Assembly').length > 0 ? (
-                          <Select>
-                            <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                              <SelectValue placeholder="Operator" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unassigned">Unassigned</SelectItem>
-                              <SelectItem value="operator1">Courtney Banh</SelectItem>
-                              <SelectItem value="operator2">Devin Cann</SelectItem>
-                              <SelectItem value="operator3">Sam Alter</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="flex flex-col items-center">
+                            <Select>
+                              <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+                                <SelectValue placeholder="Operator" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unassigned">Unassigned</SelectItem>
+                                <SelectItem value="operator1">Courtney Banh</SelectItem>
+                                <SelectItem value="operator2">Devin Cann</SelectItem>
+                                <SelectItem value="operator3">Sam Alter</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <EstimatedTime 
+                              estimate={estimatesMap.get(order.id)} 
+                              workCenter="Assembly" 
+                              hasOperator={true} 
+                            />
+                          </div>
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="p-4 text-center">
                         {order.workOrders?.filter(wo => wo.workCenter === 'Packaging').length > 0 ? (
-                          <Select>
-                            <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                              <SelectValue placeholder="Operator" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unassigned">Unassigned</SelectItem>
-                              <SelectItem value="operator1">Courtney Banh</SelectItem>
-                              <SelectItem value="operator2">Devin Cann</SelectItem>
-                              <SelectItem value="operator3">Sam Alter</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="flex flex-col items-center">
+                            <Select>
+                              <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
+                                <SelectValue placeholder="Operator" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unassigned">Unassigned</SelectItem>
+                                <SelectItem value="operator1">Courtney Banh</SelectItem>
+                                <SelectItem value="operator2">Devin Cann</SelectItem>
+                                <SelectItem value="operator3">Sam Alter</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <EstimatedTime 
+                              estimate={estimatesMap.get(order.id)} 
+                              workCenter="Packaging" 
+                              hasOperator={true} 
+                            />
+                          </div>
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
