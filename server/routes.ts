@@ -2869,24 +2869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Work order enrichment endpoint
-  app.post("/api/fulfil/enrich-routing", async (req: Request, res: Response) => {
-    try {
-      // Return success for now since routing data is already in database
-      res.json({
-        success: true,
-        message: "Work orders already enriched with routing data",
-        updated: 0
-      });
-    } catch (error) {
-      console.error("Work order enrichment error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Work order enrichment failed",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
+  // REMOVED - Conflicting route replaced by /api/fulfil/populate-routing
 
   // Database cleanup endpoint for CSV re-import
   app.post("/api/fulfil/clear-database", async (req: Request, res: Response) => {
@@ -4039,6 +4022,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: "Failed to sync missing work orders",
         error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Add route to enrich production orders with authentic routing data from Fulfil API
+  app.post('/api/fulfil/populate-routing', async (req, res) => {
+    try {
+      const { populateProductionRouting } = await import('./populate-production-routing.js');
+      const result = await populateProductionRouting();
+      res.json(result);
+    } catch (error) {
+      console.error('Production routing enrichment failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
       });
     }
   });

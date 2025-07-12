@@ -93,7 +93,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                   </td>
                   <td className="p-3">
                     <Badge variant="outline">
-                      {po.routingName || 'Standard'}
+                      {po.routing || po.routingName || 'Standard'}
                     </Badge>
                   </td>
                   <td className="p-3 text-center">

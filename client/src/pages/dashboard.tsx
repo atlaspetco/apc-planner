@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Factory, Cog, RefreshCw, Download } from "lucide-react";
+import { Factory, Cog, RefreshCw, Download, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import FilterControls from "@/components/dashboard/filter-controls";
@@ -86,7 +86,22 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold text-gray-900">Production Planning Dashboard</h1>
             </div>
             <div className="flex items-center space-x-4">
-
+              <Button 
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/fulfil/populate-routing', { method: 'POST' });
+                    const result = await response.json();
+                    console.log('Routing enrichment result:', result);
+                    handleRefresh(); // Refresh data after enrichment
+                  } catch (error) {
+                    console.error('Enrichment failed:', error);
+                  }
+                }}
+              >
+                <Database className="w-4 h-4 mr-2" />
+                Sync Routing
+              </Button>
               <Button 
                 className="bg-blue-600 hover:bg-blue-700"
                 onClick={() => window.location.href = '/operator-settings'}
@@ -118,7 +133,8 @@ export default function Dashboard() {
         {/* Status Info */}
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
-            Latest database data - {productionOrders?.length || 0} production orders loaded
+            Latest database data - {productionOrders?.length || 0} production orders loaded. 
+            Routing shows "Standard" (authentic Fulfil data).
           </p>
         </div>
 
