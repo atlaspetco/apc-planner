@@ -85,18 +85,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
       );
       
-      // Apply status filtering to match frontend request - include all if no specific filter
-      let finalProductionOrders = enrichedProductionOrders;
-      if (statusFilter && statusFilter.length > 0 && !statusFilter.includes('assigned')) {
-        finalProductionOrders = enrichedProductionOrders.filter(po => statusFilter.includes(po.status));
-        console.log(`Filtered to ${finalProductionOrders.length} production orders with status: ${statusFilter.join(', ')}`);
-      } else {
-        console.log(`Showing all ${finalProductionOrders.length} active production orders (excluding Done/Cancelled)`);
-      }
+      // Return all production orders - let frontend filter control display
+      console.log(`Returning ${enrichedProductionOrders.length} production orders for frontend filtering`);
       
-      console.log(`Returning ${finalProductionOrders.length} production orders (filter: ${statusFilter || 'none'})`);
-      
-      res.json(finalProductionOrders);
+      res.json(enrichedProductionOrders);
     } catch (error) {
       console.error("Error fetching production orders:", error);
       res.status(500).json({ message: "Failed to fetch production orders" });
