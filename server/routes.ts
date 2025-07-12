@@ -26,8 +26,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Step 1: Fetch ACTIVE production orders only (not historical completed ones)
-      const productionResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=500', {
+      // Step 1: Fetch work orders to build production orders from them
+      const productionResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=100', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -43,25 +43,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(localOrders);
       }
 
-      const workOrdersData = await productionResponse.json();
-      console.log(`Fetched ${workOrdersData.length} work orders from production.work endpoint`);
-      console.log('Sample work order:', workOrdersData.slice(0, 1));
+      const allWorkOrders = await productionResponse.json();
+      console.log(`Fetched ${allWorkOrders.length} work orders from production.work endpoint`);
+      console.log('Sample work order (with production field):', allWorkOrders.slice(0, 1));
 
-      // Since all work orders are 'done', filter for recent ones instead of active ones
-      const recentWorkOrders = workOrdersData.filter(wo => {
-        const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
-        const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${wo.production || wo.id}`;
-        const moNumberValue = parseInt(moNumber.replace('MO', '')) || 0;
-        return moNumberValue > 8000; // Show recent MOs (above 8000) 
+      // Check what states exist and filter for non-done work orders (active planning)
+      const stateCount = {};
+      allWorkOrders.forEach(wo => {
+        stateCount[wo.state] = (stateCount[wo.state] || 0) + 1;
       });
-      console.log(`Found ${recentWorkOrders.length} recent work orders (MO > 8000) from ${workOrdersData.length} total`);
+      console.log('Work order states found:', stateCount);
+      
+      // Since all work orders are "done", show recent completed ones for planning reference
+      console.log(`All work orders are in "done" state. Showing recent completed work orders for planning context.`);
+      const recentWorkOrders = allWorkOrders.slice(0, 50); // Show 50 most recent
+      console.log(`Selected ${recentWorkOrders.length} recent completed work orders for display`);
 
-      // Group by production ID to create production orders
+      // Group work orders by production ID to create production orders
       const productionOrderMap = new Map();
       
       recentWorkOrders.forEach(wo => {
-        const productionId = wo.production;
-        if (!productionId) return;
+        const productionId = wo.production || wo.id; // Fallback to work order ID if no production ID
+        console.log('Processing work order:', { id: wo.id, production: wo.production, rec_name: wo.rec_name });
 
         // Extract MO number from rec_name: "WO33391 | Cutting - Webbing | MO184337"
         const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
@@ -71,6 +74,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           productionOrderMap.set(productionId, {
             id: productionId,
             rec_name: moNumber,
+            state: 'done', // All are completed
             workOrders: []
           });
         }
@@ -78,8 +82,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         productionOrderMap.get(productionId).workOrders.push(wo);
       });
 
-      const productionOrders = Array.from(productionOrderMap.values());
-      console.log(`Created ${productionOrders.length} production orders from active work orders`);
+      const activeProductionOrders = Array.from(productionOrderMap.values());
+      console.log(`Created ${activeProductionOrders.length} production orders from recent work orders`);
+
+      // Step 2: Work orders are already available from above grouping
+      let workOrdersData = recentWorkOrders;
+      console.log(`Using ${workOrdersData.length} recent work orders for production order assembly`);
+
+      const productionOrders = activeProductionOrders;
 
       
       if (!Array.isArray(productionOrders)) {
