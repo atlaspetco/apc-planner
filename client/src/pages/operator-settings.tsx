@@ -40,6 +40,11 @@ export default function OperatorSettings() {
     queryKey: ["/api/routings"],
   });
 
+  // Fetch UPH analytics data for operator capability mapping
+  const { data: uphData } = useQuery({
+    queryKey: ["/api/uph/table-data"],
+  });
+
   const updateOperatorMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: number; updates: Partial<Operator> }) => {
       const response = await apiRequest("PATCH", `/api/operators/${id}`, updates);
@@ -61,6 +66,50 @@ export default function OperatorSettings() {
       });
     },
   });
+
+  // Helper functions to get operator capabilities from UPH data
+  const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
+    if (!uphData?.routings) return [];
+    
+    const workCenters = new Set<string>();
+    
+    uphData.routings.forEach((routing: any) => {
+      const operator = routing.operators?.find((op: any) => op.operatorName === operatorName);
+      if (operator?.workCenterPerformance) {
+        Object.keys(operator.workCenterPerformance).forEach(wc => {
+          if (operator.workCenterPerformance[wc] !== null) {
+            workCenters.add(wc);
+          }
+        });
+      }
+    });
+    
+    return Array.from(workCenters);
+  };
+
+  const getOperatorRoutingsWithData = (operatorName: string): string[] => {
+    if (!uphData?.routings) return [];
+    
+    return uphData.routings
+      .filter((routing: any) => 
+        routing.operators?.some((op: any) => op.operatorName === operatorName)
+      )
+      .map((routing: any) => routing.routingName);
+  };
+
+  const getOperatorObservationCount = (operatorName: string): number => {
+    if (!uphData?.routings) return 0;
+    
+    let totalObservations = 0;
+    uphData.routings.forEach((routing: any) => {
+      const operator = routing.operators?.find((op: any) => op.operatorName === operatorName);
+      if (operator?.totalObservations) {
+        totalObservations += operator.totalObservations;
+      }
+    });
+    
+    return totalObservations;
+  };
 
   const handleRefresh = () => {
     refetchOperators();
@@ -130,6 +179,7 @@ export default function OperatorSettings() {
             <CardContent className="space-y-2">
               {operators.map((operator: Operator) => {
                 const activityStatus = getActivityStatus(operator);
+                const observationCount = getOperatorObservationCount(operator.name);
                 return (
                   <div
                     key={operator.id}
@@ -150,7 +200,7 @@ export default function OperatorSettings() {
                       </Badge>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      {activityStatus.text}
+                      {observationCount > 0 ? `${observationCount} observations` : activityStatus.text}
                     </div>
                   </div>
                 );
@@ -217,24 +267,32 @@ export default function OperatorSettings() {
                 <div className="space-y-3">
                   <h3 className="text-lg font-medium">Work Centers</h3>
                   <div className="grid grid-cols-2 gap-2">
-                    {workCenterData.map((wc: any) => (
-                      <div key={wc.workCenter} className="flex items-center space-x-2">
-                        <Switch
-                          id={`wc-${wc.workCenter}`}
-                          checked={selectedOperator.workCenters?.includes(wc.workCenter) || false}
-                          onCheckedChange={(checked) => {
-                            const currentCenters = selectedOperator.workCenters || [];
-                            const newCenters = checked
-                              ? [...currentCenters, wc.workCenter]
-                              : currentCenters.filter(center => center !== wc.workCenter);
-                            handleOperatorUpdate(selectedOperator.id, 'workCenters', newCenters);
-                          }}
-                        />
-                        <Label htmlFor={`wc-${wc.workCenter}`} className="text-sm">
-                          {wc.workCenter}
-                        </Label>
-                      </div>
-                    ))}
+                    {workCenterData.map((wc: any) => {
+                      const hasUphData = getOperatorWorkCentersWithData(selectedOperator.name).includes(wc.workCenter);
+                      return (
+                        <div key={wc.workCenter} className="flex items-center space-x-2">
+                          <Switch
+                            id={`wc-${wc.workCenter}`}
+                            checked={selectedOperator.workCenters?.includes(wc.workCenter) || false}
+                            onCheckedChange={(checked) => {
+                              const currentCenters = selectedOperator.workCenters || [];
+                              const newCenters = checked
+                                ? [...currentCenters, wc.workCenter]
+                                : currentCenters.filter(center => center !== wc.workCenter);
+                              handleOperatorUpdate(selectedOperator.id, 'workCenters', newCenters);
+                            }}
+                          />
+                          <Label htmlFor={`wc-${wc.workCenter}`} className="text-sm flex items-center space-x-1">
+                            <span>{wc.workCenter}</span>
+                            {hasUphData && (
+                              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                                Has Data
+                              </Badge>
+                            )}
+                          </Label>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -242,24 +300,32 @@ export default function OperatorSettings() {
                 <div className="space-y-3">
                   <h3 className="text-lg font-medium">Product Routings</h3>
                   <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                    {routingsData?.routings?.map((routing: string) => (
-                      <div key={routing} className="flex items-center space-x-2">
-                        <Switch
-                          id={`routing-${routing}`}
-                          checked={selectedOperator.productRoutings?.includes(routing) || false}
-                          onCheckedChange={(checked) => {
-                            const currentRoutings = selectedOperator.productRoutings || [];
-                            const newRoutings = checked
-                              ? [...currentRoutings, routing]
-                              : currentRoutings.filter(r => r !== routing);
-                            handleOperatorUpdate(selectedOperator.id, 'productRoutings', newRoutings);
-                          }}
-                        />
-                        <Label htmlFor={`routing-${routing}`} className="text-sm">
-                          {routing}
-                        </Label>
-                      </div>
-                    ))}
+                    {routingsData?.routings?.map((routing: string) => {
+                      const hasUphData = getOperatorRoutingsWithData(selectedOperator.name).includes(routing);
+                      return (
+                        <div key={routing} className="flex items-center space-x-2">
+                          <Switch
+                            id={`routing-${routing}`}
+                            checked={selectedOperator.productRoutings?.includes(routing) || false}
+                            onCheckedChange={(checked) => {
+                              const currentRoutings = selectedOperator.productRoutings || [];
+                              const newRoutings = checked
+                                ? [...currentRoutings, routing]
+                                : currentRoutings.filter(r => r !== routing);
+                              handleOperatorUpdate(selectedOperator.id, 'productRoutings', newRoutings);
+                            }}
+                          />
+                          <Label htmlFor={`routing-${routing}`} className="text-sm flex items-center space-x-1">
+                            <span>{routing}</span>
+                            {hasUphData && (
+                              <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800">
+                                Has Data
+                              </Badge>
+                            )}
+                          </Label>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
