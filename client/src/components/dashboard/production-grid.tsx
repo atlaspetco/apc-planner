@@ -12,6 +12,8 @@ interface ProductionGridProps {
 const WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
 
 export default function ProductionGrid({ productionOrders, isLoading }: ProductionGridProps) {
+  console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders });
+  
   if (isLoading) {
     return (
       <Card>
