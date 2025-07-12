@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ProductionOrder } from "@shared/schema";
+import { OperatorDropdown } from "./operator-dropdown";
 
 interface ProductionGridProps {
   productionOrders: ProductionOrder[];
@@ -195,22 +196,19 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                             {workOrdersInCenter.length > 0 ? (
                               <div className="space-y-1">
                                 {workOrdersInCenter.map(workOrder => (
-                                  <div key={workOrder.id} className="text-xs">
-                                    <Select>
-                                      <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-                                        <SelectValue placeholder="Operator" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="unassigned">Unassigned</SelectItem>
-                                        <SelectItem value="operator1">Courtney Banh</SelectItem>
-                                        <SelectItem value="operator2">Devin Cann</SelectItem>
-                                        <SelectItem value="operator3">Sam Alter</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <div className="text-gray-500 mt-1">
-                                      {workOrder.operation} ({workOrder.state})
-                                    </div>
-                                  </div>
+                                  <OperatorDropdown
+                                    key={workOrder.id}
+                                    workOrderId={workOrder.id}
+                                    workCenter={workOrder.originalWorkCenter || workCenter}
+                                    routing={order.routing || ''}
+                                    operation={workOrder.operation}
+                                    quantity={order.quantity}
+                                    currentOperatorId={workOrder.assignedOperatorId}
+                                    onAssignmentChange={(workOrderId, operatorId, estimatedHours) => {
+                                      // Handle assignment change - could update local state or refetch data
+                                      console.log('Assignment changed:', { workOrderId, operatorId, estimatedHours });
+                                    }}
+                                  />
                                 ))}
                               </div>
                             ) : (
