@@ -168,7 +168,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Extract product information from manufacturing order
         const productCode = mo['product.code'] || '';
         const productName = mo['product.name'] || mo.rec_name;
-        const routing = mo['routing.name'] || getRoutingForProduct(productCode);
+        
+        // Use our corrected routing logic, especially for LHA- products which Fulfil incorrectly maps
+        let routing = mo['routing.name'] || getRoutingForProduct(productCode);
+        
+        // Override incorrect Fulfil routing for specific product codes
+        if (productCode.startsWith('LHA-')) {
+          console.log(`LHA Override: Original routing='${routing}', Product code='${productCode}'`);
+          routing = 'Lifetime Air Harness';
+          console.log(`LHA Override: New routing='${routing}'`);
+        }
         
         // Parse planned_date if it exists
         let plannedDate = null;
@@ -176,7 +185,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           plannedDate = new Date(mo.planned_date.iso_string);
         }
         
-        console.log(`MO: ${mo.rec_name}, Product: ${productName}, Code: ${productCode}, Routing: ${routing}`);
+        console.log(`MO: ${mo.rec_name}, Product: ${productName}, Code: '${productCode}', Routing: ${routing}`);
+        
+        // Debug LHA products specifically
+        if (productName.includes('Air Harness')) {
+          console.log(`DEBUG Air Harness: MO=${mo.rec_name}, ProductCode='${productCode}', RoutingFromAPI='${mo['routing.name']}', FinalRouting='${routing}'`);
+        }
         
         return {
           id: mo.id,
@@ -424,24 +438,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get work order assignments endpoint
+  app.get("/api/assignments", async (req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db.js");
+      const { workOrderAssignments, operators } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
+      
+      const assignments = await db
+        .select({
+          workOrderId: workOrderAssignments.workOrderId,
+          operatorId: workOrderAssignments.operatorId,
+          operatorName: operators.name,
+          assignedAt: workOrderAssignments.assignedAt,
+          isActive: workOrderAssignments.isActive
+        })
+        .from(workOrderAssignments)
+        .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
+        .where(eq(workOrderAssignments.isActive, true));
+      
+      res.json({ assignments });
+    } catch (error) {
+      console.error('Error fetching work order assignments:', error);
+      res.status(500).json({ message: 'Failed to fetch assignments' });
+    }
+  });
+
   // Operator assignment for dashboard work orders
   app.post("/api/work-orders/assign-operator", async (req, res) => {
     try {
+      console.log("=== ASSIGNMENT DEBUG START ===");
       console.log("Assignment request body:", req.body);
+      console.log("Raw operatorId:", req.body.operatorId, "Type:", typeof req.body.operatorId);
       
       // Parse work order ID - could be a Fulfil ID that we need to map to local DB
       const workOrderId = typeof req.body.workOrderId === 'string' 
         ? parseInt(req.body.workOrderId, 10) 
         : req.body.workOrderId;
-      const operatorId = req.body.operatorId;
+      // Parse operator ID - frontend sends as string, DB expects number
+      let operatorId = req.body.operatorId;
+      if (operatorId !== null && operatorId !== undefined) {
+        operatorId = parseInt(String(operatorId), 10);
+      }
+      console.log("Parsed operator ID:", operatorId, "Type:", typeof operatorId);
       
       console.log(`Processing assignment: operator ${operatorId} to work order ${workOrderId}`);
       
-      // Get all operators to find matching one
-      const localOperators = await storage.getOperators();
+      // Get all operators from database directly (same as qualified operators endpoint)
+      const { db } = await import("./db.js");
+      const { operators, workOrders } = await import("../shared/schema.js");
+      const { eq, or } = await import("drizzle-orm");
+      
+      const localOperators = await db.select().from(operators);
       console.log("Available operator IDs:", localOperators.map(op => op.id));
       
       // Find operator by ID (operatorId from dashboard corresponds to local operator ID)
+      console.log("Looking for operator ID:", operatorId, "Type:", typeof operatorId);
+      console.log("First few operators with types:", localOperators.slice(0, 3).map(op => ({id: op.id, type: typeof op.id, name: op.name})));
+      
       const operator = localOperators.find(op => op.id === operatorId);
       
       if (!operator) {
@@ -452,114 +506,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log("Found operator:", operator.name);
       
-      // Find work order - first check if it's a local DB ID, then check if it's a Fulfil ID
-      const { db } = await import("./db.js");
-      const { workOrders } = await import("../shared/schema.js");
-      const { eq, or } = await import("drizzle-orm");
-      
-      // Try to find work order by local ID first, then by Fulfil ID
-      const workOrder = await db
-        .select()
-        .from(workOrders)
-        .where(
-          or(
-            eq(workOrders.id, workOrderId), // Local database ID
-            eq(workOrders.fulfilId, workOrderId) // Fulfil ID
-          )
-        )
-        .limit(1);
-      
-      if (workOrder.length === 0) {
-        console.log(`Work order not found for ID: ${workOrderId}`);
+      // Find work order in live production orders data (not database since they're dynamic)
+      const productionOrdersUrl = `${req.protocol}://${req.get('host')}/api/production-orders`;
+      console.log("Fetching live production orders from:", productionOrdersUrl);
+      try {
+        const fulfilResponse = await fetch(productionOrdersUrl);
+        console.log("Response status:", fulfilResponse.status);
         
-        // If not found, try to sync from Fulfil first
-        console.log("Attempting to sync work orders from Fulfil...");
-        try {
-          const fulfilResponse = await fetch(`${req.protocol}://${req.get('host')}/api/fulfil/current-production-orders`);
-          const fulfilData = await fulfilResponse.json();
-          
-          if (fulfilData.success && fulfilData.orders) {
-            const { productionOrders } = await import("../shared/schema.js");
-            
-            // Find the specific work order in Fulfil data
-            for (const order of fulfilData.orders) {
-              const fulfilWorkOrder = order.work_orders?.find((wo: any) => parseInt(wo.id) === workOrderId);
-              
-              if (fulfilWorkOrder) {
-                // Find local production order by moNumber since Fulfil data doesn't include fulfilId
-                const localPO = await db
-                  .select()
-                  .from(productionOrders)
-                  .where(eq(productionOrders.moNumber, order.moNumber))
-                  .limit(1);
-                
-                if (localPO.length > 0) {
-                  // Create the work order in local database
-                  const newWorkOrder = await db.insert(workOrders).values({
-                    productionOrderId: localPO[0].id,
-                    workCenter: fulfilWorkOrder.work_center,
-                    operation: fulfilWorkOrder.operation,
-                    routing: order.routingName || null, // Don't default to "Standard"
-                    fulfilId: parseInt(fulfilWorkOrder.id),
-                    quantityDone: fulfilWorkOrder.quantity_done || 0,
-                    status: fulfilWorkOrder.state === "request" ? "Pending" : fulfilWorkOrder.state,
-                    sequence: 1,
-                    estimatedHours: null, // Only use actual data from Fulfil, never estimate
-                    state: fulfilWorkOrder.state,
-                    rec_name: `WO${fulfilWorkOrder.id}`,
-                    workCenterName: fulfilWorkOrder.work_center,
-                    operationName: fulfilWorkOrder.operation,
-                    assignedOperatorId: operator.id,
-                    operatorName: operator.name
-                  }).returning();
-                  
-                  console.log(`Created and assigned work order ${fulfilWorkOrder.id} to ${operator.name}`);
-                  
-                  return res.json({
-                    success: true,
-                    message: `Created work order and assigned ${operator.name}`,
-                    workOrder: newWorkOrder[0],
-                    operatorId: operator.id,
-                    operatorName: operator.name
-                  });
-                }
-              }
-            }
-          }
-        } catch (syncError) {
-          console.error("Error syncing work order:", syncError);
+        if (!fulfilResponse.ok) {
+          console.log("Response not OK, text:", await fulfilResponse.text());
+          return res.status(500).json({ message: "Failed to fetch production orders" });
         }
         
-        return res.status(404).json({ message: "Work order not found" });
-      }
+        const fulfilData = await fulfilResponse.json();
+        console.log("Received data type:", typeof fulfilData, "Length:", Array.isArray(fulfilData) ? fulfilData.length : "not array");
+        
+        if (!Array.isArray(fulfilData) || fulfilData.length === 0) {
+          console.log("No production orders found:", fulfilData);
+          return res.status(500).json({ message: "No production orders available for assignment" });
+        }
+        
+        // Find the specific work order in the live data
+        let foundWorkOrder = null;
+        let parentProductionOrder = null;
+        
+        for (const order of fulfilData) {
+          if (order.workOrders) {
+            const workOrder = order.workOrders.find((wo: any) => parseInt(wo.id) === workOrderId);
+            if (workOrder) {
+              foundWorkOrder = workOrder;
+              parentProductionOrder = order;
+              break;
+            }
+          }
+        }
+        
+        if (!foundWorkOrder || !parentProductionOrder) {
+          console.log(`Work order ${workOrderId} not found in current production orders`);
+          return res.status(404).json({ message: "Work order not found" });
+        }
+        
+        console.log(`Found work order ${workOrderId} in MO ${parentProductionOrder.moNumber}`);
+        
+        // Store the assignment (create work_order_assignments table if needed)
+        const { workOrderAssignments } = await import("../shared/schema.js");
+        
+        // First try to update existing assignment, then insert if not exists
+        const existingAssignment = await db
+          .select()
+          .from(workOrderAssignments)
+          .where(eq(workOrderAssignments.workOrderId, workOrderId))
+          .limit(1);
+        
+        const assignmentData = {
+          workOrderId: workOrderId,
+          operatorId: operatorId,
+          assignedAt: new Date(),
+          assignedBy: 'dashboard' // Could be enhanced with user info
+        };
+        
+        if (existingAssignment.length > 0) {
+          // Update existing assignment
+          await db
+            .update(workOrderAssignments)
+            .set({
+              operatorId: operatorId,
+              assignedAt: new Date()
+            })
+            .where(eq(workOrderAssignments.workOrderId, workOrderId));
+          console.log(`Updated assignment for work order ${workOrderId} to operator ${operator.name}`);
+        } else {
+          // Insert new assignment
+          await db.insert(workOrderAssignments).values(assignmentData);
+          console.log(`Created new assignment for work order ${workOrderId} to operator ${operator.name}`);
+        }
+        
+        // Calculate estimated hours based on UPH data if available
+        let estimatedHours = null;
+        try {
+          const { uphData } = await import("../shared/schema.js");
+          const { and } = await import("drizzle-orm");
+          const uphResult = await db
+            .select()
+            .from(uphData)
+            .where(and(
+              eq(uphData.operatorId, operatorId),
+              eq(uphData.workCenter, foundWorkOrder.workCenter),
+              eq(uphData.productRouting, parentProductionOrder.routing)
+            ))
+            .limit(1);
+          
+          if (uphResult.length > 0 && uphResult[0].uph > 0) {
+            estimatedHours = quantity / uphResult[0].uph;
+          }
+        } catch (uphError) {
+          console.log("Could not calculate estimated hours:", uphError);
+        }
 
-      // Found work order - update it with assignment
-      const foundWorkOrder = workOrder[0];
-      console.log(`Found work order: ${foundWorkOrder.id} (Fulfil ID: ${foundWorkOrder.fulfilId})`);
-      
-      // Update the work order with assigned operator
-      const updatedWorkOrder = await db
-        .update(workOrders)
-        .set({ 
-          assignedOperatorId: operator.id,
-          operatorName: operator.name // Also store operator name for easy display
-        })
-        .where(eq(workOrders.id, foundWorkOrder.id))
-        .returning();
-      
-      if (updatedWorkOrder.length === 0) {
-        return res.status(500).json({ message: "Failed to update work order" });
+        // Return success with assignment details in expected format
+        res.json({
+          success: true,
+          message: `Assigned ${operator.name} to ${foundWorkOrder.operation} for ${parentProductionOrder.moNumber}`,
+          operatorId: operatorId,
+          operatorName: operator.name,
+          estimatedHours: estimatedHours,
+          assignment: {
+            workOrderId: workOrderId,
+            operatorId: operatorId,
+            operatorName: operator.name,
+            workCenter: foundWorkOrder.workCenter,
+            operation: foundWorkOrder.operation,
+            moNumber: parentProductionOrder.moNumber,
+            productName: parentProductionOrder.productName
+          }
+        });
+        
+      } catch (error) {
+        console.log("Error finding work order in production orders:", error);
+        return res.status(500).json({ message: "Error processing assignment" });
       }
-      
-      console.log(`Successfully assigned ${operator.name} to work order ${foundWorkOrder.id} (Fulfil ID: ${foundWorkOrder.fulfilId})`);
-      
-      res.json({
-        success: true,
-        message: `Assigned ${operator.name} to work order ${foundWorkOrder.rec_name || foundWorkOrder.id}`,
-        workOrder: updatedWorkOrder[0],
-        operatorId: operator.id,
-        operatorName: operator.name
-      });
       
     } catch (error) {
       console.error("Assignment error:", error);
@@ -634,6 +699,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
       routing as string
     );
     res.json(operators);
+  });
+
+  // Get qualified operators for specific work center/routing/operation combination
+  app.get("/api/operators/qualified", async (req: Request, res: Response) => {
+    try {
+      const { workCenter, routing, operation } = req.query;
+      
+      if (!workCenter) {
+        return res.status(400).json({ error: "workCenter parameter required" });
+      }
+
+      // Get all active operators
+      const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
+      
+      // Get UPH data for performance calculations
+      const uphData = await db.select().from(historicalUph);
+      const uphMap = new Map<string, { uph: number; observations: number }>();
+      
+      uphData.forEach(record => {
+        const key = `${record.operatorId}-${record.workCenter}-${record.routing}`;
+        uphMap.set(key, { 
+          uph: record.unitsPerHour || 0, 
+          observations: record.observations || 0 
+        });
+      });
+
+      // Filter operators based on constraints and calculate their performance
+      const qualifiedOperators = allOperators
+        .filter(op => {
+          // For debugging - show ALL active operators if no specific constraints are working
+          // Check work center permission (handle Assembly consolidation)
+          const allowedWorkCenters = op.workCenters || [];
+          
+          // If operator has no work center constraints, allow all work centers
+          if (allowedWorkCenters.length === 0) return true;
+          
+          const isQualifiedForWorkCenter = allowedWorkCenters.includes(workCenter as string) ||
+            (workCenter === 'Assembly' && (allowedWorkCenters.includes('Rope') || allowedWorkCenters.includes('Sewing')));
+          
+          if (!isQualifiedForWorkCenter) return false;
+
+          // Check routing permission if specified (more flexible - if operator has no routing constraints, allow all)
+          if (routing) {
+            const allowedRoutings = op.productRoutings || [];
+            if (allowedRoutings.length > 0 && !allowedRoutings.includes(routing as string)) {
+              return false;
+            }
+          }
+
+          // Check operation permission if specified (more flexible - if operator has no operation constraints, allow all)
+          if (operation) {
+            const allowedOperations = op.operations || [];
+            if (allowedOperations.length > 0 && !allowedOperations.includes(operation as string)) {
+              return false;
+            }
+          }
+
+          return true;
+        })
+        .map(op => {
+          // Calculate UPH performance using flexible matching like UPH analytics page
+          // Try multiple UPH key combinations in order of preference:
+          // 1. operator+workCenter+routing (most specific)
+          // 2. operator+workCenter (work center level)
+          const uphKeys = [
+            `${op.id}-${workCenter}-${routing || ''}`,
+            `${op.id}-${workCenter}-`,
+            `${op.id}-${workCenter}`
+          ];
+          
+          let performanceData = { uph: 0, observations: 0 };
+          for (const key of uphKeys) {
+            const data = uphMap.get(key);
+            if (data && data.observations > 0) {
+              performanceData = data;
+              break;
+            }
+          }
+          
+          return {
+            id: op.id,
+            name: op.name,
+            isActive: op.isActive,
+            averageUph: performanceData.uph,
+            observations: performanceData.observations,
+            estimatedHoursFor: (quantity: number) => {
+              if (performanceData.uph && performanceData.uph > 0) {
+                return Number((quantity / performanceData.uph).toFixed(2));
+              }
+              return null;
+            }
+          };
+        })
+        .sort((a, b) => {
+          // Sort by performance data availability first, then by UPH
+          if (a.observations > 0 && b.observations === 0) return -1;
+          if (a.observations === 0 && b.observations > 0) return 1;
+          return b.averageUph - a.averageUph;
+        });
+
+      res.json({
+        operators: qualifiedOperators,
+        totalQualified: qualifiedOperators.length,
+        filters: { workCenter, routing, operation }
+      });
+    } catch (error) {
+      console.error("Error getting qualified operators:", error);
+      res.status(500).json({ 
+        error: "Failed to get qualified operators",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
   });
 
   app.get("/api/operators/:id", async (req, res) => {
@@ -3016,6 +3193,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: "Database cleanup failed",
         error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // REMOVED DUPLICATE - qualified operators endpoint moved higher in routes
+
+  // Assign operator to work order with UPH-based time estimation
+  app.post("/api/work-orders/assign-operator", async (req: Request, res: Response) => {
+    try {
+      const { workOrderId, operatorId, quantity, routing, workCenter, operation } = req.body;
+      
+      if (!workOrderId || !quantity) {
+        return res.status(400).json({ error: "workOrderId and quantity required" });
+      }
+
+      let estimatedHours = null;
+      let operatorName = "Unassigned";
+      
+      if (operatorId && operatorId !== "unassigned") {
+        // Get operator details
+        const operator = await db.select().from(operators).where(eq(operators.id, parseInt(operatorId))).limit(1);
+        if (operator.length > 0) {
+          operatorName = operator[0].name;
+          
+          // Get UPH data for this operator/work center/routing combination
+          const uphData = await db.select().from(historicalUph)
+            .where(and(
+              eq(historicalUph.operatorId, parseInt(operatorId)),
+              eq(historicalUph.workCenter, workCenter),
+              eq(historicalUph.routing, routing)
+            )).limit(1);
+            
+          if (uphData.length > 0 && uphData[0].unitsPerHour > 0) {
+            // Calculate estimated time: Quantity / UPH = Hours
+            estimatedHours = Math.round((quantity / uphData[0].unitsPerHour) * 100) / 100;
+          }
+        }
+      }
+
+      // Update work order with assignment
+      await db.update(workOrders)
+        .set({ 
+          assignedOperatorId: operatorId === "unassigned" ? null : parseInt(operatorId),
+          estimatedHours: estimatedHours
+        })
+        .where(eq(workOrders.id, parseInt(workOrderId)));
+
+      res.json({
+        success: true,
+        workOrderId: parseInt(workOrderId),
+        operatorId: operatorId === "unassigned" ? null : parseInt(operatorId),
+        operatorName,
+        estimatedHours,
+        message: estimatedHours 
+          ? `Assigned to ${operatorName}. Estimated time: ${estimatedHours} hours (${quantity} units @ ${Math.round(quantity/estimatedHours)} UPH)`
+          : `Assigned to ${operatorName}. No UPH data available for time estimation.`
+      });
+    } catch (error) {
+      console.error("Error assigning operator:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to assign operator"
       });
     }
   });
