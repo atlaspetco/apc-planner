@@ -45,11 +45,14 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
 const useUphEstimates = (productionOrderIds: number[]) => {
   return useQuery({
     queryKey: ['/api/production-orders/batch-estimates', productionOrderIds],
-    queryFn: () => apiRequest({
-      url: '/api/production-orders/batch-estimates',
-      method: 'POST',
-      body: { productionOrderIds }
-    }),
+    queryFn: async () => {
+      const response = await apiRequest(
+        'POST',
+        '/api/production-orders/batch-estimates', 
+        { productionOrderIds }
+      );
+      return response.json();
+    },
     enabled: productionOrderIds.length > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
