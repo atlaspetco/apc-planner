@@ -43,9 +43,9 @@ export class FulfilCurrentService {
       let page = 1;
       let hasMore = true;
       
-      // Use correct production schema (NOT production.order) with search_read
-      const endpoint = `${this.baseUrl}/api/v2/model/production/search_read`;
-      console.log(`Fetching production orders using correct production schema...`);
+      // Use correct production.order schema with search_read
+      const endpoint = `${this.baseUrl}/api/v2/model/production.order/search_read`;
+      console.log(`Fetching production orders using correct production.order schema...`);
       
       const response = await fetch(endpoint, {
         method: 'PUT',
@@ -76,7 +76,7 @@ export class FulfilCurrentService {
         return [];
       }
 
-      console.log(`Found total of ${allOrders.length} assigned production orders using production schema`);
+      console.log(`Found total of ${allOrders.length} assigned production orders using production.order schema`);
       const orders = allOrders;
       
       // orders array is already populated from pagination above
@@ -175,20 +175,36 @@ export class FulfilCurrentService {
         if (productionOrdersMap.has(productionId)) {
           // Map Fulfil work center names to expected frontend names
           const rawWorkCenter = wo['work_center.rec_name'] || 'Unknown';
+          const rawOperation = wo['operation.rec_name'] || wo.rec_name || 'Unknown Operation';
           let mappedWorkCenter = 'Unknown';
           
-          if (rawWorkCenter.toLowerCase().includes('cutting')) {
+          // Enhanced mapping logic based on both work center and operation
+          if (rawWorkCenter.toLowerCase().includes('cutting') || 
+              rawOperation.toLowerCase().includes('cutting') ||
+              rawOperation.toLowerCase().includes('cut')) {
             mappedWorkCenter = 'Cutting';
-          } else if (rawWorkCenter.toLowerCase().includes('sewing') || rawWorkCenter.toLowerCase().includes('assembly')) {
-            mappedWorkCenter = 'Assembly';  // Map "Sewing" to "Assembly"
-          } else if (rawWorkCenter.toLowerCase().includes('packaging')) {
+          } else if (rawWorkCenter.toLowerCase().includes('sewing') || 
+                    rawWorkCenter.toLowerCase().includes('assembly') ||
+                    rawOperation.toLowerCase().includes('sewing') ||
+                    rawOperation.toLowerCase().includes('assembly')) {
+            mappedWorkCenter = 'Assembly';
+          } else if (rawWorkCenter.toLowerCase().includes('packaging') ||
+                    rawOperation.toLowerCase().includes('packaging') ||
+                    rawOperation.toLowerCase().includes('grommet') ||
+                    rawOperation.toLowerCase().includes('snap')) {
             mappedWorkCenter = 'Packaging';
+          }
+          
+          // Debug logging for F3-SNAP products
+          const po = productionOrdersMap.get(productionId);
+          if (po && po.product_code && po.product_code.includes('F3-SNAP')) {
+            console.log(`F3-SNAP Work Order Debug - ${po.rec_name}: WO${wo.id} | Work Center: "${rawWorkCenter}" -> "${mappedWorkCenter}" | Operation: "${rawOperation}"`);
           }
           
           productionOrdersMap.get(productionId).work_orders.push({
             id: wo.id.toString(),
             work_center: mappedWorkCenter,
-            operation: wo['operation.rec_name'] || wo.rec_name || 'Unknown Operation',
+            operation: rawOperation,
             quantity_done: wo.quantity_done || 0,
             state: wo.state || 'pending'
           });
