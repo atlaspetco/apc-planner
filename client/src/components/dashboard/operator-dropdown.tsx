@@ -180,27 +180,36 @@ export function OperatorDropdown({
   return (
     <div className={`space-y-1 ${className || ''}`}>
       <Select 
-        value={currentOperatorId?.toString() || "unassigned"} 
+        value={workOrderIds ? (uniqueOperators.length === 1 ? "bulk-assigned" : "unassigned") : (currentOperatorId?.toString() || "unassigned")} 
         onValueChange={handleAssignment}
         disabled={loading}
       >
         <SelectTrigger className="w-full h-8 text-xs bg-white border-gray-300">
-          <SelectValue placeholder={
-            loading ? "Loading..." : 
-            workOrderIds ? (
-              uniqueOperators.length > 0 ? 
-                `${uniqueOperators.length === 1 ? uniqueOperators[0] : `${uniqueOperators.length} operators`} assigned` :
-                "Assign operator to all"
-            ) : 
-            "Select operator"
-          } />
+          <SelectValue 
+            placeholder={
+              loading ? "Loading..." : 
+              workOrderIds ? (
+                uniqueOperators.length > 0 ? 
+                  `${uniqueOperators.length === 1 ? uniqueOperators[0] : `${uniqueOperators.length} operators`} assigned` :
+                  "Assign operator to all"
+              ) : 
+              "Select operator"
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="unassigned">
             <div className="flex items-center justify-between w-full">
-              <span></span>
+              <span>Unassigned</span>
             </div>
           </SelectItem>
+          {workOrderIds && uniqueOperators.length === 1 && (
+            <SelectItem value="bulk-assigned" disabled>
+              <div className="flex items-center justify-between w-full">
+                <span className="text-green-700 font-medium">{uniqueOperators[0]} assigned</span>
+              </div>
+            </SelectItem>
+          )}
           {qualifiedOperators.map(operator => (
             <SelectItem key={operator.id} value={operator.id.toString()}>
               <div className="flex items-center justify-between w-full min-w-0">
