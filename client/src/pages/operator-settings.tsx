@@ -267,23 +267,24 @@ export default function OperatorSettings() {
                 <div className="space-y-3">
                   <h3 className="text-lg font-medium">Work Centers</h3>
                   <div className="grid grid-cols-2 gap-2">
-                    {workCenterData.map((wc: any) => {
-                      const hasUphData = getOperatorWorkCentersWithData(selectedOperator.name).includes(wc.workCenter);
+                    {/* Standard work centers - always show these */}
+                    {['Cutting', 'Assembly', 'Packaging', 'Rope', 'Sewing'].map((workCenter) => {
+                      const hasUphData = getOperatorWorkCentersWithData(selectedOperator.name).includes(workCenter);
                       return (
-                        <div key={wc.workCenter} className="flex items-center space-x-2">
+                        <div key={workCenter} className="flex items-center space-x-2">
                           <Switch
-                            id={`wc-${wc.workCenter}`}
-                            checked={selectedOperator.workCenters?.includes(wc.workCenter) || false}
+                            id={`wc-${workCenter}`}
+                            checked={selectedOperator.workCenters?.includes(workCenter) || false}
                             onCheckedChange={(checked) => {
                               const currentCenters = selectedOperator.workCenters || [];
                               const newCenters = checked
-                                ? [...currentCenters, wc.workCenter]
-                                : currentCenters.filter(center => center !== wc.workCenter);
+                                ? [...currentCenters, workCenter]
+                                : currentCenters.filter(center => center !== workCenter);
                               handleOperatorUpdate(selectedOperator.id, 'workCenters', newCenters);
                             }}
                           />
-                          <Label htmlFor={`wc-${wc.workCenter}`} className="text-sm flex items-center space-x-1">
-                            <span>{wc.workCenter}</span>
+                          <Label htmlFor={`wc-${workCenter}`} className="text-sm flex items-center space-x-1">
+                            <span>{workCenter}</span>
                             {hasUphData && (
                               <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
                                 Has Data
@@ -293,13 +294,42 @@ export default function OperatorSettings() {
                         </div>
                       );
                     })}
+                    {/* Additional work centers from API that aren't in the standard list */}
+                    {workCenterData
+                      .filter((wc: any) => !['Cutting', 'Assembly', 'Packaging', 'Rope', 'Sewing'].includes(wc.workCenter))
+                      .map((wc: any) => {
+                        const hasUphData = getOperatorWorkCentersWithData(selectedOperator.name).includes(wc.workCenter);
+                        return (
+                          <div key={wc.workCenter} className="flex items-center space-x-2">
+                            <Switch
+                              id={`wc-${wc.workCenter}`}
+                              checked={selectedOperator.workCenters?.includes(wc.workCenter) || false}
+                              onCheckedChange={(checked) => {
+                                const currentCenters = selectedOperator.workCenters || [];
+                                const newCenters = checked
+                                  ? [...currentCenters, wc.workCenter]
+                                  : currentCenters.filter(center => center !== wc.workCenter);
+                                handleOperatorUpdate(selectedOperator.id, 'workCenters', newCenters);
+                              }}
+                            />
+                            <Label htmlFor={`wc-${wc.workCenter}`} className="text-sm flex items-center space-x-1">
+                              <span>{wc.workCenter}</span>
+                              {hasUphData && (
+                                <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                                  Has Data
+                                </Badge>
+                              )}
+                            </Label>
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
 
                 {/* Product Routings */}
                 <div className="space-y-3">
                   <h3 className="text-lg font-medium">Product Routings</h3>
-                  <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
                     {routingsData?.routings?.map((routing: string) => {
                       const hasUphData = getOperatorRoutingsWithData(selectedOperator.name).includes(routing);
                       return (
