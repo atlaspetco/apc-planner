@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, User, Users } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RefreshCw, User, Users, Grid, List } from "lucide-react";
 import OperatorCard from "@/components/operator-settings/operator-card";
 
 interface Operator {
@@ -22,6 +23,7 @@ interface Operator {
 export default function OperatorSettings() {
   const { toast } = useToast();
   const [selectedOperatorId, setSelectedOperatorId] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
 
   // Fetch operators
   const { data: operators = [], refetch: refetchOperators, isLoading } = useQuery({
@@ -121,21 +123,7 @@ export default function OperatorSettings() {
     });
   };
 
-  const getActivityStatus = (operator: Operator) => {
-    if (!operator.lastActiveDate) return { status: "inactive", text: "No activity", color: "bg-gray-500" };
-    
-    const lastActive = new Date(operator.lastActiveDate);
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const isRecentlyActive = lastActive > thirtyDaysAgo;
-    
-    return {
-      status: isRecentlyActive ? "active" : "inactive",
-      text: isRecentlyActive ? "Recently Active" : "Inactive",
-      color: isRecentlyActive ? "bg-green-500" : "bg-gray-500"
-    };
-  };
+
 
   if (isLoading) {
     return (
@@ -147,7 +135,38 @@ export default function OperatorSettings() {
     );
   }
 
-  const selectedOperator = operators.find((op: Operator) => op.id === selectedOperatorId);
+  const sortedOperators = operators
+    .map((operator: Operator) => ({
+      ...operator,
+      operatorCapabilities: {
+        workCenters: getOperatorWorkCentersWithData(operator.name),
+        routings: getOperatorRoutingsWithData(operator.name),
+        observationCount: getOperatorObservationCount(operator.name),
+      }
+    }))
+    .sort((a, b) => {
+      // First sort by active status (active first)
+      if (a.isActive !== b.isActive) {
+        return a.isActive ? -1 : 1;
+      }
+      // Within same activity group, sort by observation count (highest first)
+      return b.operatorCapabilities.observationCount - a.operatorCapabilities.observationCount;
+    });
+
+  const getActivityStatus = (operator: Operator) => {
+    if (!operator.lastActiveDate) return { text: "No activity", color: "bg-gray-500" };
+    
+    const lastActive = new Date(operator.lastActiveDate);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const isRecentlyActive = lastActive > thirtyDaysAgo;
+    
+    return {
+      text: isRecentlyActive ? "Recently Active" : "Inactive",
+      color: isRecentlyActive ? "bg-green-500" : "bg-gray-500"
+    };
+  };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -157,32 +176,120 @@ export default function OperatorSettings() {
           <h1 className="text-2xl font-bold text-gray-900">Operator Settings</h1>
           <p className="text-gray-600">Manage operator profiles and work assignments</p>
         </div>
-        <Button onClick={handleRefresh}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh Data
-        </Button>
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center border rounded-lg p-1">
+            <Button
+              variant={viewMode === "list" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("list")}
+              className="h-8 px-3"
+            >
+              <List className="h-4 w-4 mr-1" />
+              List
+            </Button>
+            <Button
+              variant={viewMode === "grid" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("grid")}
+              className="h-8 px-3"
+            >
+              <Grid className="h-4 w-4 mr-1" />
+              Cards
+            </Button>
+          </div>
+          <Button onClick={handleRefresh}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh Data
+          </Button>
+        </div>
       </div>
 
-      {/* Operator Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {operators
-          .map((operator: Operator) => ({
-            ...operator,
-            operatorCapabilities: {
-              workCenters: getOperatorWorkCentersWithData(operator.name),
-              routings: getOperatorRoutingsWithData(operator.name),
-              observationCount: getOperatorObservationCount(operator.name),
-            }
-          }))
-          .sort((a, b) => {
-            // First sort by active status (active first)
-            if (a.isActive !== b.isActive) {
-              return a.isActive ? -1 : 1;
-            }
-            // Within same activity group, sort by observation count (highest first)
-            return b.operatorCapabilities.observationCount - a.operatorCapabilities.observationCount;
-          })
-          .map((operator) => (
+      {viewMode === "list" ? (
+        /* List View */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Operator List */}
+          <div className="lg:col-span-1">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Users className="h-5 w-5 mr-2" />
+                  Operators ({operators.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 max-h-96 overflow-y-auto">
+                {sortedOperators.map((operator) => {
+                  const activityStatus = getActivityStatus(operator);
+                  return (
+                    <div
+                      key={operator.id}
+                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                        selectedOperatorId === operator.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      onClick={() => setSelectedOperatorId(operator.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-2 h-2 rounded-full ${activityStatus.color}`}></div>
+                          <span className="font-medium text-sm">{operator.name}</span>
+                        </div>
+                        <Badge variant={operator.isActive ? "default" : "secondary"} className="text-xs">
+                          {operator.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {operator.operatorCapabilities.observationCount > 0 
+                          ? `${operator.operatorCapabilities.observationCount} observations` 
+                          : activityStatus.text}
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Operator Details */}
+          <div className="lg:col-span-2">
+            {selectedOperatorId ? (
+              (() => {
+                const selectedOperator = sortedOperators.find(op => op.id === selectedOperatorId);
+                return selectedOperator ? (
+                  <OperatorCard
+                    operator={selectedOperator}
+                    availableWorkCenters={getAllAvailableWorkCenters()}
+                    availableOperations={getAllAvailableOperations()}
+                    availableRoutings={getAllAvailableRoutings()}
+                    operatorCapabilities={selectedOperator.operatorCapabilities}
+                  />
+                ) : (
+                  <Card>
+                    <CardContent className="flex items-center justify-center h-64">
+                      <div className="text-center">
+                        <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <p className="text-gray-600">Operator not found</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })()
+            ) : (
+              <Card>
+                <CardContent className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600">Select an operator to view and edit settings</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Grid View */
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          {sortedOperators.map((operator) => (
             <OperatorCard
               key={operator.id}
               operator={operator}
@@ -192,7 +299,8 @@ export default function OperatorSettings() {
               operatorCapabilities={operator.operatorCapabilities}
             />
           ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
