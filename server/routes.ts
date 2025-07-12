@@ -670,7 +670,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           if (!isQualifiedForWorkCenter) return false;
 
-          // Check routing permission if specified
+          // Check routing permission if specified (more flexible - if operator has no routing constraints, allow all)
           if (routing) {
             const allowedRoutings = op.productRoutings || [];
             if (allowedRoutings.length > 0 && !allowedRoutings.includes(routing as string)) {
@@ -678,7 +678,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
-          // Check operation permission if specified
+          // Check operation permission if specified (more flexible - if operator has no operation constraints, allow all)
           if (operation) {
             const allowedOperations = op.operations || [];
             if (allowedOperations.length > 0 && !allowedOperations.includes(operation as string)) {
@@ -689,25 +689,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return true;
         })
         .map(op => {
-          // Calculate UPH performance for this operator in this context
-          const uphKey = `${op.id}-${workCenter}-${routing || 'any'}`;
-          const performanceData = uphMap.get(uphKey);
+          // Calculate UPH performance using flexible matching like UPH analytics page
+          // Try multiple UPH key combinations in order of preference:
+          // 1. operator+workCenter+routing (most specific)
+          // 2. operator+workCenter (work center level)
+          const uphKeys = [
+            `${op.id}-${workCenter}-${routing || ''}`,
+            `${op.id}-${workCenter}-`,
+            `${op.id}-${workCenter}`
+          ];
+          
+          let performanceData = { uph: 0, observations: 0 };
+          for (const key of uphKeys) {
+            const data = uphMap.get(key);
+            if (data && data.observations > 0) {
+              performanceData = data;
+              break;
+            }
+          }
           
           return {
             id: op.id,
             name: op.name,
             isActive: op.isActive,
-            averageUph: performanceData?.uph || 0,
-            observations: performanceData?.observations || 0,
+            averageUph: performanceData.uph,
+            observations: performanceData.observations,
             estimatedHoursFor: (quantity: number) => {
-              if (performanceData?.uph && performanceData.uph > 0) {
+              if (performanceData.uph && performanceData.uph > 0) {
                 return Number((quantity / performanceData.uph).toFixed(2));
               }
               return null;
             }
           };
         })
-        .sort((a, b) => b.averageUph - a.averageUph); // Sort by performance, best first
+        .sort((a, b) => {
+          // Sort by performance data availability first, then by UPH
+          if (a.observations > 0 && b.observations === 0) return -1;
+          if (a.observations === 0 && b.observations > 0) return 1;
+          return b.averageUph - a.averageUph;
+        });
 
       res.json({
         operators: qualifiedOperators,
