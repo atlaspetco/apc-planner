@@ -36,32 +36,41 @@ function transformWorkCenter(workCenterName: string): string {
 }
 
 export async function calculateUphFromFulfilFields() {
-  console.log("Calculating UPH using work_order_durations aggregated data...");
+  console.log("Calculating UPH directly from work_cycles with proper routing names...");
 
   try {
-    // Use the existing work_order_durations table that properly aggregates cycles by work order
-    const workOrdersResult = await db.execute(sql`
+    // Calculate UPH directly from work_cycles table to get proper routing names
+    const workCyclesResult = await db.execute(sql`
       SELECT 
-        operator_name,
-        work_center,
-        routing_name as routing,
-        production_number as mo_number,
-        work_order_id,
-        total_duration_hours,
-        total_quantity_done,
-        cycle_count
-      FROM work_order_durations 
-      WHERE operator_name IS NOT NULL 
-        AND operator_name != ''
-        AND work_center IS NOT NULL
-        AND total_duration_hours > 0
-        AND total_quantity_done > 0
-        AND routing_name IS NOT NULL
-      ORDER BY production_number, work_order_id
+        work_cycles_operator_rec_name as operator_name,
+        work_cycles_work_center_rec_name as work_center,
+        work_production_routing_rec_name as routing,
+        work_production_id as production_id,
+        work_cycles_id as work_order_id,
+        work_cycles_duration,
+        work_cycles_quantity_done,
+        1 as cycle_count
+      FROM work_cycles 
+      WHERE work_cycles_operator_rec_name IS NOT NULL 
+        AND work_cycles_operator_rec_name != ''
+        AND work_cycles_work_center_rec_name IS NOT NULL
+        AND work_production_routing_rec_name IS NOT NULL
+        AND work_production_routing_rec_name != ''
+        AND work_cycles_duration > 0
+        AND work_cycles_quantity_done >= 0
+      ORDER BY work_production_id, work_cycles_id
     `);
     
-    const workOrders = workOrdersResult.rows;
-    console.log(`Found ${workOrders.length} aggregated work orders from work_order_durations table`);
+    const workCycles = workCyclesResult.rows;
+    console.log(`Found ${workCycles.length} work cycles with proper routing names`);
+
+    // Convert duration from seconds to hours
+    function parseDurationToHours(duration: string | number): number {
+      if (!duration) return 0;
+      const seconds = typeof duration === 'string' ? parseFloat(duration) : duration;
+      if (isNaN(seconds)) return 0;
+      return seconds / 3600; // Convert seconds to hours
+    }
 
     // STEP 1: Calculate UPH for each individual work order
     const workOrderUphValues = new Map<string, {
@@ -76,27 +85,27 @@ export async function calculateUphFromFulfilFields() {
       moNumber: string;
     }>();
 
-    for (const workOrder of workOrders) {
-      const operatorName = workOrder.operator_name?.toString() || '';
-      const originalWorkCenter = workOrder.work_center?.toString() || '';
+    for (const workCycle of workCycles) {
+      const operatorName = workCycle.operator_name?.toString() || '';
+      const originalWorkCenter = workCycle.work_center?.toString() || '';
       const transformedWorkCenter = transformWorkCenter(originalWorkCenter);
-      const routing = workOrder.routing?.toString() || '';
-      const moNumber = workOrder.mo_number?.toString() || '';
-      const workOrderId = workOrder.work_order_id?.toString() || '';
-      const durationHours = parseFloat(workOrder.total_duration_hours?.toString() || '0');
-      const quantity = parseFloat(workOrder.total_quantity_done?.toString() || '0');
-      const cycleCount = parseInt(workOrder.cycle_count?.toString() || '0');
+      const routing = workCycle.routing?.toString() || '';
+      const productionId = workCycle.production_id?.toString() || '';
+      const workOrderId = workCycle.work_order_id?.toString() || '';
+      const durationHours = parseDurationToHours(workCycle.work_cycles_duration?.toString() || '');
+      const quantity = parseFloat(workCycle.work_cycles_quantity_done?.toString() || '0');
+      const cycleCount = 1; // Each row is one cycle
       
       if (!operatorName || !originalWorkCenter || !routing || !workOrderId) {
         continue;
       }
       
-      // Calculate UPH for this individual work order
+      // Calculate UPH for this individual work cycle  
       if (durationHours > 0.01 && quantity > 0) {
-        const workOrderUph = quantity / durationHours;
+        const cycleUph = quantity / durationHours;
         
         // Only include realistic UPH values (filter outliers)
-        if (workOrderUph > 0 && workOrderUph < 500) {
+        if (cycleUph > 0 && cycleUph < 500) {
           const key = `${operatorName}|${transformedWorkCenter}|${routing}|${workOrderId}`;
           
           workOrderUphValues.set(key, {
@@ -104,14 +113,14 @@ export async function calculateUphFromFulfilFields() {
             transformedWorkCenter,
             routing,
             workOrderId,
-            uph: workOrderUph,
+            uph: cycleUph,
             quantity,
             durationHours,
             observations: cycleCount,
-            moNumber
+            moNumber: productionId
           });
           
-          console.log(`WO ${workOrderId}: ${operatorName} | ${transformedWorkCenter} | ${routing} = ${Math.round(workOrderUph * 100) / 100} UPH (${quantity} units in ${Math.round(durationHours * 100) / 100}h)`);
+          console.log(`WO ${workOrderId}: ${operatorName} | ${transformedWorkCenter} | ${routing} = ${Math.round(cycleUph * 100) / 100} UPH (${quantity} units in ${Math.round(durationHours * 100) / 100}h)`);
         }
       }
     }
