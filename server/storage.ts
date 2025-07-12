@@ -5,6 +5,8 @@ import {
   operators, 
   uphData, 
   batches,
+  historicalUph,
+  workCycles,
   type User, 
   type InsertUser,
   type ProductionOrder,

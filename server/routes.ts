@@ -658,11 +658,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid operator ID" });
     }
-    const updated = await storage.updateOperator(id, req.body);
-    if (!updated) {
-      return res.status(404).json({ message: "Operator not found" });
+    try {
+      const updated = await storage.updateOperator(id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Operator not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating operator:', error);
+      res.status(500).json({ message: "Failed to update operator" });
     }
-    res.json(updated);
+
   });
 
   // UPH Data
