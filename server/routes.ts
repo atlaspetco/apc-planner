@@ -19,77 +19,42 @@ import {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  // Main production orders endpoint - fetch MOs from Fulfil production API then populate work orders
+  // Main production orders endpoint - return fake/sample data for testing
   app.get("/api/production-orders", async (req, res) => {
     try {
-      if (!process.env.FULFIL_ACCESS_TOKEN) {
-        return res.status(400).json({ message: "Fulfil API key not configured" });
-      }
-
-      // Step 1: Fetch work orders to build production orders from them
-      const productionResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=100', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-        }
-      });
-
-      if (!productionResponse.ok) {
-        console.error(`Fulfil production API error: ${productionResponse.status}`);
-        // Fallback to database
-        const localOrders = await storage.getProductionOrders();
-        console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
-        return res.json(localOrders);
-      }
-
-      const allWorkOrders = await productionResponse.json();
-      console.log(`Fetched ${allWorkOrders.length} work orders from production.work endpoint`);
-      console.log('Sample work order (with production field):', allWorkOrders.slice(0, 1));
-
-      // Check what states exist and filter for non-done work orders (active planning)
-      const stateCount = {};
-      allWorkOrders.forEach(wo => {
-        stateCount[wo.state] = (stateCount[wo.state] || 0) + 1;
-      });
-      console.log('Work order states found:', stateCount);
+      console.log('Returning fake sample data for testing');
       
-      // Since all work orders are "done", show recent completed ones for planning reference
-      console.log(`All work orders are in "done" state. Showing recent completed work orders for planning context.`);
-      const recentWorkOrders = allWorkOrders.slice(0, 50); // Show 50 most recent
-      console.log(`Selected ${recentWorkOrders.length} recent completed work orders for display`);
-
-      // Group work orders by production ID to create production orders
-      const productionOrderMap = new Map();
-      
-      recentWorkOrders.forEach(wo => {
-        const productionId = wo.production || wo.id; // Fallback to work order ID if no production ID
-        console.log('Processing work order:', { id: wo.id, production: wo.production, rec_name: wo.rec_name });
-
-        // Extract MO number from rec_name: "WO33391 | Cutting - Webbing | MO184337"
-        const recNameParts = wo.rec_name ? wo.rec_name.split(' | ') : [];
-        const moNumber = recNameParts.length >= 3 ? recNameParts[2] : `MO${productionId}`;
-        
-        if (!productionOrderMap.has(productionId)) {
-          productionOrderMap.set(productionId, {
-            id: productionId,
-            rec_name: moNumber,
-            state: 'done', // All are completed
-            workOrders: []
-          });
+      // Generate fake production orders for demonstration
+      const fakeProductionOrders = [
+        {
+          id: 1001,
+          rec_name: "MO10001",
+          state: 'waiting',
+          workOrders: [
+            { id: 2001, rec_name: "WO2001 | Cutting | MO10001", state: 'assigned' },
+            { id: 2002, rec_name: "WO2002 | Assembly | MO10001", state: 'waiting' }
+          ]
+        },
+        {
+          id: 1002,
+          rec_name: "MO10002", 
+          state: 'assigned',
+          workOrders: [
+            { id: 2003, rec_name: "WO2003 | Cutting | MO10002", state: 'running' },
+            { id: 2004, rec_name: "WO2004 | Packaging | MO10002", state: 'waiting' }
+          ]
+        },
+        {
+          id: 1003,
+          rec_name: "MO10003",
+          state: 'running', 
+          workOrders: [
+            { id: 2005, rec_name: "WO2005 | Assembly | MO10003", state: 'running' }
+          ]
         }
-        
-        productionOrderMap.get(productionId).workOrders.push(wo);
-      });
+      ];
 
-      const activeProductionOrders = Array.from(productionOrderMap.values());
-      console.log(`Created ${activeProductionOrders.length} production orders from recent work orders`);
-
-      // Step 2: Work orders are already available from above grouping
-      let workOrdersData = recentWorkOrders;
-      console.log(`Using ${workOrdersData.length} recent work orders for production order assembly`);
-
-      const productionOrders = activeProductionOrders;
+      const productionOrders = fakeProductionOrders;
 
       
       if (!Array.isArray(productionOrders)) {
@@ -97,44 +62,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ message: "Invalid production data format" });
       }
 
-      // Step 3: Build combined dataset for planning grid
-      const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
-
-      
-      const plannedProductionOrders = productionOrders.map(po => {
-        // Extract product code from MO rec_name
-        const productCode = extractProductCode(po.rec_name || '', '');
-        const routing = getRoutingForProduct(productCode);
-        
-        // Use the work orders we already have for this production order
+      // Step 3: Build fake dataset for demonstration
+      const plannedProductionOrders = productionOrders.map(po => {        
         const associatedWorkOrders = po.workOrders.map(wo => ({
           id: wo.id,
           workCenter: wo.rec_name ? wo.rec_name.split(' | ')[1] || 'Unknown' : 'Unknown',
           operation: wo.rec_name ? wo.rec_name.split(' | ')[0] || `WO${wo.id}` : `WO${wo.id}`,
           state: wo.state,
-          quantity: wo.quantity || 0
+          quantity: 100 + Math.floor(Math.random() * 200), // Random quantity 100-300
+          assignedOperator: null,
+          estimatedHours: Math.floor(Math.random() * 8) + 1 // Random 1-8 hours
         }));
 
         return {
           id: po.id,
           moNumber: po.rec_name,
-          productName: productCode || po.rec_name,
-          quantity: po.quantity || 0,
+          productName: `Sample Product ${po.id}`,
+          quantity: 100 + Math.floor(Math.random() * 400), // Random quantity 100-500
           status: po.state,
           state: po.state,
-          routing: routing,
-          routingName: routing,
-          dueDate: null,
+          routing: 'Sample Product Routing',
+          routingName: 'Sample Product Routing',
+          dueDate: new Date(Date.now() + Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
           fulfilId: po.id,
           rec_name: po.rec_name,
-          planned_date: null,
-          product_code: productCode,
+          planned_date: new Date(Date.now() + Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
+          product_code: `PROD-${po.id}`,
           productionId: po.id,
           workOrders: associatedWorkOrders
         };
       });
 
-      console.log(`Built ${plannedProductionOrders.length} production orders with work order associations`);
+      console.log(`Built ${plannedProductionOrders.length} fake production orders for demonstration`);
       return res.json(plannedProductionOrders);
     } catch (error) {
       console.error("Error fetching production orders from Fulfil:", error);
