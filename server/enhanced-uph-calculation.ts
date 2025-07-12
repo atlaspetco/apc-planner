@@ -1,5 +1,6 @@
 import { db } from "./db.js";
 import { workCycles, uphData } from "../shared/schema.js";
+import { eq } from "drizzle-orm";
 import { parseRecName } from "./rec-name-parser.js";
 
 /**
@@ -108,12 +109,25 @@ export async function calculateEnhancedUPH() {
     console.log(`📈 Generated ${uphCalculations.length} valid UPH calculations from enhanced rec_name aggregation`);
     
     // Clear existing enhanced UPH data
-    await db.delete(uphData).where({ dataSource: 'work_cycles_enhanced' });
+    await db.delete(uphData).where(eq(uphData.dataSource, 'work_cycles_enhanced'));
     
-    // Insert new enhanced UPH calculations
+    // Insert new enhanced UPH calculations in batches
     if (uphCalculations.length > 0) {
-      await db.insert(uphData).values(uphCalculations);
-      console.log(`✅ Stored ${uphCalculations.length} enhanced UPH calculations in database`);
+      const batchSize = 100;
+      let insertedCount = 0;
+      
+      for (let i = 0; i < uphCalculations.length; i += batchSize) {
+        const batch = uphCalculations.slice(i, i + batchSize);
+        try {
+          await db.insert(uphData).values(batch);
+          insertedCount += batch.length;
+          console.log(`✅ Inserted batch ${Math.floor(i/batchSize) + 1}: ${batch.length} records (total: ${insertedCount}/${uphCalculations.length})`);
+        } catch (error) {
+          console.error(`❌ Failed to insert batch ${Math.floor(i/batchSize) + 1}:`, error);
+        }
+      }
+      
+      console.log(`✅ Stored ${insertedCount} enhanced UPH calculations in database`);
     }
     
     // Return summary statistics
@@ -154,7 +168,7 @@ export async function getEnhancedUPHStats() {
   try {
     const enhancedUph = await db.select()
       .from(uphData)
-      .where.dataSource?.eq('work_cycles_enhanced');
+      .where(eq(uphData.dataSource, 'work_cycles_enhanced'));
     
     const stats = {
       totalCalculations: enhancedUph.length,
