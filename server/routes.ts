@@ -8,16 +8,16 @@ import { sql, eq, desc } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
 
-// Helper function to consolidate work centers into main categories
-function consolidateWorkCenter(workCenter: string): string {
+// Helper function to clean work center names (no aggregation)
+function cleanWorkCenter(workCenter: string): string {
   if (!workCenter) return 'Unknown';
   
-  const center = workCenter.toLowerCase();
-  if (center.includes('cut')) return 'Cutting';
-  if (center.includes('sew') || center.includes('assembly') || center.includes('rope')) return 'Assembly';
-  if (center.includes('pack')) return 'Packaging';
+  // Only clean up compound names, keep original work centers
+  if (workCenter.includes(' / ')) {
+    return workCenter.split(' / ')[0].trim();
+  }
   
-  return workCenter; // Return original if no consolidation needed
+  return workCenter.trim(); // Return original work center name
 }
 import { 
   statusFilterSchema, 
@@ -146,9 +146,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!workOrdersByMO.has(moId)) {
           workOrdersByMO.set(moId, []);
         }
+        // Map Rope and Sewing to Assembly for display, but keep original for assignment logic
+        const originalWorkCenter = cleanWorkCenter(wo['work_center.name'] || 'Unknown');
+        const displayWorkCenter = (originalWorkCenter === 'Rope' || originalWorkCenter === 'Sewing') ? 'Assembly' : originalWorkCenter;
+        
         workOrdersByMO.get(moId).push({
           id: wo.id,
-          workCenter: consolidateWorkCenter(wo['work_center.name'] || 'Unknown'),
+          workCenter: displayWorkCenter,
+          originalWorkCenter: originalWorkCenter, // Keep for assignment logic
           operation: wo['operation.name'] || wo.rec_name || `WO${wo.id}`,
           state: wo.state || 'unknown',
           quantity: 0 // Work orders inherit quantity from MO
@@ -658,11 +663,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid operator ID" });
     }
-    const updated = await storage.updateOperator(id, req.body);
-    if (!updated) {
-      return res.status(404).json({ message: "Operator not found" });
+    try {
+      const updated = await storage.updateOperator(id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Operator not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating operator:', error);
+      res.status(500).json({ message: "Failed to update operator" });
     }
-    res.json(updated);
+
   });
 
   // UPH Data
@@ -1309,7 +1320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Found ${workCyclesData.length} unique work center/operation combinations from work cycles`);
 
-      // Group operations by work center, handling complex work center names
+      // Group operations by work center - keep original names, no aggregation
       const workCenterMap = new Map<string, Set<string>>();
       
       for (const row of workCyclesData) {
@@ -1318,9 +1329,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let workCenter = row.workCenter.trim();
         const operation = row.operation.trim();
         
-        // Simplify compound work centers like "Sewing / Assembly" to main category
+        // Only clean up compound work centers like "Sewing / Assembly" -> "Sewing"
+        // But keep Rope, Sewing, etc. as separate work centers (no Assembly aggregation)
         if (workCenter.includes(' / ')) {
-          // Use the first part as the primary work center
           workCenter = workCenter.split(' / ')[0].trim();
         }
         
@@ -2694,38 +2705,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create operator name mapping
       const operatorMap = new Map(allOperators.map(op => [op.id, op.name]));
       
-      // Work center consolidation mapping
-      const consolidateWorkCenter = (workCenter: string): string => {
-        const wc = workCenter.toLowerCase();
-        if (wc.includes('rope') || wc.includes('assembly') || wc.includes('sewing')) {
-          return 'Assembly';
+      // Work center cleanup (no consolidation)
+      const cleanWorkCenterForDisplay = (workCenter: string): string => {
+        if (!workCenter) return 'Unknown';
+        
+        // Only clean up compound names, keep original work centers
+        if (workCenter.includes(' / ')) {
+          return workCenter.split(' / ')[0].trim();
         }
-        if (wc.includes('cutting')) {
-          return 'Cutting';
-        }
-        if (wc.includes('packaging')) {
-          return 'Packaging';
-        }
-        // For any other work centers, keep as is but capitalize first letter
+        
+        // Capitalize properly but keep original names (Rope, Sewing, Cutting, Packaging)
         return workCenter.charAt(0).toUpperCase() + workCenter.slice(1).toLowerCase();
       };
       
-      // Apply work center consolidation to UPH results and map field names
-      const consolidatedUphResults = uphResults.map(row => ({
+      // Clean work center names (no aggregation)
+      const cleanedUphResults = uphResults.map(row => ({
         ...row,
-        workCenter: consolidateWorkCenter(row.workCenter),
+        workCenter: cleanWorkCenterForDisplay(row.workCenter),
         unitsPerHour: row.unitsPerHour, // historicalUph uses unitsPerHour field
         calculationPeriod: row.observations // historicalUph uses observations field
       }));
       
-      // Get unique work centers and routings after consolidation
-      const allWorkCenters = Array.from(new Set(consolidatedUphResults.map(row => row.workCenter))).sort();
-      const allRoutings = Array.from(new Set(consolidatedUphResults.map(row => row.routing))).sort();
+      // Get unique work centers and routings after cleaning
+      const allWorkCenters = Array.from(new Set(cleanedUphResults.map(row => row.workCenter))).sort();
+      const allRoutings = Array.from(new Set(cleanedUphResults.map(row => row.routing))).sort();
       
       // Group UPH data by routing, then by operator
       const routingData = new Map<string, Map<number, Record<string, number[]>>>();
       
-      consolidatedUphResults.forEach(row => {
+      cleanedUphResults.forEach(row => {
         // Skip rows with null operator ID
         if (!row.operatorId || !row.routing || !row.workCenter) {
           console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
@@ -2752,7 +2760,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
           // Use operator name directly from historicalUph data
-          const operatorRecord = consolidatedUphResults.find(r => r.operatorId === operatorId);
+          const operatorRecord = cleanedUphResults.find(r => r.operatorId === operatorId);
           const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
@@ -2765,8 +2773,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const avgUph = uphValues.reduce((sum, val) => sum + val, 0) / uphValues.length;
               workCenterPerformance[workCenter] = Math.round(avgUph * 100) / 100;
               
-              // Sum up observations for this work center using consolidated data
-              const operatorWorkCenterRecords = consolidatedUphResults.filter(r => 
+              // Sum up observations for this work center using cleaned data
+              const operatorWorkCenterRecords = cleanedUphResults.filter(r => 
                 r.operatorId === operatorId && 
                 r.routing === routingName && 
                 r.workCenter === workCenter
@@ -2822,9 +2830,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
       
-      // Calculate summary statistics using consolidated data
+      // Calculate summary statistics using cleaned data
       const workCenterUph = new Map<string, number[]>();
-      consolidatedUphResults.forEach(row => {
+      cleanedUphResults.forEach(row => {
         const existing = workCenterUph.get(row.workCenter) || [];
         existing.push(row.unitsPerHour);
         workCenterUph.set(row.workCenter, existing);
@@ -2840,8 +2848,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         routings: routings.sort((a, b) => a.routingName.localeCompare(b.routingName)),
         summary: {
-          totalOperators: new Set(consolidatedUphResults.map(r => r.operatorId)).size,
-          totalCombinations: consolidatedUphResults.length,
+          totalOperators: new Set(cleanedUphResults.map(r => r.operatorId)).size,
+          totalCombinations: cleanedUphResults.length,
           totalRoutings: allRoutings.length,
           avgUphByCeter: avgUphByCenter
         },
