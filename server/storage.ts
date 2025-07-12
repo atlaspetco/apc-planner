@@ -482,9 +482,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateOperator(id: number, updates: Partial<Operator>): Promise<Operator | undefined> {
+    // Filter out undefined values and non-updateable fields
+    const filteredUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([key, value]) => value !== undefined && key !== 'id')
+    );
+    
+    if (Object.keys(filteredUpdates).length === 0) {
+      // If no valid updates, just return the existing operator
+      return this.getOperator(id);
+    }
+
     const [operator] = await db
       .update(operators)
-      .set(updates)
+      .set(filteredUpdates)
       .where(eq(operators.id, id))
       .returning();
     return operator || undefined;
