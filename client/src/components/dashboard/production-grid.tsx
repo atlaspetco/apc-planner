@@ -230,6 +230,11 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                       </td>
                       {workCenters.map(workCenter => {
                         const workOrdersInCenter = order.workOrders?.filter(wo => wo.workCenter === workCenter) || [];
+                        console.log(`WorkCenter ${workCenter} filtering:`, {
+                          allWorkOrders: order.workOrders,
+                          filteredWorkOrders: workOrdersInCenter,
+                          workCenterMatch: workCenter
+                        });
                         return (
                           <td key={workCenter} className="p-4 text-center">
                             {workOrdersInCenter.length > 0 ? (
@@ -238,16 +243,25 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                   const currentAssignment = assignments.get(workOrder.id);
                                   console.log(`WO ${workOrder.id} assignment lookup:`, { 
                                     workOrderId: workOrder.id, 
+                                    workOrderType: typeof workOrder.id,
+                                    workOrderObject: workOrder,
                                     currentAssignment,
                                     assignmentsSize: assignments.size 
                                   });
+                                  
+                                  // Debug: Ensure workOrder.id is valid before passing to OperatorDropdown
+                                  if (!workOrder.id) {
+                                    console.error('Invalid workOrder ID:', workOrder);
+                                    return null;
+                                  }
+                                  
                                   return (
                                     <OperatorDropdown
                                       key={workOrder.id}
                                       workOrderId={workOrder.id}
                                       workCenter={workOrder.originalWorkCenter || workCenter}
                                       routing={order.routing || ''}
-                                      operation={workOrder.operation}
+                                      operation={workOrder.operation || ''}
                                       quantity={order.quantity}
                                       currentOperatorId={currentAssignment?.operatorId}
                                       currentOperatorName={currentAssignment?.operatorName}

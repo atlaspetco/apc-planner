@@ -41,7 +41,11 @@ export function OperatorDropdown({
 }: OperatorDropdownProps) {
   
   // Debug logging
-  console.log(`OperatorDropdown for WO ${workOrderId}:`, {
+  console.log(`OperatorDropdown for WO ${workOrderId || 'BULK'}:`, {
+    workOrderId,
+    workOrderIds,
+    hasSingleWO: !!workOrderId,
+    hasBulkWOs: !!workOrderIds,
     currentOperatorId,
     currentOperatorName,
     workCenter,
