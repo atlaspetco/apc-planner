@@ -71,8 +71,8 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
           {/* Header */}
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left p-4 font-medium text-gray-900">Routing / Production Order</th>
-              <th className="text-center p-4 font-medium text-gray-900">Qty</th>
+              <th className="text-left p-4 font-medium text-gray-900 w-1/3">Routing / Production Order</th>
+              <th className="text-center p-2 font-medium text-gray-900 w-16">Qty</th>
               <th className="text-center p-4 font-medium text-gray-900 min-w-[150px]">Cutting</th>
               <th className="text-center p-4 font-medium text-gray-900 min-w-[150px]">Assembly</th>
               <th className="text-center p-4 font-medium text-gray-900 min-w-[150px]">Packaging</th>
@@ -128,7 +128,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                         </div>
                       </button>
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="p-2 text-center w-16">
                       <span className="font-medium text-gray-900">{totalQty}</span>
                     </td>
                     <td className="p-4 text-center">
@@ -192,7 +192,7 @@ export default function ProductionGrid({ productionOrders, isLoading }: Producti
                         <div className="text-sm text-gray-500">{order.productName || order.moNumber}</div>
                       </td>
 
-                      <td className="p-4 text-center">
+                      <td className="p-2 text-center w-16">
                         <span className="font-medium text-gray-900">{order.quantity}</span>
                       </td>
                       <td className="p-4 text-center">
