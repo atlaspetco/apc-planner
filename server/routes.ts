@@ -47,7 +47,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         body: JSON.stringify({
           filters: [
-            ["state", "!=", "done"]  // Get all non-completed orders
+            ["state", "=", "waiting"]  // Get waiting orders that have work orders
           ],
           fields: [
             "id",
@@ -60,7 +60,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             "routing.name",
             "works"
           ],
-          limit: 50,
+          limit: 20,
           order: [["id", "DESC"]]  // Newest orders first
         })
       });
@@ -85,49 +85,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Import product routing mapper
       const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
 
-      // For each manufacturing order, get work order details using production.work endpoint
-      const productionOrders = await Promise.all(manufacturingOrdersData.map(async (mo) => {
-        let workOrders = [];
-        
-        // If manufacturing order has work orders, fetch their details
+      // Collect all work order IDs from manufacturing orders
+      const allWorkOrderIds = [];
+      manufacturingOrdersData.forEach(mo => {
         if (mo.works && mo.works.length > 0) {
-          try {
-            // Get work order details using production.work search_read
-            const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work/search_read', {
-              method: 'PUT',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-              },
-              body: JSON.stringify({
-                filters: [
-                  ["id", "in", mo.works.slice(0, 10)] // Limit to first 10 work orders
-                ],
-                fields: [
-                  "id",
-                  "rec_name",
-                  "work_center.name",
-                  "operation.name", 
-                  "state",
-                  "quantity"
-                ]
-              })
-            });
-            
-            if (workOrderResponse.ok) {
-              const workOrdersData = await workOrderResponse.json();
-              workOrders = workOrdersData.map(wo => ({
-                id: wo.id,
-                workCenter: consolidateWorkCenter(wo['work_center.name'] || 'Unknown'),
-                operation: wo['operation.name'] || wo.rec_name || `WO${wo.id}`,
-                state: wo.state || 'unknown',
-                quantity: wo.quantity || 0
-              }));
-            }
-          } catch (error) {
-            console.error(`Error fetching work orders for MO ${mo.rec_name}:`, error);
-          }
+          allWorkOrderIds.push(...mo.works);
         }
+      });
+
+      // Fetch work orders by ID in bulk
+      let allWorkOrders = [];
+      if (allWorkOrderIds.length > 0) {
+        try {
+          console.log(`Fetching ${allWorkOrderIds.length} work orders by ID...`);
+          const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work/search_read', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+            },
+            body: JSON.stringify({
+              filters: [
+                ["id", "in", allWorkOrderIds] // Get specific work orders by ID
+              ],
+              fields: [
+                "id",
+                "rec_name",
+                "work_center.name",
+                "operation.name", 
+                "state",
+                "production" // MO ID to match with
+              ]
+            })
+          });
+          
+          if (workOrderResponse.ok) {
+            allWorkOrders = await workOrderResponse.json();
+            console.log(`Successfully fetched ${allWorkOrders.length} work orders`);
+          } else {
+            console.error('Work order fetch failed:', workOrderResponse.status);
+            const errorText = await workOrderResponse.text();
+            console.error('Error response:', errorText);
+          }
+        } catch (error) {
+          console.error('Error fetching work orders:', error);
+        }
+      }
+
+      // Create a map of work orders by production (MO) ID
+      const workOrdersByMO = new Map();
+      allWorkOrders.forEach(wo => {
+        const moId = wo.production;
+        if (!workOrdersByMO.has(moId)) {
+          workOrdersByMO.set(moId, []);
+        }
+        workOrdersByMO.get(moId).push({
+          id: wo.id,
+          workCenter: consolidateWorkCenter(wo['work_center.name'] || 'Unknown'),
+          operation: wo['operation.name'] || wo.rec_name || `WO${wo.id}`,
+          state: wo.state || 'unknown',
+          quantity: 0 // Work orders inherit quantity from MO
+        });
+      });
+
+      // Process manufacturing orders with their matched work orders
+      const productionOrders = manufacturingOrdersData.map((mo) => {
+        const workOrders = workOrdersByMO.get(mo.id) || [];
+        console.log(`MO ${mo.rec_name} matched with ${workOrders.length} work orders`);
         
         // Extract product information from manufacturing order
         const productCode = mo['product.code'] || '';
@@ -158,7 +182,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           product_code: productCode,
           workOrders
         };
-      }));
+      });
       
       console.log(`Converted to ${productionOrders.length} production orders from manufacturing orders`);
       
