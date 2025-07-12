@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { FulfilAPIService } from "./fulfil-api";
 import { db } from "./db.js";
-import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData } from "../shared/schema.js";
+import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph } from "../shared/schema.js";
 import { sql, eq, desc } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
@@ -45,23 +45,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sort by newest first (highest ID = most recent in database)
       productionOrders = productionOrders.sort((a, b) => b.id - a.id);
       
-      // Fix product names - use product names from database
-      productionOrders = productionOrders.map(po => ({
-        ...po,
-        productName: po.productName || po.product_code || `Product ${po.fulfilId}`
-      }));
+      // Get routing data from work orders table for each production order
+      const { db } = await import("./db.js");
+      const { workOrders } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
       
-      // Apply status filtering to match frontend request - include all if no specific filter
-      if (statusFilter && statusFilter.length > 0 && !statusFilter.includes('assigned')) {
-        productionOrders = productionOrders.filter(po => statusFilter.includes(po.status));
-        console.log(`Filtered to ${productionOrders.length} production orders with status: ${statusFilter.join(', ')}`);
-      } else {
-        console.log(`Showing all ${productionOrders.length} active production orders (excluding Done/Cancelled)`);
-      }
+      // Enrich production orders with routing data from work orders and Fulfil API
+      const enrichedProductionOrders = await Promise.all(
+        productionOrders.map(async (po) => {
+          // Find work orders for this production order to get routing data
+          const woData = await db
+            .select({ routing: workOrders.routing })
+            .from(workOrders)
+            .where(eq(workOrders.productionOrderId, po.id))
+            .limit(1);
+          
+          const routingFromWorkOrders = woData.length > 0 ? woData[0].routing : null;
+          
+          // Use actual routing data from work_cycles table for authentic routing names
+          let routingFromProductCode = null;
+          if (po.product_code) {
+            if (po.product_code.startsWith("LCA-")) routingFromProductCode = "Lifetime Lite Collar";
+            else if (po.product_code.startsWith("LPL") || po.product_code === "LPL") routingFromProductCode = "Lifetime Loop";
+            else if (po.product_code.startsWith("LP-")) routingFromProductCode = "Lifetime Pouch";
+            else if (po.product_code.startsWith("F0102-") || po.product_code.includes("X-Pac")) routingFromProductCode = "Cutting - Fabric";
+            else if (po.product_code.startsWith("BAN-")) routingFromProductCode = "Lifetime Bandana";
+            else if (po.product_code.startsWith("LHA-")) routingFromProductCode = "Lifetime Harness";
+            else if (po.product_code.startsWith("LCP-")) routingFromProductCode = "LCP Custom";
+            else if (po.product_code.startsWith("F3-")) routingFromProductCode = "Fi Snap";
+            else if (po.product_code.startsWith("PB-")) routingFromProductCode = "Poop Bags";
+          }
+          
+          return {
+            ...po,
+            productName: po.productName || po.product_code || `Product ${po.fulfilId}`,
+            // Use routing from work orders, then product code mapping, then original routing - never default to "Standard"
+            routingName: routingFromWorkOrders || routingFromProductCode || (po.routingName !== "Standard" ? po.routingName : null)
+          };
+        })
+      );
       
-      console.log(`Returning ${productionOrders.length} production orders (filter: ${statusFilter || 'none'})`);
+      // Return all production orders - let frontend filter control display
+      console.log(`Returning ${enrichedProductionOrders.length} production orders for frontend filtering`);
       
-      res.json(productionOrders);
+      res.json(enrichedProductionOrders);
     } catch (error) {
       console.error("Error fetching production orders:", error);
       res.status(500).json({ message: "Failed to fetch production orders" });
@@ -104,19 +131,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Work Orders
   app.get("/api/work-orders", async (req, res) => {
-    // Add pagination support for large datasets
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 50;
-    const offset = (page - 1) * limit;
+    // Force fresh data to prevent cache issues
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     
     try {
-      // Get work orders directly with pagination instead of nested queries
+      // Always return ALL work orders to fix missing dropdown issue
       const workOrdersList = await db
         .select()
         .from(workOrders)
-        .limit(limit)
-        .offset(offset);
+        .orderBy(desc(workOrders.id));
       
+      console.log(`Returned ${workOrdersList.length} work orders (including assignments)`);
       res.json(workOrdersList);
     } catch (error) {
       console.error("Error fetching work orders:", error);
@@ -167,41 +194,259 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(updated);
   });
 
-  // Operator assignment
-  app.post("/api/work-orders/assign-operator", async (req, res) => {
+  // Sync work orders from Fulfil to local database for assignment functionality
+  app.post("/api/work-orders/sync-from-fulfil", async (req, res) => {
     try {
-      const { workOrderId, operatorId } = operatorAssignmentSchema.parse(req.body);
+      // Get current production orders from Fulfil with work orders
+      const fulfilResponse = await fetch(`${req.protocol}://${req.get('host')}/api/fulfil/current-production-orders`);
+      const fulfilData = await fulfilResponse.json();
       
-      // Get operator and work order to calculate estimated hours
-      const operator = await storage.getOperator(operatorId);
-      const workOrder = await storage.getWorkOrder(workOrderId);
+      if (!fulfilData.success || !fulfilData.orders) {
+        return res.status(500).json({ message: "Failed to fetch Fulfil data" });
+      }
       
-      if (!operator || !workOrder) {
-        return res.status(404).json({ message: "Operator or work order not found" });
-      }
-
-      // Get production order to get quantity
-      const productionOrder = await storage.getProductionOrder(workOrder.productionOrderId!);
-      if (!productionOrder) {
-        return res.status(404).json({ message: "Production order not found" });
-      }
-
-      // Calculate estimated hours using UPH data
-      const uphData = await storage.getOperatorUph(operatorId, workOrder.workCenter, workOrder.operation, workOrder.routing);
-      let estimatedHours = null;
+      const { db } = await import("./db.js");
+      const { workOrders, productionOrders } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
       
-      if (uphData) {
-        estimatedHours = productionOrder.quantity / uphData.unitsPerHour;
+      let syncedWorkOrders = 0;
+      
+      console.log(`Processing ${fulfilData.orders.length} production orders from Fulfil`);
+      
+      // Process each production order and its work orders
+      for (const order of fulfilData.orders) {
+        console.log(`Processing order ${order.moNumber} with ${order.work_orders?.length || 0} work orders`);
+        
+        // Find local production order by moNumber
+        const localPO = await db
+          .select()
+          .from(productionOrders)
+          .where(eq(productionOrders.moNumber, order.moNumber))
+          .limit(1);
+        
+        if (localPO.length === 0) {
+          console.log(`No local production order found for MO: ${order.moNumber}`);
+          continue;
+        }
+        
+        console.log(`Found local production order for ${order.moNumber}: ID ${localPO[0].id}`);
+        
+        const localProductionOrderId = localPO[0].id;
+        
+        // Sync work orders for this production order
+        for (const wo of order.work_orders || []) {
+          try {
+            // Check if work order already exists by fulfilId
+            const existing = await db
+              .select()
+              .from(workOrders)
+              .where(eq(workOrders.fulfilId, parseInt(wo.id)))
+              .limit(1);
+            
+            if (existing.length === 0) {
+              // Create new work order
+              await db.insert(workOrders).values({
+                productionOrderId: localProductionOrderId,
+                workCenter: wo.work_center,
+                operation: wo.operation,
+                routing: order.routingName || null, // Don't default to "Standard"
+                fulfilId: parseInt(wo.id),
+                quantityRequired: order.quantity || 100,
+                quantityDone: wo.quantity_done || 0,
+                status: wo.state === "request" ? "Pending" : wo.state,
+                sequence: 1, // Default sequence
+                estimatedHours: null, // Only use actual data from Fulfil, never estimate
+                actualHours: null,
+                operatorId: null,
+                operatorName: null,
+                startTime: null,
+                endTime: null,
+                createdAt: new Date(),
+                // Store Fulfil field mapping
+                state: wo.state,
+                rec_name: `WO${wo.id}`,
+                workCenterName: wo.work_center,
+                operationName: wo.operation
+              });
+              
+              syncedWorkOrders++;
+              console.log(`Created work order ${wo.id} for ${order.moNumber}`);
+            } else {
+              // Update existing work order
+              await db
+                .update(workOrders)
+                .set({
+                  workCenter: wo.work_center,
+                  operation: wo.operation,
+                  routing: order.routingName || null, // Don't default to "Standard"
+                  quantityDone: wo.quantity_done || 0,
+                  status: wo.state === "request" ? "Pending" : wo.state,
+                  state: wo.state,
+                  workCenterName: wo.work_center,
+                  operationName: wo.operation
+                })
+                .where(eq(workOrders.fulfilId, parseInt(wo.id)));
+              
+              console.log(`Updated work order ${wo.id} for ${order.moNumber}`);
+            }
+          } catch (error) {
+            console.error(`Error syncing work order ${wo.id}:`, error);
+          }
+        }
       }
-
-      const updated = await storage.updateWorkOrder(workOrderId, { 
-        assignedOperatorId: operatorId,
-        estimatedHours
+      
+      res.json({
+        success: true,
+        message: `Synced ${syncedWorkOrders} work orders from Fulfil to local database`,
+        syncedWorkOrders
       });
       
-      res.json(updated);
     } catch (error) {
-      res.status(400).json({ message: "Invalid assignment data" });
+      console.error("Error syncing work orders:", error);
+      res.status(500).json({ message: "Error syncing work orders from Fulfil" });
+    }
+  });
+
+  // Operator assignment for dashboard work orders
+  app.post("/api/work-orders/assign-operator", async (req, res) => {
+    try {
+      console.log("Assignment request body:", req.body);
+      
+      // Parse work order ID - could be a Fulfil ID that we need to map to local DB
+      const workOrderId = typeof req.body.workOrderId === 'string' 
+        ? parseInt(req.body.workOrderId, 10) 
+        : req.body.workOrderId;
+      const operatorId = req.body.operatorId;
+      
+      console.log(`Processing assignment: operator ${operatorId} to work order ${workOrderId}`);
+      
+      // Get all operators to find matching one
+      const localOperators = await storage.getOperators();
+      console.log("Available operator IDs:", localOperators.map(op => op.id));
+      
+      // Find operator by ID (operatorId from dashboard corresponds to local operator ID)
+      const operator = localOperators.find(op => op.id === operatorId);
+      
+      if (!operator) {
+        console.log("Operator not found. Looking for ID:", operatorId);
+        console.log("Available operators:", localOperators.map(op => ({id: op.id, name: op.name})));
+        return res.status(404).json({ message: "Operator not found" });
+      }
+      
+      console.log("Found operator:", operator.name);
+      
+      // Find work order - first check if it's a local DB ID, then check if it's a Fulfil ID
+      const { db } = await import("./db.js");
+      const { workOrders } = await import("../shared/schema.js");
+      const { eq, or } = await import("drizzle-orm");
+      
+      // Try to find work order by local ID first, then by Fulfil ID
+      const workOrder = await db
+        .select()
+        .from(workOrders)
+        .where(
+          or(
+            eq(workOrders.id, workOrderId), // Local database ID
+            eq(workOrders.fulfilId, workOrderId) // Fulfil ID
+          )
+        )
+        .limit(1);
+      
+      if (workOrder.length === 0) {
+        console.log(`Work order not found for ID: ${workOrderId}`);
+        
+        // If not found, try to sync from Fulfil first
+        console.log("Attempting to sync work orders from Fulfil...");
+        try {
+          const fulfilResponse = await fetch(`${req.protocol}://${req.get('host')}/api/fulfil/current-production-orders`);
+          const fulfilData = await fulfilResponse.json();
+          
+          if (fulfilData.success && fulfilData.orders) {
+            const { productionOrders } = await import("../shared/schema.js");
+            
+            // Find the specific work order in Fulfil data
+            for (const order of fulfilData.orders) {
+              const fulfilWorkOrder = order.work_orders?.find((wo: any) => parseInt(wo.id) === workOrderId);
+              
+              if (fulfilWorkOrder) {
+                // Find local production order by moNumber since Fulfil data doesn't include fulfilId
+                const localPO = await db
+                  .select()
+                  .from(productionOrders)
+                  .where(eq(productionOrders.moNumber, order.moNumber))
+                  .limit(1);
+                
+                if (localPO.length > 0) {
+                  // Create the work order in local database
+                  const newWorkOrder = await db.insert(workOrders).values({
+                    productionOrderId: localPO[0].id,
+                    workCenter: fulfilWorkOrder.work_center,
+                    operation: fulfilWorkOrder.operation,
+                    routing: order.routingName || null, // Don't default to "Standard"
+                    fulfilId: parseInt(fulfilWorkOrder.id),
+                    quantityDone: fulfilWorkOrder.quantity_done || 0,
+                    status: fulfilWorkOrder.state === "request" ? "Pending" : fulfilWorkOrder.state,
+                    sequence: 1,
+                    estimatedHours: null, // Only use actual data from Fulfil, never estimate
+                    state: fulfilWorkOrder.state,
+                    rec_name: `WO${fulfilWorkOrder.id}`,
+                    workCenterName: fulfilWorkOrder.work_center,
+                    operationName: fulfilWorkOrder.operation,
+                    assignedOperatorId: operator.id,
+                    operatorName: operator.name
+                  }).returning();
+                  
+                  console.log(`Created and assigned work order ${fulfilWorkOrder.id} to ${operator.name}`);
+                  
+                  return res.json({
+                    success: true,
+                    message: `Created work order and assigned ${operator.name}`,
+                    workOrder: newWorkOrder[0],
+                    operatorId: operator.id,
+                    operatorName: operator.name
+                  });
+                }
+              }
+            }
+          }
+        } catch (syncError) {
+          console.error("Error syncing work order:", syncError);
+        }
+        
+        return res.status(404).json({ message: "Work order not found" });
+      }
+
+      // Found work order - update it with assignment
+      const foundWorkOrder = workOrder[0];
+      console.log(`Found work order: ${foundWorkOrder.id} (Fulfil ID: ${foundWorkOrder.fulfilId})`);
+      
+      // Update the work order with assigned operator
+      const updatedWorkOrder = await db
+        .update(workOrders)
+        .set({ 
+          assignedOperatorId: operator.id,
+          operatorName: operator.name // Also store operator name for easy display
+        })
+        .where(eq(workOrders.id, foundWorkOrder.id))
+        .returning();
+      
+      if (updatedWorkOrder.length === 0) {
+        return res.status(500).json({ message: "Failed to update work order" });
+      }
+      
+      console.log(`Successfully assigned ${operator.name} to work order ${foundWorkOrder.id} (Fulfil ID: ${foundWorkOrder.fulfilId})`);
+      
+      res.json({
+        success: true,
+        message: `Assigned ${operator.name} to work order ${foundWorkOrder.rec_name || foundWorkOrder.id}`,
+        workOrder: updatedWorkOrder[0],
+        operatorId: operator.id,
+        operatorName: operator.name
+      });
+      
+    } catch (error) {
+      console.error("Assignment error:", error);
+      res.status(400).json({ message: "Failed to assign operator" });
     }
   });
 
@@ -210,21 +455,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const activeOnly = req.query.activeOnly !== "false";
     const operators = await storage.getOperators(activeOnly);
     
-    // Add activity status based on work cycles data (30+ days inactive threshold)
+    // Add activity status - use database last_active_date first, then fallback to work cycles
     const operatorsWithActivity = await Promise.all(operators.map(async (operator) => {
       try {
-        // Get the most recent work cycle for this operator
-        const recentCycles = await db.select()
-          .from(workCycles)
-          .where(eq(workCycles.work_cycles_operator_rec_name, operator.name))
-          .orderBy(desc(workCycles.work_cycles_operator_write_date))
-          .limit(1);
+        let lastActiveDate = operator.lastActiveDate; // Use database field first
         
-        const lastActiveDate = recentCycles.length > 0 
-          ? recentCycles[0].work_cycles_operator_write_date 
-          : null;
+        // If no database last_active_date, fallback to work cycles data
+        if (!lastActiveDate) {
+          const recentCycles = await db.select()
+            .from(workCycles)
+            .where(eq(workCycles.work_cycles_operator_rec_name, operator.name))
+            .orderBy(desc(workCycles.work_cycles_operator_write_date))
+            .limit(1);
+          
+          lastActiveDate = recentCycles.length > 0 
+            ? recentCycles[0].work_cycles_operator_write_date 
+            : null;
+        }
         
-        // Calculate if operator is inactive (no activity for 30+ days)
+        // Calculate if operator is active (activity within last 30 days)
         const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days in milliseconds
         
@@ -232,6 +481,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (lastActiveDate) {
           const activityDate = new Date(lastActiveDate);
           isRecentlyActive = activityDate >= thirtyDaysAgo;
+          
+          // Debug logging to see what's happening
+          console.log(`Operator ${operator.name}: Last active ${activityDate.toISOString()}, 30 days ago: ${thirtyDaysAgo.toISOString()}, Recently active: ${isRecentlyActive}`);
         }
         
         return {
@@ -303,25 +555,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // UPH Data
   app.get("/api/uph-data", async (req, res) => {
-    const { operatorId, workCenter, operation, dateRange, startDate, endDate } = req.query;
-    
-    let parsedOperatorId: number | undefined;
-    if (operatorId) {
-      parsedOperatorId = parseInt(operatorId as string);
-      if (isNaN(parsedOperatorId) || parsedOperatorId <= 0) {
-        return res.status(400).json({ message: "Invalid operator ID" });
-      }
+    try {
+      // Return data from historical_uph table instead of deprecated uph_data table
+      const data = await db.select({
+        id: historicalUph.id,
+        operatorId: historicalUph.operatorId,
+        operatorName: historicalUph.operator, // Map operator field to operatorName for frontend compatibility
+        workCenter: historicalUph.workCenter,
+        operation: historicalUph.operation,
+        routing: historicalUph.routing, // This field exists in historical_uph but was missing from uph_data
+        productRouting: historicalUph.routing, // Alias for backward compatibility
+        uph: historicalUph.unitsPerHour,
+        observationCount: historicalUph.observations,
+        totalDurationHours: historicalUph.totalHours,
+        totalQuantity: historicalUph.totalQuantity,
+        dataSource: historicalUph.dataSource,
+        lastUpdated: historicalUph.lastCalculated
+      }).from(historicalUph);
+      
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching UPH data:", error);
+      res.status(500).json({ error: "Failed to fetch UPH data" });
     }
-    
-    const uphData = await storage.getUphData(
-      parsedOperatorId,
-      workCenter as string,
-      operation as string,
-      dateRange as string,
-      startDate as string,
-      endDate as string
-    );
-    res.json(uphData);
   });
 
   app.get("/api/uph-data/operator/:operatorId", async (req, res) => {
@@ -891,7 +1147,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Create new operator
             await storage.createOperator({
               name: op.name,
-              email: null,
+              slackUserId: null,
               availableHours: 40,
               workCenters: op.workCenters || [],
               routings: ['Standard'],
@@ -920,70 +1176,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get available work centers and operations for operator setup (using real Fulfil data)
+  // Get all work centers and their operations from authentic work cycles data
   app.get("/api/work-centers-operations", async (req, res) => {
     try {
       const { workCycles } = await import("../shared/schema.js");
       const { db } = await import("./db.js");
       const { sql } = await import("drizzle-orm");
       
-      // Get work centers and operations from actual work cycles data
+      // Get unique work centers and operations from work cycles table
       const workCyclesData = await db
-        .select({
+        .selectDistinct({
           workCenter: workCycles.work_cycles_work_center_rec_name,
-          operation: workCycles.work_cycles_rec_name
+          operation: workCycles.work_operation_rec_name
         })
         .from(workCycles)
         .where(sql`
           ${workCycles.work_cycles_work_center_rec_name} IS NOT NULL 
-          AND ${workCycles.work_cycles_rec_name} IS NOT NULL
+          AND ${workCycles.work_operation_rec_name} IS NOT NULL
         `);
 
-      // Process and consolidate work centers
+      console.log(`Found ${workCyclesData.length} unique work center/operation combinations from work cycles`);
+
+      // Group operations by work center, handling complex work center names
       const workCenterMap = new Map<string, Set<string>>();
       
       for (const row of workCyclesData) {
         if (!row.workCenter || !row.operation) continue;
         
-        const workCenter = row.workCenter.trim();
-        let operation = row.operation.split(' | ')[0].trim(); // Extract operation from "Operation | Operator | WorkCenter"
+        let workCenter = row.workCenter.trim();
+        const operation = row.operation.trim();
         
-        // Apply work center consolidation rules
-        let consolidatedWorkCenter = workCenter;
-        if (['rope/assembly', 'rope', 'sewing/assembly', 'assembly', 'sewing'].some(wc => 
-            workCenter.toLowerCase().includes(wc))) {
-          consolidatedWorkCenter = 'Assembly';
-        } else if (workCenter.toLowerCase().includes('cutting')) {
-          consolidatedWorkCenter = 'Cutting';
-        } else if (workCenter.toLowerCase().includes('packaging')) {
-          consolidatedWorkCenter = 'Packaging';
+        // Simplify compound work centers like "Sewing / Assembly" to main category
+        if (workCenter.includes(' / ')) {
+          // Use the first part as the primary work center
+          workCenter = workCenter.split(' / ')[0].trim();
         }
         
-        // Simplify operation names
-        if (operation.toLowerCase().includes('cutting')) {
-          operation = 'Cutting';
-        } else if (['sewing', 'assembly', 'rope'].some(op => operation.toLowerCase().includes(op))) {
-          operation = 'Assembly';
-        } else if (operation.toLowerCase().includes('packaging')) {
-          operation = 'Packaging';
+        if (!workCenterMap.has(workCenter)) {
+          workCenterMap.set(workCenter, new Set());
         }
-        
-        if (!workCenterMap.has(consolidatedWorkCenter)) {
-          workCenterMap.set(consolidatedWorkCenter, new Set());
-        }
-        workCenterMap.get(consolidatedWorkCenter)!.add(operation);
+        workCenterMap.get(workCenter)!.add(operation);
       }
       
       // Convert to response format
-      const consolidatedWorkCenters = Array.from(workCenterMap.entries()).map(([workCenter, operations]) => ({
+      const workCenters = Array.from(workCenterMap.entries()).map(([workCenter, operations]) => ({
         workCenter,
         operations: Array.from(operations).sort()
       })).sort((a, b) => a.workCenter.localeCompare(b.workCenter));
       
-      res.json(consolidatedWorkCenters);
+      console.log(`Returning ${workCenters.length} work centers with operations:`, 
+        workCenters.map(wc => `${wc.workCenter}: ${wc.operations.length} operations`));
+      
+      res.json(workCenters);
     } catch (error) {
       console.error("Error fetching work centers and operations from work cycles:", error);
-      res.status(500).json({ message: "Error fetching work centers and operations" });
+      res.status(500).json({ error: "Failed to fetch work centers and operations" });
     }
   });
 
@@ -1532,11 +1779,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         for (let i = 0; i < operatorCount && nameIndex < operatorNames.length; i++) {
           const name = operatorNames[nameIndex++];
-          const email = `${name.toLowerCase().replace(' ', '.')}@company.com`;
+          const slackUserId = null; // Will be set manually for Slack integration
           
           operators.push({
             name,
-            email,
+            slackUserId,
             workCenters: [workCenter],
             operations: Array.from(operations) as string[],
             routings: ["Standard"],
@@ -1834,14 +2081,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating UPH from work cycles',
+        currentOperation: 'Calculating UPH using authentic Fulfil API field mapping',
         startTime: Date.now()
       });
 
-      const { calculateUphFromWorkCycles } = await import("./work-cycles-import.js");
+      const { calculateUphFromFulfilFields } = await import("./fulfil-uph-calculation.js");
       
-      console.log("Starting UPH calculation from work cycles...");
-      const results = await calculateUphFromWorkCycles();
+      console.log("Starting UPH calculation using authentic Fulfil field mapping...");
+      const results = await calculateUphFromFulfilFields();
       
       // Clear calculating status
       (global as any).updateImportStatus({
@@ -1850,17 +2097,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: null
       });
       
-      res.json({
-        success: true,
-        message: `Calculated UPH from ${results.summary.totalCycles} work cycles`,
-        calculations: results.calculations,
-        summary: results.summary,
-        totalCalculations: results.calculations.length,
-        method: "Operator + Routing + Work Center + Operation grouping from authentic work cycles data",
-        note: "Uses authentic work cycles data for precise UPH calculations with realistic filtering"
-      });
+      if (results.success) {
+        res.json({
+          success: true,
+          message: results.message,
+          calculations: results.calculations,
+          summary: results.summary,
+          totalCalculations: results.calculations,
+          workCenters: results.workCenters,
+          method: "Authentic Fulfil API field mapping with work center aggregation",
+          note: "Uses exact production.work/cycles endpoint field paths with Assembly consolidation"
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to calculate UPH using Fulfil field mapping",
+          error: results.error
+        });
+      }
     } catch (error) {
-      console.error("Error calculating UPH from work cycles:", error);
+      console.error("Error calculating UPH from Fulfil fields:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
@@ -1872,7 +2128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate UPH from work cycles",
+        message: "Failed to calculate UPH using Fulfil field mapping",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
@@ -2070,41 +2326,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get real routing data from database work orders that operators have completed
+  // Get authentic production routings from work cycles data
   app.get("/api/routings", async (req, res) => {
     try {
       const { workCycles } = await import("../shared/schema.js");
       const { db } = await import("./db.js");
       const { sql } = await import("drizzle-orm");
       
-      // Get distinct routings from work cycles data - the source of all truth
+      // Get unique routings from work cycles data
       const routingResults = await db
         .selectDistinct({ routing: workCycles.work_production_routing_rec_name })
         .from(workCycles)
         .where(sql`${workCycles.work_production_routing_rec_name} IS NOT NULL AND ${workCycles.work_production_routing_rec_name} != ''`)
         .orderBy(workCycles.work_production_routing_rec_name);
 
-      // Extract routing names and filter out empty values and generic ones
+      // Extract routing names and filter out empty values
       const routingNames = routingResults
         .map(row => row.routing)
-        .filter(routing => routing && routing.trim().length > 0 && routing !== 'Standard Production')
+        .filter(routing => routing && routing.trim().length > 0)
         .sort();
 
       // Remove duplicates 
       const uniqueRoutings = Array.from(new Set(routingNames));
       
+      console.log(`Found ${uniqueRoutings.length} unique routings from work cycles:`, uniqueRoutings.slice(0, 5));
+      
       res.json({
         success: true,
         routings: uniqueRoutings,
         count: uniqueRoutings.length,
-        source: "work_cycles"
+        source: "work_cycles_authentic"
       });
     } catch (error) {
       console.error("Error fetching routings from work cycles:", error);
       res.status(500).json({ 
         success: false,
         message: "Error fetching routings from database",
-        routings: ["Standard Production"], // Fallback
+        routings: ["Standard"], // Fallback
         source: "fallback"
       });
     }
@@ -2138,6 +2396,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: `Error fixing UPH observations: ${error.message}`,
         totalStored: 0
+      });
+    }
+  });
+
+  // Fix UPH categories across all routings
+  app.post("/api/uph/fix-all-categories", async (req, res) => {
+    try {
+      const { fixAllUphCategories } = await import("./fix-all-uph-categories.js");
+      const result = await fixAllUphCategories();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH categories:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH categories: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
+  // Fix UPH using authentic work cycles data (no artificial calculations)
+  app.post("/api/uph/fix-authentic", async (req, res) => {
+    try {
+      const { fixUphAuthentic } = await import("./fix-uph-authentic.js");
+      const result = await fixUphAuthentic();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH with authentic data:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH with authentic data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
+  // Fix UPH using correct formula: UPH = Work Order Quantity / Total Duration Hours
+  app.post("/api/uph/fix-correct-formula", async (req, res) => {
+    try {
+      const { fixUphCorrectFormula } = await import("./fix-uph-correct-formula.js");
+      const result = await fixUphCorrectFormula();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH with correct formula:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH with correct formula: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
+  // Fix UPH calculating each work order individually, then weighted averaging per operator
+  app.post("/api/uph/fix-individual-wo", async (req, res) => {
+    try {
+      const { fixUphIndividualWorkOrders } = await import("./fix-uph-individual-wo.js");
+      const result = await fixUphIndividualWorkOrders();
+      res.json(result);
+    } catch (error) {
+      console.error("Error fixing UPH with individual work orders:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error fixing UPH with individual work orders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        recordsInserted: 0
+      });
+    }
+  });
+
+  // Calculate UPH from existing work cycles data (no API calls needed)
+  app.post("/api/uph/calculate-simple", async (req, res) => {
+    try {
+      const { calculateUphFromExistingCycles } = await import("./simple-uph-from-cycles.js");
+      const result = await calculateUphFromExistingCycles();
+      res.json(result);
+    } catch (error) {
+      console.error("Error calculating UPH from existing cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error calculating UPH from existing cycles: ${error.message}`,
+        validUphCalculations: 0
       });
     }
   });
@@ -2223,8 +2561,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Direct database query to get stored UPH data
-      const uphResults = await db.select().from(uphData);
+      // Direct database query to get stored UPH data from historical_uph table
+      const uphResults = await db.select().from(historicalUph);
       const allOperators = await db.select().from(operators);
       
       if (uphResults.length === 0) {
@@ -2260,10 +2598,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return workCenter.charAt(0).toUpperCase() + workCenter.slice(1).toLowerCase();
       };
       
-      // Apply work center consolidation to UPH results
+      // Apply work center consolidation to UPH results and map field names
       const consolidatedUphResults = uphResults.map(row => ({
         ...row,
-        workCenter: consolidateWorkCenter(row.workCenter)
+        workCenter: consolidateWorkCenter(row.workCenter),
+        unitsPerHour: row.unitsPerHour, // historicalUph uses unitsPerHour field
+        calculationPeriod: row.observations // historicalUph uses observations field
       }));
       
       // Get unique work centers and routings after consolidation
@@ -2299,7 +2639,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          const operatorName = operatorMap.has(operatorId) ? operatorMap.get(operatorId)! : `Operator ${operatorId}`;
+          // Use operator name directly from historicalUph data
+          const operatorRecord = consolidatedUphResults.find(r => r.operatorId === operatorId);
+          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
@@ -2399,18 +2741,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get individual UPH records for analytics page filtering
+  // Get individual UPH records for analytics page filtering (use historical_uph table)
   app.get("/api/uph-data", async (req, res) => {
     try {
-      // Direct database query to get all UPH records
-      const uphResults = await db.select().from(uphData);
+      // Direct database query to get all UPH records from historical_uph table
+      const uphResults = await db.select().from(historicalUph);
       
       if (uphResults.length === 0) {
         return res.json([]);
       }
       
-      // Return individual records in format expected by analytics page
-      res.json(uphResults);
+      // Map historical_uph fields to expected format for operator settings page
+      const formattedResults = uphResults.map(record => ({
+        id: record.id,
+        operatorId: record.operatorId,
+        operatorName: record.operator,
+        workCenter: record.workCenter,
+        operation: record.operation,
+        routing: record.routing, // This is the key field that was missing
+        productRouting: record.routing, // Alias for compatibility
+        unitsPerHour: record.unitsPerHour,
+        uph: record.unitsPerHour,
+        observationCount: record.observations,
+        totalDurationHours: record.totalHours,
+        totalQuantity: record.totalQuantity,
+        dataSource: record.dataSource,
+        createdAt: record.lastCalculated,
+        updatedAt: record.lastCalculated
+      }));
+      
+      res.json(formattedResults);
     } catch (error) {
       console.error("Error getting UPH data:", error);
       res.status(500).json({ message: "Error getting UPH data" });
@@ -2509,24 +2869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Work order enrichment endpoint
-  app.post("/api/fulfil/enrich-routing", async (req: Request, res: Response) => {
-    try {
-      // Return success for now since routing data is already in database
-      res.json({
-        success: true,
-        message: "Work orders already enriched with routing data",
-        updated: 0
-      });
-    } catch (error) {
-      console.error("Work order enrichment error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Work order enrichment failed",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
+  // REMOVED - Conflicting route replaced by /api/fulfil/populate-routing
 
   // Database cleanup endpoint for CSV re-import
   app.post("/api/fulfil/clear-database", async (req: Request, res: Response) => {
@@ -2966,34 +3309,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Clear old data and insert current orders
+      // Upsert current orders (insert or update without deleting existing)
       const { productionOrders } = await import("../shared/schema.js");
       const { db } = await import("./db.js");
+      const { eq } = await import("drizzle-orm");
       
-      // Clear old production orders
-      await db.delete(productionOrders);
-      
-      // Insert current orders
+      // Insert or update current orders without clearing existing data
       let imported = 0;
       for (const order of currentOrders) {
         try {
-          await db.insert(productionOrders).values({
-            moNumber: order.rec_name,
-            productName: order.product_name,
-            quantity: order.quantity,
-            status: order.state,
-            routing: "Standard",
-            priority: "Normal",
-            fulfilId: parseInt(order.id),
-            product_code: order.product_code,
-            rec_name: order.rec_name,
-            state: order.state,
-            planned_date: order.planned_date,
-            createdAt: new Date(),
-          });
-          imported++;
+          // Check if production order already exists by moNumber
+          const existing = await db
+            .select()
+            .from(productionOrders)
+            .where(eq(productionOrders.moNumber, order.rec_name))
+            .limit(1);
+          
+          if (existing.length === 0) {
+            // Insert new production order
+            await db.insert(productionOrders).values({
+              moNumber: order.rec_name,
+              productName: order.product_name,
+              quantity: order.quantity,
+              status: order.state,
+              routing: "Standard",
+              priority: "Normal",
+              fulfilId: parseInt(order.id),
+              product_code: order.product_code,
+              rec_name: order.rec_name,
+              state: order.state,
+              planned_date: order.planned_date,
+              createdAt: new Date(),
+            });
+            imported++;
+          } else {
+            // Update existing production order
+            await db
+              .update(productionOrders)
+              .set({
+                productName: order.product_name,
+                quantity: order.quantity,
+                status: order.state,
+                product_code: order.product_code,
+                state: order.state,
+                planned_date: order.planned_date,
+              })
+              .where(eq(productionOrders.moNumber, order.rec_name));
+          }
         } catch (error) {
-          console.error(`Error inserting MO ${order.rec_name}:`, error);
+          console.error(`Error upserting MO ${order.rec_name}:`, error);
         }
       }
 
@@ -3293,6 +3657,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Import status endpoint
+  // Routing synchronization endpoint to fix MO routing data
+  app.post("/api/fulfil/sync-routing", async (req, res) => {
+    try {
+      const apiKey = process.env.FULFIL_ACCESS_TOKEN;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Fulfil API key not configured" });
+      }
+
+      // Get all production orders with "Standard" routing that need fixing
+      const standardRoutingOrders = await db.select().from(productionOrders).where(eq(productionOrders.routing, 'Standard'));
+      
+      if (standardRoutingOrders.length === 0) {
+        return res.json({ message: "No production orders with Standard routing found", updated: 0 });
+      }
+
+      console.log(`Found ${standardRoutingOrders.length} production orders with Standard routing to fix`);
+
+      // Extract Fulfil IDs for bulk lookup
+      const fulfilIds = standardRoutingOrders.map(po => po.fulfilId).filter(id => id !== null);
+      
+      if (fulfilIds.length === 0) {
+        return res.json({ message: "No valid Fulfil IDs found", updated: 0 });
+      }
+
+      // Bulk fetch routing data from Fulfil using search_read with multiple IDs
+      const endpoint = "https://apc.fulfil.io/api/v2/model/production/search_read";
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': apiKey
+        },
+        body: JSON.stringify({
+          "filters": [
+            ['id', 'in', fulfilIds]
+          ],
+          "fields": [
+            'id', 'rec_name', 'routing.rec_name'
+          ]
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (response.status !== 200) {
+        const errorText = await response.text();
+        console.error(`Fulfil routing sync failed: ${response.status} - ${errorText}`);
+        return res.status(500).json({ error: "Failed to fetch routing data from Fulfil" });
+      }
+
+      const fulfilData = await response.json();
+      console.log(`Received routing data for ${fulfilData.length} production orders from Fulfil`);
+
+      let updatedCount = 0;
+
+      // Update each production order with correct routing
+      for (const fulfilPO of fulfilData) {
+        const routingName = fulfilPO['routing.rec_name'] || 'Standard';
+        
+        // Find matching local production order
+        const localPO = standardRoutingOrders.find(po => po.fulfilId === fulfilPO.id);
+        if (localPO && routingName !== 'Standard') {
+          // Update production order routing
+          await db.update(productionOrders)
+            .set({ routing: routingName })
+            .where(eq(productionOrders.id, localPO.id));
+
+          // Update work orders routing for this production order
+          await db.update(workOrders)
+            .set({ routing: routingName })
+            .where(eq(workOrders.productionOrderId, localPO.id));
+
+          console.log(`Updated ${localPO.moNumber} routing from Standard to ${routingName}`);
+          updatedCount++;
+        }
+      }
+
+      res.json({ 
+        message: `Successfully synchronized routing data from Fulfil`,
+        checked: fulfilData.length,
+        updated: updatedCount,
+        details: fulfilData.map(po => ({
+          mo: po.rec_name,
+          routing: po['routing.rec_name'] || 'Standard'
+        }))
+      });
+
+    } catch (error) {
+      console.error("Error syncing routing data:", error);
+      res.status(500).json({ error: "Failed to sync routing data" });
+    }
+  });
+
   app.get("/api/fulfil/import-status", (req: Request, res: Response) => {
     res.json({
       ...importStatus,
@@ -3343,6 +3799,294 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error auto-configuring operator work centers:', error);
       res.status(500).json({ error: 'Failed to configure operator work centers' });
+    }
+  });
+
+  // Comprehensive refresh endpoints for UPH workflow
+  app.post("/api/fulfil/import-work-cycles", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { FulfilUphWorkflow } = await import("./fulfil-uph-workflow.js");
+      const workflow = new FulfilUphWorkflow();
+      
+      const result = await workflow.importDoneWorkCycles();
+      
+      res.json({
+        success: true,
+        message: `Imported ${result.imported} new work cycles, updated ${result.updated}`,
+        imported: result.imported,
+        updated: result.updated
+      });
+    } catch (error) {
+      console.error("Error importing work cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to import work cycles",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.post("/api/fulfil/calculate-uph-from-cycles", async (req: Request, res: Response) => {
+    try {
+      const { FulfilUphWorkflow } = await import("./fulfil-uph-workflow.js");
+      const workflow = new FulfilUphWorkflow();
+      
+      const result = await workflow.calculateUphFromAggregatedData();
+      
+      res.json({
+        success: true,
+        message: `Calculated UPH for ${result.calculated} operator/work center combinations`,
+        calculated: result.calculated,
+        skipped: result.skipped
+      });
+    } catch (error) {
+      console.error("Error calculating UPH from cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to calculate UPH from work cycles",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.post("/api/fulfil/complete-refresh", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { FulfilUphWorkflow } = await import("./fulfil-uph-workflow.js");
+      const workflow = new FulfilUphWorkflow();
+      
+      const result = await workflow.executeCompleteWorkflow();
+      
+      res.json({
+        success: true,
+        message: `Complete refresh successful: ${result.workCycles.imported} work cycles imported, ${result.uphData.calculated} UPH calculations completed`,
+        workCycles: result.workCycles,
+        uphData: result.uphData,
+        processingTimeMs: result.totalProcessingTime
+      });
+    } catch (error) {
+      console.error("Error in complete refresh:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to complete refresh workflow",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Auto-sync operator last active dates when work cycles are imported  
+  app.post("/api/operators/sync-last-active", async (req, res) => {
+    try {
+      console.log("Syncing operator last active dates from work cycles...");
+      
+      // Update all operators' last_active_date based on their most recent work cycle activity
+      const result = await db.execute(sql`
+        UPDATE operators 
+        SET last_active_date = (
+          SELECT MAX(work_cycles_operator_write_date) 
+          FROM work_cycles 
+          WHERE work_cycles_operator_rec_name = operators.name
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM work_cycles 
+          WHERE work_cycles_operator_rec_name = operators.name
+        )
+      `);
+      
+      console.log(`Updated last active dates for ${result.rowCount || 0} operators`);
+      
+      res.json({
+        success: true,
+        message: `Updated last active dates for ${result.rowCount || 0} operators`,
+        updatedCount: result.rowCount || 0
+      });
+      
+    } catch (error) {
+      console.error("Error syncing operator last active dates:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to sync operator last active dates",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Sync missing work orders from Fulfil to local database
+  app.post("/api/fulfil/sync-missing-work-orders", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { FulfilCurrentService } = await import("./fulfil-current.js");
+      const fulfil = new FulfilCurrentService();
+      
+      // Get current production orders and their work orders from Fulfil
+      const currentOrders = await fulfil.getCurrentProductionOrders();
+      console.log(`Found ${currentOrders.orders.length} production orders from Fulfil API`);
+      
+      let syncedWorkOrders = 0;
+      let syncedProductionOrders = 0;
+      
+      for (const order of currentOrders.orders) {
+        // Check if production order exists locally
+        const existingPO = await db.select()
+          .from(productionOrders)
+          .where(eq(productionOrders.moNumber, order.moNumber))
+          .limit(1);
+        
+        let productionOrderId: number;
+        
+        if (existingPO.length === 0) {
+          // Insert missing production order
+          const newPO = await db.insert(productionOrders).values({
+            moNumber: order.moNumber,
+            productName: order.productName,
+            quantity: order.quantity,
+            status: order.status,
+            routing: order.routingName,
+            fulfilId: order.fulfilId,
+            rec_name: order.moNumber,
+            state: order.status,
+            product_code: order.productCode,
+          }).returning({ id: productionOrders.id });
+          
+          productionOrderId = newPO[0].id;
+          syncedProductionOrders++;
+          console.log(`Created missing production order: ${order.moNumber}`);
+        } else {
+          productionOrderId = existingPO[0].id;
+        }
+        
+        // Check and sync work orders for this production order
+        for (const wo of order.work_orders || []) {
+          const existingWO = await db.select()
+            .from(workOrders)
+            .where(
+              and(
+                eq(workOrders.productionOrderId, productionOrderId),
+                eq(workOrders.operation, wo.operation)
+              )
+            )
+            .limit(1);
+          
+          if (existingWO.length === 0) {
+            // Insert missing work order
+            await db.insert(workOrders).values({
+              productionOrderId: productionOrderId,
+              workCenter: wo.work_center === 'Sewing' ? 'Assembly' : wo.work_center,
+              operation: wo.operation,
+              routing: order.routingName || 'Standard',
+              quantityDone: wo.quantity_done || 0,
+              status: wo.state || 'pending',
+              sequence: 1,
+              fulfilId: parseInt(wo.id),
+              state: wo.state,
+              rec_name: `WO${wo.id}`,
+              workCenterName: wo.work_center,
+              operationName: wo.operation,
+            });
+            
+            syncedWorkOrders++;
+            console.log(`Created missing work order: ${wo.id} for ${order.moNumber}`);
+          }
+        }
+      }
+      
+      res.json({
+        success: true,
+        message: `Synced ${syncedWorkOrders} missing work orders and ${syncedProductionOrders} missing production orders`,
+        syncedWorkOrders,
+        syncedProductionOrders
+      });
+      
+    } catch (error) {
+      console.error("Error syncing missing work orders:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to sync missing work orders",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Add route to enrich work orders with routing data from rec_name parsing
+  app.post('/api/fulfil/populate-routing', async (req, res) => {
+    try {
+      console.log("🚀 Starting work order enrichment from rec_name parsing...");
+      const { enrichWorkOrdersFromRecName } = await import('./work-order-enrichment.js');
+      const result = await enrichWorkOrdersFromRecName();
+      console.log("✅ Work order enrichment completed:", result);
+      res.json(result);
+    } catch (error) {
+      console.error('❌ Work order rec_name enrichment failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Add route to analyze work order routing patterns
+  app.get('/api/fulfil/analyze-routings', async (req, res) => {
+    try {
+      const { analyzeWorkOrderRoutings } = await import('./work-order-enrichment.js');
+      const result = await analyzeWorkOrderRoutings();
+      res.json(result);
+    } catch (error) {
+      console.error('Work order routing analysis failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Enhanced UPH calculation using rec_name field aggregation
+  app.post('/api/uph/calculate-enhanced', async (req, res) => {
+    try {
+      console.log("🚀 Starting enhanced UPH calculation with rec_name field aggregation...");
+      const { calculateEnhancedUPH } = await import('./enhanced-uph-calculation.js');
+      const result = await calculateEnhancedUPH();
+      console.log("✅ Enhanced UPH calculation completed:", result);
+      res.json(result);
+    } catch (error) {
+      console.error('❌ Enhanced UPH calculation failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Get enhanced UPH statistics
+  app.get('/api/uph/enhanced-stats', async (req, res) => {
+    try {
+      const { getEnhancedUPHStats } = await import('./enhanced-uph-calculation.js');
+      const result = await getEnhancedUPHStats();
+      res.json(result);
+    } catch (error) {
+      console.error('Enhanced UPH stats retrieval failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
     }
   });
 
