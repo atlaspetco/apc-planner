@@ -142,16 +142,29 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     </td>
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
+                      const totalQuantity = workOrdersInCenter.reduce((sum, wo) => sum + (wo.quantity || 0), 0);
+                      
                       return (
                         <td key={workCenter} className="p-4 text-center">
                           {workOrdersInCenter.length > 0 ? (
-                            <div className="space-y-1">
-                              <div className="text-xs text-gray-500 mb-1">
-                                {workOrdersInCenter.length} operations
+                            <div className="space-y-2">
+                              <div className="text-xs text-gray-500">
+                                {workOrdersInCenter.length} operations • Qty: {totalQuantity}
                               </div>
-                              <div className="text-xs text-gray-400">
-                                Expand to assign operators
-                              </div>
+                              <OperatorDropdown
+                                workCenter={workCenter}
+                                routing={routing}
+                                operation=""
+                                quantity={totalQuantity}
+                                workOrderIds={workOrdersInCenter.map(wo => wo.id)}
+                                onAssign={(operatorId) => {
+                                  // Bulk assign to all work orders in this work center for this routing
+                                  workOrdersInCenter.forEach(wo => {
+                                    handleOperatorAssign(wo.id, operatorId, wo.quantity || totalQuantity, routing, workCenter, wo.operation);
+                                  });
+                                }}
+                                className="w-full"
+                              />
                             </div>
                           ) : (
                             <span className="text-gray-400">-</span>

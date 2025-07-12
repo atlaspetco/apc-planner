@@ -13,23 +13,29 @@ interface QualifiedOperator {
 }
 
 interface OperatorDropdownProps {
-  workOrderId: number;
+  workOrderId?: number; // Optional for backward compatibility
+  workOrderIds?: number[]; // For bulk assignment
   workCenter: string;
   routing: string;
   operation: string;
   quantity: number;
   currentOperatorId?: number | null;
   onAssignmentChange?: (workOrderId: number, operatorId: number | null, estimatedHours: number | null) => void;
+  onAssign?: (operatorId: number) => void; // For bulk assignment
+  className?: string;
 }
 
 export function OperatorDropdown({
   workOrderId,
+  workOrderIds,
   workCenter,
   routing,
   operation,
   quantity,
   currentOperatorId,
-  onAssignmentChange
+  onAssignmentChange,
+  onAssign,
+  className
 }: OperatorDropdownProps) {
   const [qualifiedOperators, setQualifiedOperators] = useState<QualifiedOperator[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,10 +56,10 @@ export function OperatorDropdown({
         const response = await fetch(`/api/operators/qualified?${params}`);
         const data = await response.json();
         
-        if (data.success) {
+        if (response.ok && data.operators) {
           setQualifiedOperators(data.operators);
         } else {
-          console.error('Failed to fetch qualified operators:', data.error);
+          console.error('Failed to fetch qualified operators:', data.error || 'No operators returned');
           setQualifiedOperators([]);
         }
       } catch (error) {
@@ -70,6 +76,15 @@ export function OperatorDropdown({
   }, [workCenter, routing, operation]);
 
   const handleAssignment = async (operatorId: string) => {
+    if (onAssign) {
+      // For bulk assignment, use the onAssign callback
+      onAssign(parseInt(operatorId));
+      return;
+    }
+
+    // For single work order assignment
+    if (!workOrderId) return;
+    
     try {
       const response = await fetch('/api/work-orders/assign-operator', {
         method: 'POST',
@@ -118,14 +133,14 @@ export function OperatorDropdown({
     : null;
 
   return (
-    <div className="space-y-1">
+    <div className={`space-y-1 ${className || ''}`}>
       <Select 
         value={currentOperatorId?.toString() || "unassigned"} 
         onValueChange={handleAssignment}
         disabled={loading}
       >
-        <SelectTrigger className="w-full h-7 text-xs bg-white border-gray-300">
-          <SelectValue placeholder={loading ? "Loading..." : "Select Operator"} />
+        <SelectTrigger className="w-full h-8 text-xs bg-white border-gray-300">
+          <SelectValue placeholder={loading ? "Loading..." : "Assign Operator"} />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="unassigned">
@@ -138,12 +153,12 @@ export function OperatorDropdown({
               <div className="flex items-center justify-between w-full min-w-0">
                 <span className="truncate">{operator.name}</span>
                 <div className="flex items-center space-x-1 ml-2">
-                  {operator.hasPerformanceData && (
+                  {operator.observations > 0 && operator.averageUph > 0 && (
                     <Badge variant="secondary" className="text-xs px-1 py-0">
                       {operator.averageUph.toFixed(1)} UPH
                     </Badge>
                   )}
-                  {!operator.hasPerformanceData && (
+                  {(operator.observations === 0 || operator.averageUph === 0) && (
                     <Badge variant="outline" className="text-xs px-1 py-0">
                       No data
                     </Badge>
@@ -161,11 +176,6 @@ export function OperatorDropdown({
           ~{estimatedHours}h ({Math.round(quantity / estimatedHours)} UPH)
         </div>
       )}
-      
-      {/* Show operation details */}
-      <div className="text-xs text-gray-500">
-        {operation} ({workCenter})
-      </div>
     </div>
   );
 }
