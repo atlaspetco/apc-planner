@@ -636,6 +636,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(operators);
   });
 
+  // Get qualified operators for specific work center/routing/operation combination
+  app.get("/api/operators/qualified", async (req: Request, res: Response) => {
+    try {
+      const { workCenter, routing, operation } = req.query;
+      
+      if (!workCenter) {
+        return res.status(400).json({ error: "workCenter parameter required" });
+      }
+
+      // Get all active operators
+      const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
+      
+      // Get UPH data for performance calculations
+      const uphData = await db.select().from(historicalUph);
+      const uphMap = new Map<string, { uph: number; observations: number }>();
+      
+      uphData.forEach(record => {
+        const key = `${record.operatorId}-${record.workCenter}-${record.routing}`;
+        uphMap.set(key, { 
+          uph: record.unitsPerHour || 0, 
+          observations: record.observations || 0 
+        });
+      });
+
+      // Filter operators based on constraints and calculate their performance
+      const qualifiedOperators = allOperators
+        .filter(op => {
+          // Check work center permission (handle Assembly consolidation)
+          const allowedWorkCenters = op.workCenters || [];
+          const isQualifiedForWorkCenter = allowedWorkCenters.includes(workCenter as string) ||
+            (workCenter === 'Assembly' && (allowedWorkCenters.includes('Rope') || allowedWorkCenters.includes('Sewing')));
+          
+          if (!isQualifiedForWorkCenter) return false;
+
+          // Check routing permission if specified
+          if (routing) {
+            const allowedRoutings = op.productRoutings || [];
+            if (allowedRoutings.length > 0 && !allowedRoutings.includes(routing as string)) {
+              return false;
+            }
+          }
+
+          // Check operation permission if specified
+          if (operation) {
+            const allowedOperations = op.operations || [];
+            if (allowedOperations.length > 0 && !allowedOperations.includes(operation as string)) {
+              return false;
+            }
+          }
+
+          return true;
+        })
+        .map(op => {
+          // Calculate UPH performance for this operator in this context
+          const uphKey = `${op.id}-${workCenter}-${routing || 'any'}`;
+          const performanceData = uphMap.get(uphKey);
+          
+          return {
+            id: op.id,
+            name: op.name,
+            isActive: op.isActive,
+            averageUph: performanceData?.uph || 0,
+            observations: performanceData?.observations || 0,
+            estimatedHoursFor: (quantity: number) => {
+              if (performanceData?.uph && performanceData.uph > 0) {
+                return Number((quantity / performanceData.uph).toFixed(2));
+              }
+              return null;
+            }
+          };
+        })
+        .sort((a, b) => b.averageUph - a.averageUph); // Sort by performance, best first
+
+      res.json({
+        operators: qualifiedOperators,
+        totalQualified: qualifiedOperators.length,
+        filters: { workCenter, routing, operation }
+      });
+    } catch (error) {
+      console.error("Error getting qualified operators:", error);
+      res.status(500).json({ 
+        error: "Failed to get qualified operators",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   app.get("/api/operators/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
@@ -3020,86 +3107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get qualified operators for specific work center/routing/operation combination
-  app.get("/api/operators/qualified", async (req: Request, res: Response) => {
-    try {
-      const { workCenter, routing, operation } = req.query;
-      
-      if (!workCenter) {
-        return res.status(400).json({ error: "workCenter parameter required" });
-      }
-
-      // Get all active operators
-      const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
-      
-      // Get UPH data for performance calculations
-      const uphData = await db.select().from(historicalUph);
-      const uphMap = new Map<string, { uph: number; observations: number }>();
-      
-      uphData.forEach(record => {
-        const key = `${record.operatorId}-${record.workCenter}-${record.routing}`;
-        uphMap.set(key, { 
-          uph: record.unitsPerHour || 0, 
-          observations: record.observations || 0 
-        });
-      });
-
-      // Filter operators based on constraints and calculate their performance
-      const qualifiedOperators = allOperators
-        .filter(op => {
-          // Check work center permission (handle Assembly consolidation)
-          const allowedWorkCenters = op.workCenters || [];
-          const isQualifiedForWorkCenter = allowedWorkCenters.includes(workCenter as string) ||
-            (workCenter === 'Assembly' && (allowedWorkCenters.includes('Rope') || allowedWorkCenters.includes('Sewing')));
-          
-          // Check routing permission if specified
-          const isQualifiedForRouting = !routing || !op.routings || op.routings.length === 0 || 
-            op.routings.includes(routing as string);
-          
-          // Check operation permission if specified  
-          const isQualifiedForOperation = !operation || !op.operations || op.operations.length === 0 ||
-            op.operations.includes(operation as string);
-            
-          return isQualifiedForWorkCenter && isQualifiedForRouting && isQualifiedForOperation;
-        })
-        .map(op => {
-          // Get UPH performance for this operator/work center/routing combination
-          const uphKey = `${op.id}-${workCenter}-${routing || ''}`;
-          const performance = uphMap.get(uphKey) || { uph: 0, observations: 0 };
-          
-          return {
-            id: op.id,
-            name: op.name,
-            availableHours: op.availableHours || 40,
-            averageUph: performance.uph,
-            observations: performance.observations,
-            hasPerformanceData: performance.observations > 0
-          };
-        })
-        .sort((a, b) => {
-          // Sort by performance data availability, then by UPH
-          if (a.hasPerformanceData && !b.hasPerformanceData) return -1;
-          if (!a.hasPerformanceData && b.hasPerformanceData) return 1;
-          return b.averageUph - a.averageUph;
-        });
-
-      res.json({
-        success: true,
-        operators: qualifiedOperators,
-        totalQualified: qualifiedOperators.length,
-        workCenter,
-        routing,
-        operation
-      });
-    } catch (error) {
-      console.error("Error getting qualified operators:", error);
-      res.status(500).json({ 
-        success: false,
-        error: "Failed to get qualified operators",
-        operators: []
-      });
-    }
-  });
+  // REMOVED DUPLICATE - qualified operators endpoint moved higher in routes
 
   // Assign operator to work order with UPH-based time estimation
   app.post("/api/work-orders/assign-operator", async (req: Request, res: Response) => {

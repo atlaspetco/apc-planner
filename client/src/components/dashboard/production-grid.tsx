@@ -146,19 +146,11 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                         <td key={workCenter} className="p-4 text-center">
                           {workOrdersInCenter.length > 0 ? (
                             <div className="space-y-1">
-                              <Select>
-                                <SelectTrigger className="w-full h-8 text-xs bg-gray-100 border-gray-300">
-                                  <SelectValue placeholder={`${workCenter}`} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                                  <SelectItem value="operator1">Courtney Banh</SelectItem>
-                                  <SelectItem value="operator2">Devin Cann</SelectItem>
-                                  <SelectItem value="operator3">Sam Alter</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <div className="text-xs text-blue-600">
+                              <div className="text-xs text-gray-500 mb-1">
                                 {workOrdersInCenter.length} operations
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                Expand to assign operators
                               </div>
                             </div>
                           ) : (
