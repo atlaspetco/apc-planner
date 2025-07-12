@@ -171,11 +171,19 @@ export function getRoutingForProduct(productCode: string): string {
 export function extractProductCode(moNumber: string, recName: string): string {
   // Enhanced pattern matching based on the CSV data and known product codes
   
-  // Common MO number patterns that indicate specific products (based on actual data)
-  if (moNumber.includes('178226')) return 'LH-LG'; // LHA-LG Lifetime Air Harness - Large
-  if (moNumber.includes('178231')) return 'LPL'; // Lifetime Loop  
-  if (moNumber.includes('178244')) return 'LPL'; // Lifetime Loop variation
-  if (moNumber.includes('178250')) return 'LH-MD'; // Lifetime Pro Harness Medium
+  // Common MO number patterns that indicate specific products based on console logs
+  if (moNumber.includes('178231')) return 'LPL'; // Lifetime Loop
+  if (moNumber.includes('178253')) return 'LP-B'; // Lifetime Pouch - Black
+  if (moNumber.includes('184337')) return 'LH-MD'; // Lifetime Harness - Medium
+  if (moNumber.includes('185116') || moNumber.includes('185119')) return 'LP-B'; // Lifetime Pouch - Black
+  if (moNumber.includes('185302') || moNumber.includes('185303')) return 'LH-MD'; // Lifetime Harness - Medium
+  if (moNumber.includes('185324') || moNumber.includes('185328')) return 'LH-LG'; // Lifetime Harness - Large
+  if (moNumber.includes('185332') || moNumber.includes('185333')) return 'LP-B'; // Lifetime Pouch - Black
+  if (moNumber.includes('185335') || moNumber.includes('185336') || moNumber.includes('185337')) return 'LH-SM'; // Lifetime Harness - Small
+  if (moNumber.includes('185321')) return 'LC-'; // Lifetime Collar
+  if (moNumber.includes('185340')) return 'LC-'; // Lifetime Collar
+  if (moNumber.includes('186151')) return 'LL-'; // Lifetime Leash
+  if (moNumber.includes('178312')) return 'PB-4'; // Poop Bags
   if (moNumber.includes('178253')) return 'LP-B'; // Lifetime Pouch - Black
   if (moNumber.includes('178312')) return 'PB-4'; // Poop Bags-4 Rolls
   
