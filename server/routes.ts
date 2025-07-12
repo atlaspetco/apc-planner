@@ -26,66 +26,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Fulfil API key not configured" });
       }
 
-      // Fetch active work orders from Fulfil - need to include all active states
-      // Including 'request', 'draft', 'waiting', 'assigned', and 'running'
-      const [requestResponse, draftResponse, runningResponse, waitingResponse, assignedResponse] = await Promise.all([
-        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=request&per_page=50', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-          }
-        }),
-        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=draft&per_page=50', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-          }
-        }),
-        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=running&per_page=50', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-          }
-        }),
-        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=waiting&per_page=50', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-          }
-        }),
-        fetch('https://apc.fulfil.io/api/v2/model/production.work?state=assigned&per_page=50', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-          }
-        })
-      ]);
+      // Fetch work orders from Fulfil without state filtering to get complete picture
+      // Request specific fields including state, rec_name, production
+      const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work?fields=id,rec_name,state,production&per_page=200', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
+        }
+      });
 
-      if (!requestResponse.ok || !draftResponse.ok || !runningResponse.ok || !waitingResponse.ok || !assignedResponse.ok) {
-        console.error(`Fulfil API error: request=${requestResponse.status}, draft=${draftResponse.status}, running=${runningResponse.status}, waiting=${waitingResponse.status}, assigned=${assignedResponse.status}`);
+      if (!workOrderResponse.ok) {
+        console.error(`Fulfil API error: ${workOrderResponse.status}`);
         // Fallback to local database if API fails
         const localOrders = await storage.getProductionOrders();
         console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
         return res.json(localOrders);
       }
 
-      const [requestData, draftData, runningData, waitingData, assignedData] = await Promise.all([
-        requestResponse.json(),
-        draftResponse.json(),
-        runningResponse.json(),
-        waitingResponse.json(),
-        assignedResponse.json()
-      ]);
-
-      // Combine the results from all states
-      const workOrdersData = [...requestData, ...draftData, ...runningData, ...waitingData, ...assignedData];
+      const workOrdersData = await workOrderResponse.json();
       console.log(`Fetched ${workOrdersData.length} active work orders from production.work endpoint`);
       console.log('Sample work order data:', workOrdersData.slice(0, 2));
+      
+      // Log state distribution for debugging
+      const stateCount: Record<string, number> = {};
+      workOrdersData.forEach(wo => {
+        const state = wo.state || 'undefined';
+        stateCount[state] = (stateCount[state] || 0) + 1;
+      });
+      console.log('Work order states distribution:', stateCount);
+      
+      // Log specific work orders for MO173891 debugging
+      const mo173891WorkOrders = workOrdersData.filter(wo => wo.rec_name?.includes('MO173891'));
+      console.log('MO173891 work orders found:', mo173891WorkOrders.length);
+      mo173891WorkOrders.forEach(wo => {
+        console.log(`  - WO${wo.id}: state="${wo.state}", rec_name="${wo.rec_name}"`);
+      });
 
       if (!Array.isArray(workOrdersData)) {
         console.error('Unexpected API response format:', workOrdersData);
@@ -94,6 +70,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Import product routing mapper
       const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
+      
+      // Define state priority order (higher number = more advanced state)
+      function getStatePriority(state: string): number {
+        const priorities: Record<string, number> = {
+          'draft': 1,
+          'request': 2,
+          'waiting': 3,
+          'assigned': 4,
+          'running': 5,
+          'done': 6,
+          'finished': 7
+        };
+        return priorities[state] || 0;
+      }
 
       // Group work orders by production order to create MOs
       const productionOrderMap = new Map();
@@ -131,6 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             rec_name: moNumber,
             planned_date: null,
             product_code: productCode,
+            productionId: wo.production, // Store production ID for later status lookup
             workOrders: []
           });
         }
@@ -144,54 +135,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           state: wo.state,
           quantity: wo.quantity || 0
         });
+        
+        // Update MO status to the furthest/most advanced state among all work orders
+        const currentState = po.status || 'draft';
+        const newState = wo.state || 'draft';
+        if (getStatePriority(newState) > getStatePriority(currentState)) {
+          po.status = newState;
+          po.state = newState;
+          console.log(`Updated ${moNumber} status from ${currentState} to ${newState} (furthest state)`);
+        }
+        
+        // Special logging for MO173891 to debug the status issue
+        if (moNumber === 'MO173891') {
+          console.log(`MO173891 debug: WO ${woNumber} has state "${wo.state}", current MO state: "${po.status}", production ID: ${wo.production}`);
+        }
       }
 
       const productionOrders = Array.from(productionOrderMap.values());
       
-      // Now fetch actual production order states from production.order endpoint
-      // to get the correct status (running, done, etc.) instead of work order states
-      try {
-        const productionIds = Array.from(new Set(workOrdersData.map(wo => wo.production).filter(Boolean)));
-        if (productionIds.length > 0) {
-          // Fetch production order states in batches
-          const batchSize = 20;
-          for (let i = 0; i < productionIds.length; i += batchSize) {
-            const batch = productionIds.slice(i, i + batchSize);
-            const idsParam = batch.join(',');
-            
-            try {
-              const productionResponse = await fetch(`https://apc.fulfil.io/api/v2/model/production.order?id=in(${idsParam})&fields=id,state`, {
-                method: 'GET',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
-                }
-              });
-              
-              if (productionResponse.ok) {
-                const productionData = await productionResponse.json();
-                
-                // Update production order states
-                for (const prodOrder of productionData) {
-                  const relatedMOs = productionOrders.filter(po => 
-                    workOrdersData.some(wo => wo.production === prodOrder.id && wo.rec_name?.includes(po.moNumber))
-                  );
-                  
-                  for (const mo of relatedMOs) {
-                    mo.status = prodOrder.state;
-                    mo.state = prodOrder.state;
-                    console.log(`Updated ${mo.moNumber} status to: ${prodOrder.state}`);
-                  }
-                }
-              }
-            } catch (batchError) {
-              console.log(`Failed to fetch production states for batch: ${idsParam}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.log('Failed to update production order states, using work order states as fallback');
-      }
+      // Note: Status is now determined by the furthest work order state
+      // This gives us the most accurate picture of production progress
       
       console.log(`Converted to ${productionOrders.length} production orders from active work orders`);
       
