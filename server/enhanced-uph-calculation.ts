@@ -33,19 +33,21 @@ export async function calculateEnhancedUPH() {
         continue;
       }
       
-      // Parse rec_name to extract operation and MO information
-      const parsed = parseRecName(cycle.work_cycles_rec_name);
+      // Extract operation from work_cycles_rec_name and MO from work_production_number
+      const recNameParts = cycle.work_cycles_rec_name.split('|').map(p => p.trim());
+      const operation = recNameParts[0]; // First part is the operation
+      const manufacturingOrderNumber = cycle.work_production_number; // Use the dedicated MO field
       
-      if (!parsed.manufacturingOrderNumber || !parsed.operation) {
-        console.log(`⚠️ Skipping cycle - incomplete rec_name parsing:`, parsed);
+      if (!manufacturingOrderNumber || !operation) {
+        console.log(`⚠️ Skipping cycle - missing MO or operation:`, { operation, manufacturingOrderNumber });
         continue;
       }
       
       // Consolidate work centers based on operation type
       let workCenter = 'Assembly'; // Default fallback
-      if (parsed.operation.toLowerCase().includes('cutting')) {
+      if (operation.toLowerCase().includes('cutting')) {
         workCenter = 'Cutting';
-      } else if (parsed.operation.toLowerCase().includes('packaging')) {
+      } else if (operation.toLowerCase().includes('packaging')) {
         workCenter = 'Packaging';
       } else {
         // Sewing, Assembly, Grommet, Zipper Pull all go to Assembly
@@ -53,13 +55,13 @@ export async function calculateEnhancedUPH() {
       }
       
       const operatorName = cycle.work_cycles_operator_rec_name;
-      const key = `${operatorName}|${workCenter}|${parsed.manufacturingOrderNumber}`;
+      const key = `${operatorName}|${workCenter}|${manufacturingOrderNumber}`;
       
       if (!aggregatedData.has(key)) {
         aggregatedData.set(key, {
           operatorName,
           workCenter,
-          manufacturingOrder: parsed.manufacturingOrderNumber,
+          manufacturingOrder: manufacturingOrderNumber,
           totalDuration: 0,
           totalQuantity: 0,
           cycleCount: 0,
@@ -71,7 +73,7 @@ export async function calculateEnhancedUPH() {
       data.totalDuration += cycle.work_cycles_duration;
       data.totalQuantity += cycle.work_cycles_quantity_done || 1; // Default to 1 if no quantity specified
       data.cycleCount += 1;
-      data.operations.add(parsed.operation);
+      data.operations.add(operation);
     }
     
     console.log(`🔄 Aggregated ${allCycles.length} cycles into ${aggregatedData.size} operator+workCenter+MO combinations`);
@@ -106,7 +108,7 @@ export async function calculateEnhancedUPH() {
     console.log(`📈 Generated ${uphCalculations.length} valid UPH calculations from enhanced rec_name aggregation`);
     
     // Clear existing enhanced UPH data
-    await db.delete(uphData).where.dataSource?.eq('work_cycles_enhanced');
+    await db.delete(uphData).where({ dataSource: 'work_cycles_enhanced' });
     
     // Insert new enhanced UPH calculations
     if (uphCalculations.length > 0) {
