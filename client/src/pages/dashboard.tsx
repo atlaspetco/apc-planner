@@ -134,7 +134,7 @@ export default function Dashboard() {
         <div className="mb-4">
           <p className="text-sm text-muted-foreground">
             Latest database data - {productionOrders?.length || 0} production orders loaded. 
-            Routing shows "Standard" (authentic Fulfil data).
+            Work order routing extracted from rec_name field (authentic MO numbers).
           </p>
         </div>
 

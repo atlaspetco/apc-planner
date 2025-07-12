@@ -4026,14 +4026,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add route to enrich production orders with authentic routing data from Fulfil API
+  // Add route to enrich work orders with routing data from rec_name parsing
   app.post('/api/fulfil/populate-routing', async (req, res) => {
     try {
-      const { populateProductionRouting } = await import('./populate-production-routing.js');
-      const result = await populateProductionRouting();
+      console.log("🚀 Starting work order enrichment from rec_name parsing...");
+      const { enrichWorkOrdersFromRecName } = await import('./work-order-enrichment.js');
+      const result = await enrichWorkOrdersFromRecName();
+      console.log("✅ Work order enrichment completed:", result);
       res.json(result);
     } catch (error) {
-      console.error('Production routing enrichment failed:', error);
+      console.error('❌ Work order rec_name enrichment failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Add route to analyze work order routing patterns
+  app.get('/api/fulfil/analyze-routings', async (req, res) => {
+    try {
+      const { analyzeWorkOrderRoutings } = await import('./work-order-enrichment.js');
+      const result = await analyzeWorkOrderRoutings();
+      res.json(result);
+    } catch (error) {
+      console.error('Work order routing analysis failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Enhanced UPH calculation using rec_name field aggregation
+  app.post('/api/uph/calculate-enhanced', async (req, res) => {
+    try {
+      console.log("🚀 Starting enhanced UPH calculation with rec_name field aggregation...");
+      const { calculateEnhancedUPH } = await import('./enhanced-uph-calculation.js');
+      const result = await calculateEnhancedUPH();
+      console.log("✅ Enhanced UPH calculation completed:", result);
+      res.json(result);
+    } catch (error) {
+      console.error('❌ Enhanced UPH calculation failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Get enhanced UPH statistics
+  app.get('/api/uph/enhanced-stats', async (req, res) => {
+    try {
+      const { getEnhancedUPHStats } = await import('./enhanced-uph-calculation.js');
+      const result = await getEnhancedUPHStats();
+      res.json(result);
+    } catch (error) {
+      console.error('Enhanced UPH stats retrieval failed:', error);
       res.status(500).json({ 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
