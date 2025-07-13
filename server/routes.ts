@@ -728,25 +728,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all active operators
       const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
       
-      // Get UPH data for performance calculations
-      const uphData = await db.select().from(historicalUph);
-      const uphMap = new Map<string, { uph: number; observations: number }>();
+      // Get comprehensive UPH data using the same calculation method as UPH Analytics page
+      // This ensures we include all work centers including Rope operations
+      const workCyclesData = await db.select().from(workCycles);
       
-      uphData.forEach(record => {
-        // Include operation in the key for operation-specific UPH calculations
-        const key = `${record.operatorId}-${record.workCenter}-${record.routing}-${record.operation || ''}`;
-        uphMap.set(key, { 
-          uph: record.unitsPerHour || 0, 
-          observations: record.observations || 0 
-        });
+      // Build comprehensive UPH map using work cycles data (same as UPH Analytics)
+      const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
+      
+      // Group work cycles by operator, work center, and routing for UPH calculations
+      const groupedData = new Map<string, { 
+        totalQuantity: number; 
+        totalDuration: number; 
+        cycles: number; 
+        operator: string;
+      }>();
+      
+      workCyclesData.forEach(cycle => {
+        if (!cycle.operatorName || !cycle.workCenter || !cycle.routing) return;
         
-        // Also add a fallback key without operation for broader matching
-        const fallbackKey = `${record.operatorId}-${record.workCenter}-${record.routing}`;
-        if (!uphMap.has(fallbackKey)) {
-          uphMap.set(fallbackKey, { 
-            uph: record.unitsPerHour || 0, 
-            observations: record.observations || 0 
+        // Find operator ID by name for key consistency
+        const operator = allOperators.find(op => op.name === cycle.operatorName);
+        if (!operator) return;
+        
+        const key = `${operator.id}-${cycle.workCenter}-${cycle.routing}`;
+        
+        if (!groupedData.has(key)) {
+          groupedData.set(key, { 
+            totalQuantity: 0, 
+            totalDuration: 0, 
+            cycles: 0, 
+            operator: cycle.operatorName 
           });
+        }
+        
+        const group = groupedData.get(key)!;
+        group.totalQuantity += cycle.quantityDone || 0;
+        group.totalDuration += cycle.duration || 0;
+        group.cycles += 1;
+      });
+      
+      // Calculate UPH from grouped data
+      groupedData.forEach((data, key) => {
+        if (data.totalDuration > 0 && data.totalQuantity > 0) {
+          const durationHours = data.totalDuration / 3600; // Convert seconds to hours
+          const uph = data.totalQuantity / durationHours;
+          
+          // Only include realistic UPH values (filter out extreme values)
+          if (uph > 0 && uph < 1000) {
+            uphMap.set(key, {
+              uph: uph,
+              observations: data.cycles,
+              operator: data.operator
+            });
+          }
         }
       });
 
@@ -761,18 +795,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           const uphKeys: string[] = [];
           workCentersToCheck.forEach(wc => {
-            // First try operation-specific keys, then fall back to broader matches
-            if (operation) {
-              uphKeys.push(`${op.id}-${wc}-${routing || ''}-${operation}`);
-            }
-            uphKeys.push(
-              `${op.id}-${wc}-${routing || ''}`,
-              `${op.id}-${wc}-`,
-              `${op.id}-${wc}`
-            );
+            // Create keys to match our UPH map structure
+            uphKeys.push(`${op.id}-${wc}-${routing || ''}`);
           });
           
           const hasUphData = uphKeys.some(key => uphMap.has(key));
+          
+          // Debug logging for qualification check
+          console.log(`Qualified operators for ${workCenter}/${routing}: checking operator ${op.name} (ID: ${op.id})`);
+          console.log(`  - Keys checked: [${uphKeys.join(', ')}]`);
+          console.log(`  - Has UPH data: ${hasUphData}`);
+          if (hasUphData) {
+            const matchedKey = uphKeys.find(key => uphMap.has(key));
+            const uphInfo = uphMap.get(matchedKey!);
+            console.log(`  - UPH: ${uphInfo?.uph?.toFixed(2)} (${uphInfo?.observations} observations)`);
+          }
           
           // Only include operators who have actual performance data for this combination
           if (!hasUphData) return false;
@@ -807,7 +844,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return true;
         })
         .map(op => {
-          // Calculate UPH performance using flexible matching like UPH analytics page
+          // Calculate UPH performance using comprehensive work cycles data (same as UPH Analytics)
           // Handle Assembly work center aggregation for UPH lookup
           const workCentersToCheck = workCenter === 'Assembly' 
             ? ['Assembly', 'Sewing', 'Rope'] 
