@@ -107,7 +107,6 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
             <tr>
               <th className="text-left p-4 font-medium text-gray-900">Routing / Production Order</th>
               <th className="text-center p-4 font-medium text-gray-900">Qty</th>
-              <th className="text-center p-4 font-medium text-gray-900">Status</th>
               {workCenters.map(workCenter => (
                 <th key={workCenter} className="text-center p-4 font-medium text-gray-900 min-w-[150px]">
                   {workCenter}
@@ -151,9 +150,9 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                           </div>
                           <div className="flex space-x-1 mt-1">
                             {Object.entries(statusCounts).map(([status, count]) => (
-                              <Badge key={status} className={`text-xs ${
+                              <Badge key={status} className={`text-xs rounded-sm ${
                                 status === 'assigned' ? 'bg-blue-500 text-white' :
-                                status === 'waiting' ? 'bg-blue-400 text-white' :
+                                status === 'waiting' ? 'bg-yellow-500 text-white' :
                                 status === 'running' ? 'bg-green-500 text-white' :
                                 status === 'done' ? 'bg-gray-500 text-white' :
                                 'bg-gray-400 text-white'
@@ -167,9 +166,6 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     </td>
                     <td className="p-4 text-center">
                       <span className="font-medium text-gray-900">{totalQty}</span>
-                    </td>
-                    <td className="p-4 text-center">
-                      {/* Status column now empty since badges moved to routing name */}
                     </td>
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
@@ -216,20 +212,21 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     <tr key={order.id} className="border-b hover:bg-gray-50">
                       <td className="p-4 pl-12">
                         <div className="font-medium text-gray-900">{order.productName || order.moNumber}</div>
-                        <div className="text-sm text-gray-500">{order.moNumber}</div>
+                        <div className="flex items-center space-x-2 text-sm text-gray-500">
+                          <span>{order.moNumber}</span>
+                          <Badge className={`text-xs rounded-sm ${
+                            order.status === 'assigned' ? 'bg-blue-500 text-white' :
+                            order.status === 'waiting' ? 'bg-yellow-500 text-white' :
+                            order.status === 'running' ? 'bg-green-500 text-white' :
+                            order.status === 'done' ? 'bg-gray-500 text-white' :
+                            'bg-gray-400 text-white'
+                          }`}>
+                            {order.status}
+                          </Badge>
+                        </div>
                       </td>
                       <td className="p-4 text-center">
                         <span className="font-medium text-gray-900">{order.quantity}</span>
-                      </td>
-                      <td className="p-4 text-center">
-                        <Badge variant={
-                          order.status === 'assigned' ? 'default' :
-                          order.status === 'running' ? 'secondary' :
-                          order.status === 'done' ? 'outline' :
-                          'secondary'
-                        } className="text-xs">
-                          {order.status}
-                        </Badge>
                       </td>
                       {workCenters.map(workCenter => {
                         const workOrdersInCenter = order.workOrders?.filter(wo => wo.workCenter === workCenter) || [];
