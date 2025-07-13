@@ -118,7 +118,11 @@ export function OperatorDropdown({
   const handleAssignment = async (operatorId: string) => {
     if (onAssign) {
       // For bulk assignment, use the onAssign callback
-      onAssign(parseInt(operatorId));
+      if (operatorId === "unassigned") {
+        onAssign(0); // Use 0 to indicate unassignment
+      } else {
+        onAssign(parseInt(operatorId));
+      }
       return;
     }
 
@@ -185,7 +189,36 @@ export function OperatorDropdown({
               workOrderIds ? (
                 uniqueOperators.length > 0 ? (
                   uniqueOperators.length === 1 ? 
-                    <span className="text-green-700">{uniqueOperators[0]}</span> : 
+                    (() => {
+                      // Find the operator details for single bulk assignment
+                      const operatorName = uniqueOperators[0];
+                      const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
+                      return operatorDetails ? (
+                        <div className="flex items-center justify-between w-full min-w-0">
+                          <span className="truncate text-green-700">{operatorDetails.name}</span>
+                          <div className="flex items-center space-x-1 ml-2">
+                            {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
+                              <div className="flex items-center space-x-1">
+                                {quantity > 0 && (
+                                  <span className="text-sm text-green-700 font-semibold">
+                                    {calculateEstimatedTime(operatorDetails.averageUph)}
+                                  </span>
+                                )}
+                                <Badge variant="secondary" className="text-xs px-1 py-0">
+                                  {operatorDetails.averageUph.toFixed(1)} UPH
+                                </Badge>
+                              </div>
+                            ) : (
+                              <Badge variant="outline" className="text-xs px-1 py-0">
+                                No data
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-green-700">{operatorName}</span>
+                      );
+                    })() : 
                     <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
                 ) : ""
               ) : (
