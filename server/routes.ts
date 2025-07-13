@@ -165,11 +165,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`Operation categorization: ${wo.rec_name} | operation="${operationName}" | original="${originalWorkCenter}" | display="${displayWorkCenter}"`);
         }
         
-        // Debug logging for operation-based categorization
-        if (wo.rec_name && wo.rec_name.includes('Lifetime Pouch')) {
-          console.log(`Operation categorization: ${wo.rec_name} | operation="${operationName}" | original="${originalWorkCenter}" | display="${displayWorkCenter}"`);
-        }
-        
         workOrdersByMO.get(moId).push({
           id: wo.id,
           workCenter: displayWorkCenter,
@@ -738,11 +733,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uphMap = new Map<string, { uph: number; observations: number }>();
       
       uphData.forEach(record => {
-        const key = `${record.operatorId}-${record.workCenter}-${record.routing}`;
+        // Include operation in the key for operation-specific UPH calculations
+        const key = `${record.operatorId}-${record.workCenter}-${record.routing}-${record.operation || ''}`;
         uphMap.set(key, { 
           uph: record.unitsPerHour || 0, 
           observations: record.observations || 0 
         });
+        
+        // Also add a fallback key without operation for broader matching
+        const fallbackKey = `${record.operatorId}-${record.workCenter}-${record.routing}`;
+        if (!uphMap.has(fallbackKey)) {
+          uphMap.set(fallbackKey, { 
+            uph: record.unitsPerHour || 0, 
+            observations: record.observations || 0 
+          });
+        }
       });
 
       // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
@@ -756,6 +761,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           const uphKeys: string[] = [];
           workCentersToCheck.forEach(wc => {
+            // First try operation-specific keys, then fall back to broader matches
+            if (operation) {
+              uphKeys.push(`${op.id}-${wc}-${routing || ''}-${operation}`);
+            }
             uphKeys.push(
               `${op.id}-${wc}-${routing || ''}`,
               `${op.id}-${wc}-`,
@@ -806,6 +815,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           const uphKeys: string[] = [];
           workCentersToCheck.forEach(wc => {
+            // First try operation-specific keys, then fall back to broader matches
+            if (operation) {
+              uphKeys.push(`${op.id}-${wc}-${routing || ''}-${operation}`);
+            }
             uphKeys.push(
               `${op.id}-${wc}-${routing || ''}`,
               `${op.id}-${wc}-`,
@@ -844,8 +857,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
       // Debug logging for filtering
-      console.log(`Qualified operators for ${workCenter}/${routing}: ${qualifiedOperators.length} operators`, 
-        qualifiedOperators.map(op => op.name));
+      console.log(`Qualified operators for ${workCenter}/${routing}${operation ? '/' + operation : ''}: ${qualifiedOperators.length} operators`, 
+        qualifiedOperators.map(op => `${op.name}(${op.averageUph}UPH)`));
       
       // Remove debug logging once operation categorization is confirmed working
 
