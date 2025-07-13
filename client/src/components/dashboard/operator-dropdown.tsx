@@ -255,6 +255,15 @@ export function OperatorDropdown({
               <span>Unassigned</span>
             </div>
           </SelectItem>
+          {qualifiedOperators.length === 0 && !loading && (
+            <SelectItem value="no-operators" disabled>
+              <div className="flex items-center justify-between w-full">
+                <span className="text-muted-foreground text-xs">
+                  No qualified operators - missing UPH data for {routing}
+                </span>
+              </div>
+            </SelectItem>
+          )}
           {workOrderIds && uniqueOperators.length > 0 && (
             <SelectItem value="bulk-assigned" disabled>
               <div className="flex items-center justify-between w-full">

@@ -744,26 +744,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }>();
       
       workCyclesData.forEach(cycle => {
-        if (!cycle.operatorName || !cycle.workCenter || !cycle.routing) return;
+        // Use correct field names from work_cycles table
+        const operatorName = cycle.work_cycles_operator_rec_name;
+        const workCenter = cycle.work_cycles_work_center_rec_name;
+        const routing = cycle.work_production_routing_rec_name;
+        
+        if (!operatorName || !workCenter || !routing) return;
         
         // Find operator ID by name for key consistency
-        const operator = allOperators.find(op => op.name === cycle.operatorName);
+        const operator = allOperators.find(op => op.name === operatorName);
         if (!operator) return;
         
-        const key = `${operator.id}-${cycle.workCenter}-${cycle.routing}`;
+        const key = `${operator.id}-${workCenter}-${routing}`;
         
         if (!groupedData.has(key)) {
           groupedData.set(key, { 
             totalQuantity: 0, 
             totalDuration: 0, 
             cycles: 0, 
-            operator: cycle.operatorName 
+            operator: operatorName 
           });
         }
         
         const group = groupedData.get(key)!;
-        group.totalQuantity += cycle.quantityDone || 0;
-        group.totalDuration += cycle.duration || 0;
+        group.totalQuantity += cycle.work_cycles_quantity_done || 0;
+        group.totalDuration += cycle.work_cycles_duration || 0;
         group.cycles += 1;
       });
       
@@ -773,8 +778,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const durationHours = data.totalDuration / 3600; // Convert seconds to hours
           const uph = data.totalQuantity / durationHours;
           
-          // Only include realistic UPH values (filter out extreme values)
-          if (uph > 0 && uph < 1000) {
+          // Include ALL UPH values - no filtering on UPH performance
+          // Only filter based on work order duration (over 7 hours) not UPH values
+          if (uph > 0) {
             uphMap.set(key, {
               uph: uph,
               observations: data.cycles,
