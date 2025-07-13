@@ -729,11 +729,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const qualifiedOperators = allOperators
         .filter(op => {
           // First check if operator has UPH data for this work center/routing combination
-          const uphKeys = [
-            `${op.id}-${workCenter}-${routing || ''}`,
-            `${op.id}-${workCenter}-`,
-            `${op.id}-${workCenter}`
-          ];
+          // Handle Assembly work center aggregation - check for Sewing and Rope data when Assembly is requested
+          const workCentersToCheck = workCenter === 'Assembly' 
+            ? ['Assembly', 'Sewing', 'Rope'] 
+            : [workCenter as string];
+          
+          const uphKeys: string[] = [];
+          workCentersToCheck.forEach(wc => {
+            uphKeys.push(
+              `${op.id}-${wc}-${routing || ''}`,
+              `${op.id}-${wc}-`,
+              `${op.id}-${wc}`
+            );
+          });
           
           const hasUphData = uphKeys.some(key => uphMap.has(key));
           
@@ -771,14 +779,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .map(op => {
           // Calculate UPH performance using flexible matching like UPH analytics page
-          // Try multiple UPH key combinations in order of preference:
-          // 1. operator+workCenter+routing (most specific)
-          // 2. operator+workCenter (work center level)
-          const uphKeys = [
-            `${op.id}-${workCenter}-${routing || ''}`,
-            `${op.id}-${workCenter}-`,
-            `${op.id}-${workCenter}`
-          ];
+          // Handle Assembly work center aggregation for UPH lookup
+          const workCentersToCheck = workCenter === 'Assembly' 
+            ? ['Assembly', 'Sewing', 'Rope'] 
+            : [workCenter as string];
+          
+          const uphKeys: string[] = [];
+          workCentersToCheck.forEach(wc => {
+            uphKeys.push(
+              `${op.id}-${wc}-${routing || ''}`,
+              `${op.id}-${wc}-`,
+              `${op.id}-${wc}`
+            );
+          });
           
           let performanceData = { uph: 0, observations: 0 };
           for (const key of uphKeys) {
