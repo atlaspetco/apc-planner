@@ -179,7 +179,7 @@ export function OperatorDropdown({
   return (
     <div className={`space-y-1 ${className || ''}`}>
       <Select 
-        value={workOrderIds ? (uniqueOperators.length > 0 ? "bulk-assigned" : "unassigned") : (currentOperatorId?.toString() || "unassigned")} 
+        value={workOrderIds ? (uniqueOperators.length > 0 ? "bulk-assigned" : "") : (currentOperatorId?.toString() || "")} 
         onValueChange={handleAssignment}
         disabled={loading}
       >
@@ -250,11 +250,6 @@ export function OperatorDropdown({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="unassigned">
-            <div className="flex items-center justify-between w-full">
-              <span>Unassigned</span>
-            </div>
-          </SelectItem>
           {qualifiedOperators.length === 0 && !loading && (
             <SelectItem value="no-operators" disabled>
               <div className="flex items-center justify-between w-full">
@@ -276,38 +271,18 @@ export function OperatorDropdown({
               </div>
             </SelectItem>
           )}
-          {qualifiedOperators.map(operator => {
-            // Check if this operator is currently assigned (for single assignments) or if any of the bulk assignments include this operator
-            const isCurrentlyAssigned = workOrderIds ? 
-              uniqueOperators.includes(operator.name) : 
-              currentOperatorId === operator.id;
-            
-            return (
+          {qualifiedOperators
+            .filter(operator => {
+              // Don't show the current operator in dropdown list to avoid duplication
+              return workOrderIds ? 
+                !uniqueOperators.includes(operator.name) : 
+                currentOperatorId !== operator.id;
+            })
+            .map(operator => (
               <SelectItem key={operator.id} value={operator.id.toString()}>
-                <div className="flex items-center justify-between w-full min-w-0">
-                  <span className="truncate">{operator.name}</span>
-                  <div className="flex items-center space-x-1 ml-2">
-                    {operator.observations > 0 && operator.averageUph > 0 ? (
-                      <div className="flex items-center space-x-1">
-                        {quantity > 0 && (
-                          <span className="text-muted-foreground">
-                            {calculateEstimatedTime(operator.averageUph)}
-                          </span>
-                        )}
-                        <span className="text-muted-foreground">
-                          {operator.averageUph.toFixed(1)} UPH
-                        </span>
-                      </div>
-                    ) : (
-                      <Badge variant="outline" className="text-xs px-1 py-0">
-                        No data
-                      </Badge>
-                    )}
-                  </div>
-                </div>
+                <span className="truncate">{operator.name}</span>
               </SelectItem>
-            );
-          })}
+            ))}
         </SelectContent>
       </Select>
       
