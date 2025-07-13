@@ -42,7 +42,10 @@ export default function Dashboard() {
   });
 
   // Get unique statuses and routings for filter options
-  const uniqueStatuses = [...new Set(productionOrders.map(order => order.status))];
+  const statusesFromOrders = [...new Set(productionOrders.map(order => order.status))];
+  // Order statuses correctly: Waiting, Assigned, Running
+  const statusOrder = ['waiting', 'assigned', 'running'];
+  const uniqueStatuses = statusOrder.filter(status => statusesFromOrders.includes(status));
   const uniqueRoutings = [...new Set(productionOrders.map(order => order.routing))];
 
   // Status indicator color  
