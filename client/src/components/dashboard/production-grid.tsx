@@ -241,41 +241,27 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                         return (
                           <td key={workCenter} className="p-4 text-center">
                             {workOrdersInCenter.length > 0 ? (
-                              <div className="space-y-1">
-                                {workOrdersInCenter.map(workOrder => {
-                                  const currentAssignment = assignments.get(workOrder.id);
-                                  console.log(`WO ${workOrder.id} assignment lookup:`, { 
-                                    workOrderId: workOrder.id, 
-                                    workOrderType: typeof workOrder.id,
-                                    workOrderObject: workOrder,
-                                    currentAssignment,
-                                    assignmentsSize: assignments.size 
-                                  });
-                                  
-                                  // Debug: Ensure workOrder.id is valid before passing to OperatorDropdown
-                                  if (!workOrder.id) {
-                                    console.error('Invalid workOrder ID:', workOrder);
-                                    return null;
-                                  }
-                                  
-                                  return (
-                                    <OperatorDropdown
-                                      key={workOrder.id}
-                                      workOrderId={workOrder.id}
-                                      workCenter={workOrder.originalWorkCenter || workCenter}
-                                      routing={order.routing || ''}
-                                      operation={workOrder.operation || ''}
-                                      quantity={order.quantity}
-                                      currentOperatorId={currentAssignment?.operatorId}
-                                      currentOperatorName={currentAssignment?.operatorName}
-                                      onAssignmentChange={(workOrderId, operatorId, estimatedHours) => {
-                                        // Trigger refresh of assignments data
-                                        console.log('Assignment changed:', { workOrderId, operatorId, estimatedHours });
-                                        onAssignmentChange?.();
-                                      }}
-                                    />
-                                  );
-                                })}
+                              <div className="space-y-2">
+                                <div className="text-xs text-gray-500">
+                                  {workOrdersInCenter.length} operations
+                                </div>
+                                <OperatorDropdown
+                                  workCenter={workCenter}
+                                  routing={order.routing || ''}
+                                  operation=""
+                                  quantity={order.quantity}
+                                  workOrderIds={workOrdersInCenter.map(wo => wo.id)}
+                                  assignments={assignments}
+                                  onAssign={async (operatorId) => {
+                                    // Bulk assign to all work orders in this work center for this MO
+                                    for (const wo of workOrdersInCenter) {
+                                      await handleOperatorAssign(wo.id, operatorId, wo.quantity || order.quantity, order.routing || '', workCenter, wo.operation);
+                                    }
+                                    // Refresh assignments after bulk assignment
+                                    onAssignmentChange?.();
+                                  }}
+                                  className="w-full"
+                                />
                               </div>
                             ) : (
                               <span className="text-gray-400">-</span>
