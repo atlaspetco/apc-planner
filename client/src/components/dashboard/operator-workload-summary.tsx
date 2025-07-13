@@ -19,7 +19,7 @@ interface OperatorWorkloadSummaryProps {
 
 export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummaryProps) {
   // Fetch operator data for workload calculations
-  const { data: operatorsData } = useQuery({
+  const { data: operatorsData, error: operatorsError } = useQuery({
     queryKey: ["/api/operators"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -32,10 +32,12 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
 
   // Calculate workload summary from assignments
   const workloadSummary = React.useMemo(() => {
-    if (!assignments || !operatorsData?.operators) return [];
+    // Handle both direct array and wrapped operators response
+    const operators = operatorsData?.operators || operatorsData || [];
+    if (!assignments || !operators.length) return [];
 
     const operatorMap = new Map();
-    operatorsData.operators.forEach(op => {
+    operators.forEach(op => {
       operatorMap.set(op.id, {
         operatorId: op.id,
         operatorName: op.name,
@@ -94,8 +96,20 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
      .sort((a, b) => b.totalAssignments - a.totalAssignments); // Sort by workload
   }, [assignments, operatorsData, uphData]);
 
+
+
   if (!workloadSummary.length) {
-    return null;
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <Users className="text-blue-600 w-5 h-5" />
+          <h2 className="text-lg font-semibold text-gray-900">Operator Workload Summary</h2>
+        </div>
+        <div className="text-gray-500 text-center py-4">
+          No operator assignments found. Assign operators to work orders to see workload summary.
+        </div>
+      </div>
+    );
   }
 
   return (
