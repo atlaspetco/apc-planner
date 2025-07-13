@@ -82,11 +82,12 @@ export function OperatorDropdown({
         if (response.ok && data.operators) {
           setQualifiedOperators(data.operators);
         } else {
-          console.error('Failed to fetch qualified operators:', data.error || 'No operators returned');
+          // Don't log errors for normal operation, just handle gracefully
           setQualifiedOperators([]);
         }
       } catch (error) {
         console.error('Error fetching qualified operators:', error);
+        // Don't show error toast for every dropdown, just log it
         setQualifiedOperators([]);
       } finally {
         setLoading(false);
