@@ -30,7 +30,7 @@
   
   /* Status colors */
   --status-draft: hsl(220, 14%, 43%);
-  --status-waiting: hsl(38, 92%, 50%);
+  --status-waiting: hsl(41, 84%, 44%);
   --status-assigned: hsl(215, 84%, 62%);
   --status-running: hsl(142, 69%, 58%);
   --status-requests: hsl(262, 83%, 58%);
@@ -84,9 +84,9 @@
   }
   
   .status-waiting {
-    @apply bg-yellow-50 text-yellow-600;
-    background-color: hsl(48, 100%, 96%);
-    color: hsl(45, 93%, 47%);
+    @apply bg-yellow-100 text-yellow-700;
+    background-color: hsl(48, 96%, 89%);
+    color: hsl(41, 84%, 44%);
   }
   
   .status-assigned {

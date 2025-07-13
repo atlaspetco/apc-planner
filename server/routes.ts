@@ -60,7 +60,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             "routing.name",
             "works"
           ],
-          limit: 75,  // Increased limit to include all MOs when running state is added
+          limit: 100,  // Set higher limit based on total MO count to ensure all active MOs are included
           order: [["state", "ASC"], ["id", "DESC"]]  // Show assigned first, then waiting, newest within each state
         })
       });
