@@ -146,9 +146,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!workOrdersByMO.has(moId)) {
           workOrdersByMO.set(moId, []);
         }
-        // Map Rope and Sewing to Assembly for display, but keep original for assignment logic
+        // Use operation name to determine work center category
         const originalWorkCenter = cleanWorkCenter(wo['work_center.name'] || 'Unknown');
-        const displayWorkCenter = (originalWorkCenter === 'Rope' || originalWorkCenter === 'Sewing') ? 'Assembly' : originalWorkCenter;
+        const operationName = (wo['operation.name'] || wo.rec_name || '').toLowerCase();
+        
+        // Categorize by operation name: cutting ops → Cutting, packaging ops → Packaging, everything else → Assembly
+        let displayWorkCenter: string;
+        if (operationName.includes('cutting')) {
+          displayWorkCenter = 'Cutting';
+        } else if (operationName.includes('packaging')) {
+          displayWorkCenter = 'Packaging';
+        } else {
+          displayWorkCenter = 'Assembly';
+        }
+        
+        // Debug logging for operation-based categorization
+        if (wo.rec_name && wo.rec_name.includes('Lifetime Pouch')) {
+          console.log(`Operation categorization: ${wo.rec_name} | operation="${operationName}" | original="${originalWorkCenter}" | display="${displayWorkCenter}"`);
+        }
+        
+        // Debug logging for operation-based categorization
+        if (wo.rec_name && wo.rec_name.includes('Lifetime Pouch')) {
+          console.log(`Operation categorization: ${wo.rec_name} | operation="${operationName}" | original="${originalWorkCenter}" | display="${displayWorkCenter}"`);
+        }
         
         workOrdersByMO.get(moId).push({
           id: wo.id,
@@ -827,20 +847,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Qualified operators for ${workCenter}/${routing}: ${qualifiedOperators.length} operators`, 
         qualifiedOperators.map(op => op.name));
       
-      // Extra debug for specific routing issues
-      if ((routing === 'LCP Handle' && workCenter === 'Assembly') || (routing === 'Lifetime Pouch' && workCenter === 'Assembly')) {
-        console.log(`${routing} ${workCenter} Debug:`, {
-          workCenter,
-          routing,
-          workCentersToCheck: workCenter === 'Assembly' ? ['Assembly', 'Sewing', 'Rope'] : [workCenter],
-          availableUphKeys: Array.from(uphMap.keys()).filter(key => 
-            key.includes(routing) || 
-            (routing === 'LCP Handle' && key.includes('Lifetime Handle'))
-          ),
-          totalUphKeys: uphMap.size,
-          allOperatorsCount: allOperators.length
-        });
-      }
+      // Remove debug logging once operation categorization is confirmed working
 
       res.json({
         operators: qualifiedOperators,
