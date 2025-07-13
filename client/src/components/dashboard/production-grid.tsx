@@ -183,7 +183,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                           {workOrdersInCenter.length > 0 ? (
                             <div className="space-y-2">
                               <div className="text-xs text-gray-500">
-                                {workOrdersInCenter.length} operations • Qty: {totalQuantity}
+                                {workOrdersInCenter.length} operations
                               </div>
                               <OperatorDropdown
                                 workCenter={workCenter}

@@ -84,9 +84,9 @@
   }
   
   .status-waiting {
-    @apply bg-yellow-100 text-yellow-800;
-    background-color: hsl(38, 100%, 95%);
-    color: hsl(38, 92%, 30%);
+    @apply bg-yellow-50 text-yellow-600;
+    background-color: hsl(48, 100%, 96%);
+    color: hsl(45, 93%, 47%);
   }
   
   .status-assigned {

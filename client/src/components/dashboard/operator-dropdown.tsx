@@ -181,15 +181,7 @@ export function OperatorDropdown({
       >
         <SelectTrigger className="w-full h-8 text-xs bg-white border-gray-300">
           <SelectValue 
-            placeholder={
-              loading ? "Loading..." : 
-              workOrderIds ? (
-                uniqueOperators.length > 0 ? 
-                  `${uniqueOperators.length === 1 ? uniqueOperators[0] : `${uniqueOperators.length} operators`} assigned` :
-                  "Assign operator to all"
-              ) : 
-              "Select operator"
-            }
+            placeholder={loading ? "Loading..." : ""}
           />
         </SelectTrigger>
         <SelectContent>
@@ -203,38 +195,45 @@ export function OperatorDropdown({
               <div className="flex items-center justify-between w-full">
                 <span className="text-green-700 font-medium">
                   {uniqueOperators.length === 1 ? 
-                    `${uniqueOperators[0]} assigned` : 
+                    uniqueOperators[0] : 
                     `${uniqueOperators.length} operators assigned`
                   }
                 </span>
               </div>
             </SelectItem>
           )}
-          {qualifiedOperators.map(operator => (
-            <SelectItem key={operator.id} value={operator.id.toString()}>
-              <div className="flex items-center justify-between w-full min-w-0">
-                <span className="truncate">{operator.name}</span>
-                <div className="flex items-center space-x-1 ml-2">
-                  {operator.observations > 0 && operator.averageUph > 0 ? (
-                    <div className="flex items-center space-x-1">
-                      {quantity > 0 && (
-                        <span className="text-sm text-green-700 font-semibold">
-                          {calculateEstimatedTime(operator.averageUph)}
-                        </span>
-                      )}
-                      <Badge variant="secondary" className="text-xs px-1 py-0">
-                        {operator.averageUph.toFixed(1)} UPH
+          {qualifiedOperators.map(operator => {
+            // Check if this operator is currently assigned (for single assignments) or if any of the bulk assignments include this operator
+            const isCurrentlyAssigned = workOrderIds ? 
+              uniqueOperators.includes(operator.name) : 
+              currentOperatorId === operator.id;
+            
+            return (
+              <SelectItem key={operator.id} value={operator.id.toString()}>
+                <div className="flex items-center justify-between w-full min-w-0">
+                  <span className="truncate">{operator.name}</span>
+                  <div className="flex items-center space-x-1 ml-2">
+                    {operator.observations > 0 && operator.averageUph > 0 ? (
+                      <div className="flex items-center space-x-1">
+                        {quantity > 0 && (
+                          <span className="text-sm text-green-700 font-semibold">
+                            {calculateEstimatedTime(operator.averageUph)}
+                          </span>
+                        )}
+                        <Badge variant="secondary" className="text-xs px-1 py-0">
+                          {operator.averageUph.toFixed(1)} UPH
+                        </Badge>
+                      </div>
+                    ) : (
+                      <Badge variant="outline" className="text-xs px-1 py-0">
+                        No data
                       </Badge>
-                    </div>
-                  ) : (
-                    <Badge variant="outline" className="text-xs px-1 py-0">
-                      No data
-                    </Badge>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            </SelectItem>
-          ))}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
       
