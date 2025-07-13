@@ -180,9 +180,41 @@ export function OperatorDropdown({
         disabled={loading}
       >
         <SelectTrigger className="w-full h-8 text-xs bg-white border-gray-300">
-          <SelectValue 
-            placeholder={loading ? "Loading..." : ""}
-          />
+          <SelectValue>
+            {loading ? "Loading..." : 
+              workOrderIds ? (
+                uniqueOperators.length > 0 ? (
+                  uniqueOperators.length === 1 ? 
+                    <span className="text-green-700">{uniqueOperators[0]}</span> : 
+                    <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
+                ) : ""
+              ) : (
+                currentOperator ? (
+                  <div className="flex items-center justify-between w-full min-w-0">
+                    <span className="truncate text-green-700">{currentOperator.name}</span>
+                    <div className="flex items-center space-x-1 ml-2">
+                      {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
+                        <div className="flex items-center space-x-1">
+                          {quantity > 0 && (
+                            <span className="text-sm text-green-700 font-semibold">
+                              {calculateEstimatedTime(currentOperator.averageUph)}
+                            </span>
+                          )}
+                          <Badge variant="secondary" className="text-xs px-1 py-0">
+                            {currentOperator.averageUph.toFixed(1)} UPH
+                          </Badge>
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="text-xs px-1 py-0">
+                          No data
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ) : ""
+              )
+            }
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="unassigned">
