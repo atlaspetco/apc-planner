@@ -826,6 +826,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Debug logging for filtering
       console.log(`Qualified operators for ${workCenter}/${routing}: ${qualifiedOperators.length} operators`, 
         qualifiedOperators.map(op => op.name));
+      
+      // Extra debug for specific routing issues
+      if (routing === 'LCP Handle' && workCenter === 'Assembly') {
+        console.log('LCP Handle Assembly Debug:', {
+          workCenter,
+          routing,
+          workCentersToCheck: workCenter === 'Assembly' ? ['Assembly', 'Sewing', 'Rope'] : [workCenter],
+          availableUphKeys: Array.from(uphMap.keys()).filter(key => key.includes('LCP Handle') || key.includes('Lifetime Handle')),
+          totalUphKeys: uphMap.size
+        });
+      }
 
       res.json({
         operators: qualifiedOperators,
