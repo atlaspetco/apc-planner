@@ -725,22 +725,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
 
-      // Filter operators based on constraints and calculate their performance
+      // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
       const qualifiedOperators = allOperators
         .filter(op => {
-          // For debugging - show ALL active operators if no specific constraints are working
-          // Check work center permission (handle Assembly consolidation)
+          // First check if operator has UPH data for this work center/routing combination
+          const uphKeys = [
+            `${op.id}-${workCenter}-${routing || ''}`,
+            `${op.id}-${workCenter}-`,
+            `${op.id}-${workCenter}`
+          ];
+          
+          const hasUphData = uphKeys.some(key => uphMap.has(key));
+          
+          // Only include operators who have actual performance data for this combination
+          if (!hasUphData) return false;
+          
+          // Additional constraint checks (if operator has constraints defined, respect them)
           const allowedWorkCenters = op.workCenters || [];
           
-          // If operator has no work center constraints, allow all work centers
-          if (allowedWorkCenters.length === 0) return true;
-          
-          const isQualifiedForWorkCenter = allowedWorkCenters.includes(workCenter as string) ||
-            (workCenter === 'Assembly' && (allowedWorkCenters.includes('Rope') || allowedWorkCenters.includes('Sewing')));
-          
-          if (!isQualifiedForWorkCenter) return false;
+          // If operator has work center constraints, check them
+          if (allowedWorkCenters.length > 0) {
+            const isQualifiedForWorkCenter = allowedWorkCenters.includes(workCenter as string) ||
+              (workCenter === 'Assembly' && (allowedWorkCenters.includes('Rope') || allowedWorkCenters.includes('Sewing')));
+            
+            if (!isQualifiedForWorkCenter) return false;
+          }
 
-          // Check routing permission if specified (more flexible - if operator has no routing constraints, allow all)
+          // Check routing permission if specified and operator has routing constraints
           if (routing) {
             const allowedRoutings = op.productRoutings || [];
             if (allowedRoutings.length > 0 && !allowedRoutings.includes(routing as string)) {
@@ -748,7 +759,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
-          // Check operation permission if specified (more flexible - if operator has no operation constraints, allow all)
+          // Check operation permission if specified and operator has operation constraints
           if (operation) {
             const allowedOperations = op.operations || [];
             if (allowedOperations.length > 0 && !allowedOperations.includes(operation as string)) {
@@ -798,6 +809,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (a.observations === 0 && b.observations > 0) return 1;
           return b.averageUph - a.averageUph;
         });
+
+      // Debug logging for filtering
+      console.log(`Qualified operators for ${workCenter}/${routing}: ${qualifiedOperators.length} operators`, 
+        qualifiedOperators.map(op => op.name));
 
       res.json({
         operators: qualifiedOperators,
