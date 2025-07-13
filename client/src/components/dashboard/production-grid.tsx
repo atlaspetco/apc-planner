@@ -215,8 +215,8 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                   {isExpanded && orders.map((order) => (
                     <tr key={order.id} className="border-b hover:bg-gray-50">
                       <td className="p-4 pl-12">
-                        <div className="font-medium text-gray-900">{order.moNumber}</div>
-                        <div className="text-sm text-gray-500">{order.productName || order.moNumber}</div>
+                        <div className="font-medium text-gray-900">{order.productName || order.moNumber}</div>
+                        <div className="text-sm text-gray-500">{order.moNumber}</div>
                       </td>
                       <td className="p-4 text-center">
                         <span className="font-medium text-gray-900">{order.quantity}</span>

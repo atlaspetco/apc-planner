@@ -265,8 +265,8 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
         />
       </div>
       <div className="col-span-2">
-        <div className="font-medium text-gray-900 text-sm">{order.moNumber}</div>
-        <div className="text-xs text-gray-500">{order.product_code || order.productName || 'Unknown Product'}</div>
+        <div className="font-medium text-gray-900 text-sm">{order.product_code || order.productName || 'Unknown Product'}</div>
+        <div className="text-xs text-gray-500">{order.moNumber}</div>
       </div>
       <div className="col-span-1 text-center">
         <Badge className={`${getStatusColor(order.status)} text-xs`} variant="secondary">
