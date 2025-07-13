@@ -99,6 +99,7 @@ export default function UphAnalytics() {
 
   // Refresh handler - uses AI optimization when toggle is enabled
   const handleRefresh = () => {
+    console.log('UPH Analytics refresh initiated - processing latest work cycles data');
     if (aiOptimized) {
       // Run AI-optimized refresh: detect anomalies then calculate clean UPH
       calculateCleanUphMutation.mutate();

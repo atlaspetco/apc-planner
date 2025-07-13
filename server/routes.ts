@@ -47,7 +47,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         body: JSON.stringify({
           filters: [
-            ["state", "in", ["waiting", "assigned"]]  // Get waiting and assigned orders that have work orders
+            ["state", "in", ["waiting", "assigned", "running"]]  // Get waiting, assigned, and running orders that have work orders
           ],
           fields: [
             "id",

@@ -26,7 +26,9 @@ export default function Dashboard() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
+      // Fetch latest production orders (includes waiting, assigned, and running states)
       await Promise.all([refetchPOs(), refetchAssignments()]);
+      console.log('Dashboard refresh completed - updated with waiting, assigned, and running MOs');
     } finally {
       setIsRefreshing(false);
     }
@@ -94,7 +96,7 @@ export default function Dashboard() {
                   "bg-red-500"
                 }`}></div>
                 <span className="text-sm text-gray-600">
-                  {isRefreshing ? "Refreshing..." : 
+                  {isRefreshing ? "Refreshing MOs..." : 
                    isLoadingPOs ? "Loading..." : 
                    errorPOs ? "Error" : "Live"}
                 </span>
