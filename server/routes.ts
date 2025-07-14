@@ -800,9 +800,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : [workCenter as string];
           
           const uphKeys: string[] = [];
+          
+          // Handle routing mapping for products without historical data
+          // Map "Lifetime Air Harness" to use "Lifetime Harness" data until actual data is available
+          let effectiveRouting = routing;
+          if (routing === 'Lifetime Air Harness') {
+            effectiveRouting = 'Lifetime Harness';
+          }
+          
           workCentersToCheck.forEach(wc => {
             // Create keys to match our UPH map structure
-            uphKeys.push(`${op.id}-${wc}-${routing || ''}`);
+            uphKeys.push(`${op.id}-${wc}-${effectiveRouting || ''}`);
           });
           
           const hasUphData = uphKeys.some(key => uphMap.has(key));
@@ -856,14 +864,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? ['Assembly', 'Sewing', 'Rope'] 
             : [workCenter as string];
           
+          // Handle routing mapping for products without historical data
+          // Map "Lifetime Air Harness" to use "Lifetime Harness" data until actual data is available
+          let effectiveRouting = routing;
+          if (routing === 'Lifetime Air Harness') {
+            effectiveRouting = 'Lifetime Harness';
+          }
+          
           const uphKeys: string[] = [];
           workCentersToCheck.forEach(wc => {
             // First try operation-specific keys, then fall back to broader matches
             if (operation) {
-              uphKeys.push(`${op.id}-${wc}-${routing || ''}-${operation}`);
+              uphKeys.push(`${op.id}-${wc}-${effectiveRouting || ''}-${operation}`);
             }
             uphKeys.push(
-              `${op.id}-${wc}-${routing || ''}`,
+              `${op.id}-${wc}-${effectiveRouting || ''}`,
               `${op.id}-${wc}-`,
               `${op.id}-${wc}`
             );
