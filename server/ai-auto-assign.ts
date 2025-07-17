@@ -212,10 +212,8 @@ export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
         quantity: wo.quantity || mo.quantity,
         productionOrderId: wo.productionOrderId,
         moNumber: wo.moNumber || mo.moNumber || '',
-            productName: mo.productName || ''
-          });
-        }
-      }
+        productName: mo.productName || ''
+      });
     }
     
     console.log(`Found ${unassignedWorkOrders.length} unassigned work orders to process`);
