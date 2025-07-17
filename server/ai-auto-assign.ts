@@ -284,9 +284,9 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         id: operators.id,
         name: operators.name,
         isActive: operators.isActive,
-        workCenters: operators.work_centers,
-        routings: operators.product_routings,
-        maxHoursPerWeek: operators.max_hours_per_week,
+        workCenters: operators.workCenters,
+        routings: operators.routings,
+        maxHoursPerWeek: operators.availableHours,
       })
       .from(operators)
       .where(eq(operators.isActive, true));
