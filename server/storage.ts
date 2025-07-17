@@ -348,9 +348,7 @@ export class MemStorage implements IStorage {
       actualHours: wo.actualHours ?? null,
       assignedOperatorId: wo.assignedOperatorId ?? null,
       operatorName: wo.operatorName ?? null,
-      assignedByAi: wo.assignedByAi ?? false,
-      aiConfidence: wo.aiConfidence ?? null,
-      aiReasoning: wo.aiReasoning ?? null,
+
       operationId: wo.operationId ?? null,
       operator: wo.operator ?? null,
       cost: wo.cost ?? null,

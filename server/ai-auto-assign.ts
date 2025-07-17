@@ -1,355 +1,270 @@
-import OpenAI from "openai";
+import { OpenAI } from "openai";
 import { db } from "./db.js";
-import { 
-  workOrderAssignments, 
-  operators, 
-  workOrders, 
-  productionOrders,
-  historicalUph 
-} from "@shared/schema.js";
-import { eq, and, sql, inArray, gt, notInArray } from "drizzle-orm";
+import { workOrders, operators, workOrderAssignments, productionOrders, historicalUph } from "../shared/schema.js";
+import { eq, and, inArray, isNull, isNotNull, gt, sql, desc } from "drizzle-orm";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || "",
+});
+
+// Helper function to group work orders by routing
+function groupWorkOrdersByRouting(workOrdersData: any[]) {
+  const routingGroups = new Map<string, any[]>();
+  
+  for (const wo of workOrdersData) {
+    const routing = wo.routing || "Unknown";
+    if (!routingGroups.has(routing)) {
+      routingGroups.set(routing, []);
+    }
+    routingGroups.get(routing)!.push(wo);
+  }
+  
+  return routingGroups;
+}
 
 interface OperatorProfile {
   id: number;
   name: string;
-  slackUserId?: string;
-  isActive: boolean;
-  workCenters: string[];
-  operations: string[];
-  routings: string[];
-  uphPerformance: Map<string, {
-    avgUph: number;
-    observations: number;
-    workCenter: string;
-    routing: string;
-  }>;
-  currentAssignments: number;
-  hoursAssigned: number;
+  skills: string[];
+  currentCapacity: number;
   maxHours: number;
+  hoursAssigned: number;
+  activeAssignments: number;
+  uphData: Map<string, { uph: number; observations: number }>;
 }
 
-interface WorkOrderToAssign {
-  id: number;
-  workCenter: string;
-  operation: string;
+interface WorkOrderData {
+  workOrderId: number;
+  moNumber: string;
   routing: string;
   quantity: number;
-  productionOrderId: number;
-  moNumber: string;
-  productName: string;
-}
-
-interface AssignmentRecommendation {
-  workOrderId: number;
-  operatorId: number;
-  operatorName: string;
-  reason: string;
-  expectedUph: number;
+  workCenter: string;
+  operation: string;
   expectedHours: number;
-  confidence: number;
-  isAutoAssigned: boolean;
+  sequence: number;
 }
 
 interface AutoAssignResult {
   success: boolean;
-  assignments: AssignmentRecommendation[];
+  assignments: number[];
   unassigned: number[];
   summary: string;
   totalHoursOptimized: number;
   operatorUtilization: Map<number, number>;
 }
 
-// Prepare operator profiles with historical performance data
-export async function prepareOperatorProfiles(): Promise<Map<number, OperatorProfile>> {
-  const operatorMap = new Map<number, OperatorProfile>();
-  
-  // Get all active operators
-  const activeOperators = await db
-    .select()
-    .from(operators)
-    .where(eq(operators.isActive, true));
-    
-  // Get historical UPH data
-  const uphData = await db
-    .select()
-    .from(historicalUph);
-    
-  // Get current assignments with work order details
-  const assignmentsRaw = await db
-    .select()
-    .from(workOrderAssignments)
-    .leftJoin(workOrders, eq(workOrderAssignments.workOrderId, workOrders.id))
-    .where(eq(workOrderAssignments.isActive, true));
-    
-  // Transform to required format
-  const currentAssignments = assignmentsRaw.map(row => ({
-    operatorId: row.work_order_assignments.operatorId,
-    workOrderId: row.work_order_assignments.workOrderId,
-    quantity: row.work_orders?.quantity || 0,
-    workCenter: row.work_orders?.workCenter || '',
-    routing: row.work_orders?.routing || ''
-  }));
-    
-  // Build operator profiles
-  for (const operator of activeOperators) {
-    const profile: OperatorProfile = {
-      id: operator.id,
-      name: operator.name,
-      slackUserId: operator.slackUserId || undefined,
-      isActive: operator.isActive,
-      workCenters: operator.workCenters || [],
-      operations: operator.operations || [],
-      routings: operator.routings || [],
-      uphPerformance: new Map(),
-      currentAssignments: 0,
-      hoursAssigned: 0,
-      maxHours: operator.availableHours || 40
-    };
-    
-    // Add UPH performance data
-    const operatorUph = uphData.filter(u => u.operator === operator.name);
-    for (const uph of operatorUph) {
-      const key = `${uph.workCenter}-${uph.routing}`;
-      profile.uphPerformance.set(key, {
-        avgUph: uph.unitsPerHour,
-        observations: uph.observations,
-        workCenter: uph.workCenter,
-        routing: uph.routing
-      });
-    }
-    
-    // Calculate current assignment hours
-    const operatorAssignments = currentAssignments.filter(a => a.operatorId === operator.id);
-    profile.currentAssignments = operatorAssignments.length;
-    
-    for (const assignment of operatorAssignments) {
-      const uphKey = `${assignment.workCenter}-${assignment.routing}`;
-      const performance = profile.uphPerformance.get(uphKey);
-      if (performance && assignment.quantity) {
-        profile.hoursAssigned += assignment.quantity / performance.avgUph;
-      }
-    }
-    
-    operatorMap.set(operator.id, profile);
-  }
-  
-  return operatorMap;
-}
-
-// Get unassigned work orders
-export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
+// Helper function to get UPH for an operator on a specific work center and routing
+async function getOperatorUPH(
+  operatorId: number,
+  workCenter: string,
+  routing: string
+): Promise<number | null> {
   try {
-    // Get assigned work order IDs from assignments table
-    const assignedWorkOrderIds = await db
-      .select({ workOrderId: workOrderAssignments.workOrderId })
-      .from(workOrderAssignments)
-      .where(eq(workOrderAssignments.isActive, true));
-      
-    const assignedIds = new Set(assignedWorkOrderIds.map(a => a.workOrderId));
-    console.log(`Found ${assignedIds.size} work orders with active assignments`);
-    
-    // Get production orders and work orders from database
-    const productionOrdersData = await db
+    const uphResults = await db
       .select({
-        id: productionOrders.id,
-        moNumber: productionOrders.moNumber,
-        quantity: productionOrders.quantity,
-        routing: productionOrders.routing,
-        status: productionOrders.status,
-        state: productionOrders.state
+        uph: historicalUph.unitsPerHour,
+        observations: historicalUph.observations,
       })
-      .from(productionOrders)
+      .from(historicalUph)
       .where(
         and(
-          not(eq(productionOrders.status, 'Done')),
-          not(eq(productionOrders.state, 'done'))
+          eq(historicalUph.operatorId, operatorId),
+          eq(historicalUph.workCenter, workCenter),
+          eq(historicalUph.productRouting, routing)
         )
-      );
-    console.log(`Found ${productionOrdersData.length} active production orders in database`);
-    
-    // Get work orders for active production orders
-    const workOrdersData = await db
-      .select({
-        id: workOrders.id,
-        workCenter: workOrders.workCenter,
-        operation: workOrders.operation,
-        routing: workOrders.routing,
-        quantity: workOrders.quantity,
-        productionOrderId: workOrders.productionOrderId,
-        moNumber: workOrders.moNumber,
-        state: workOrders.state
-      })
-      .from(workOrders)
-      .where(
-        inArray(
-          workOrders.productionOrderId,
-          productionOrdersData.map(po => po.id)
-        )
-      );
-    
-    console.log(`Found ${workOrdersData.length} work orders for active production orders`);
-    
-    // Extract all unassigned work orders
-    const unassignedWorkOrders: WorkOrderToAssign[] = [];
-    
-    for (const wo of workOrdersData) {
-      // Skip if already assigned or if state is finished/done
-      if (assignedIds.has(wo.id) || wo.state === 'finished' || wo.state === 'done') {
-        continue;
-      }
-      
-      const mo = productionOrdersData.find(p => p.id === wo.productionOrderId);
-      if (!mo || !mo.quantity || mo.quantity <= 0) continue;
-      
-      // Add to unassigned list
-      unassignedWorkOrders.push({
-        id: wo.id,
-        workCenter: wo.workCenter || 'Unknown',
-        operation: wo.operation || '',
-        routing: wo.routing || mo.routing || '',
-        quantity: wo.quantity || mo.quantity,
-        productionOrderId: wo.productionOrderId,
-        moNumber: wo.moNumber || mo.moNumber || '',
-        productName: mo.productName || ''
-      });
+      )
+      .limit(1);
+
+    if (uphResults.length > 0 && uphResults[0].uph) {
+      return uphResults[0].uph;
     }
-    
-    console.log(`Found ${unassignedWorkOrders.length} unassigned work orders to process`);
-    console.log('Sample unassigned work orders:', unassignedWorkOrders.slice(0, 3));
-    return unassignedWorkOrders;
+
+    // Check alternate work centers
+    const alternateWorkCenters = workCenter === "Assembly" ? ["Sewing", "Rope"] : [];
+    for (const altWC of alternateWorkCenters) {
+      const altUphResults = await db
+        .select({
+          uph: historicalUph.unitsPerHour,
+          observations: historicalUph.observations,
+        })
+        .from(historicalUph)
+        .where(
+          and(
+            eq(historicalUph.operatorId, operatorId),
+            eq(historicalUph.workCenter, altWC),
+            eq(historicalUph.productRouting, routing)
+          )
+        )
+        .limit(1);
+
+      if (altUphResults.length > 0 && altUphResults[0].uph) {
+        return altUphResults[0].uph;
+      }
+    }
+
+    return null;
   } catch (error) {
-    console.error('Error in getUnassignedWorkOrders:', error);
-    throw error;
+    console.error("Error fetching operator UPH:", error);
+    return null;
   }
 }
 
-// Generate AI-powered assignment recommendations
-export async function generateAssignmentRecommendations(
-  workOrders: WorkOrderToAssign[],
+// Analyze overloaded operators and recommend rebalancing
+async function rebalanceOverloadedOperators(
+  assignments: Map<number, WorkOrderData[]>,
   operatorProfiles: Map<number, OperatorProfile>
-): Promise<AssignmentRecommendation[]> {
+): Promise<Map<number, number>> {
+  const reassignments = new Map<number, number>();
   
-  // Check if OpenAI API key is available
-  if (!process.env.OPENAI_API_KEY) {
-    console.error("OPENAI_API_KEY not found in environment variables");
-    throw new Error("OpenAI API key is required for auto-assign feature. Please add OPENAI_API_KEY to your environment secrets.");
+  // Find overloaded operators (>90% capacity)
+  const overloadedOperators: number[] = [];
+  const underutilizedOperators: number[] = [];
+  
+  for (const [opId, profile] of operatorProfiles) {
+    const utilization = (profile.hoursAssigned / profile.maxHours) * 100;
+    if (utilization > 90) {
+      overloadedOperators.push(opId);
+    } else if (utilization < 80) {
+      underutilizedOperators.push(opId);
+    }
   }
   
-  // Prepare data for AI analysis
-  const operatorData = Array.from(operatorProfiles.values()).map(op => ({
-    id: op.id,
-    name: op.name,
-    availableHours: Math.max(0, op.maxHours - op.hoursAssigned),
-    workCenters: op.workCenters,
-    routings: op.routings,
-    performance: Array.from(op.uphPerformance.entries()).map(([key, perf]) => ({
-      key,
-      workCenter: perf.workCenter,
-      routing: perf.routing,
-      avgUph: perf.avgUph,
-      observations: perf.observations
-    }))
-  }));
+  if (overloadedOperators.length === 0 || underutilizedOperators.length === 0) {
+    return reassignments; // No rebalancing needed
+  }
   
-  const workOrderData = workOrders.map(wo => ({
-    id: wo.id,
-    moNumber: wo.moNumber,
-    productName: wo.productName,
-    workCenter: wo.workCenter,
-    operation: wo.operation,
-    routing: wo.routing,
-    quantity: wo.quantity
-  }));
+  // Prepare data for AI rebalancing
+  const overloadedData = overloadedOperators.map(opId => {
+    const profile = operatorProfiles.get(opId)!;
+    const workOrders = assignments.get(opId) || [];
+    return {
+      operatorId: opId,
+      operatorName: profile.name,
+      currentHours: profile.hoursAssigned,
+      maxHours: profile.maxHours,
+      utilization: (profile.hoursAssigned / profile.maxHours) * 100,
+      workOrders: workOrders.map(wo => ({
+        id: wo.workOrderId,
+        moNumber: wo.moNumber,
+        routing: wo.routing,
+        workCenter: wo.workCenter,
+        quantity: wo.quantity,
+        expectedHours: wo.expectedHours
+      }))
+    };
+  });
   
-  const prompt = `You are an expert production scheduler optimizing operator assignments for manufacturing efficiency.
+  const underutilizedData = underutilizedOperators.map(opId => {
+    const profile = operatorProfiles.get(opId)!;
+    return {
+      operatorId: opId,
+      operatorName: profile.name,
+      currentHours: profile.hoursAssigned,
+      maxHours: profile.maxHours,
+      utilization: (profile.hoursAssigned / profile.maxHours) * 100,
+      skills: profile.skills,
+      uphData: Array.from(profile.uphData.entries()).map(([key, data]) => ({
+        workCenterRouting: key,
+        uph: data.uph,
+        observations: data.observations
+      }))
+    };
+  });
+  
+  const systemMessage = `You are an expert manufacturing scheduler. Your task is to rebalance work orders from overloaded operators (>90% capacity) to underutilized operators (<80% capacity).
 
-OPERATORS (${operatorData.length} available):
-${JSON.stringify(operatorData, null, 2)}
+Consider:
+1. Operator skills and UPH performance on specific work centers and routings
+2. Current utilization levels
+3. Work order requirements (routing, work center, quantity)
+4. Minimize disruption - only reassign what's necessary
 
-WORK ORDERS TO ASSIGN (${workOrderData.length} unassigned):
-${JSON.stringify(workOrderData, null, 2)}
-
-CONSTRAINTS:
-1. Operators can only work on work centers they are qualified for
-2. Operators can only work on routings they have experience with
-3. Respect available hours (don't exceed operator capacity)
-4. Use historical UPH data to estimate task duration
-5. Prioritize operators with more observations (experience) for critical tasks
-
-OPTIMIZATION GOALS:
-1. Minimize total production hours
-2. Balance workload across operators
-3. Match operator strengths to appropriate tasks
-4. Ensure all constraints are satisfied
-
-For each work order, recommend the best operator assignment considering:
-- Historical performance (UPH) on similar tasks
-- Current workload and availability
-- Qualification constraints
-
-Respond with JSON format:
-{
-  "assignments": [
-    {
-      "workOrderId": number,
-      "operatorId": number,
-      "operatorName": string,
-      "reason": "specific explanation of why this operator was chosen",
-      "expectedUph": number,
-      "expectedHours": number (quantity / expectedUph),
-      "confidence": number (0-1, based on historical data quality)
-    }
-  ],
-  "unassigned": [workOrderIds that couldn't be assigned],
-  "summary": "Brief optimization summary"
-}`;
+Return a JSON array of reassignments:
+[
+  {
+    "workOrderId": number,
+    "fromOperatorId": number,
+    "toOperatorId": number,
+    "reasoning": "brief explanation"
+  }
+]`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
-        {
-          role: "system",
-          content: "You are an expert production scheduler. Provide optimal operator assignments based on constraints and historical performance data."
-        },
+        { role: "system", content: systemMessage },
         {
           role: "user",
-          content: prompt
+          content: JSON.stringify({
+            overloadedOperators: overloadedData,
+            underutilizedOperators: underutilizedData
+          })
         }
       ],
-      response_format: { type: "json_object" },
-      temperature: 0.2 // Low temperature for consistent optimization
+      temperature: 0.3,
+      response_format: { type: "json_object" }
     });
+
+    const rebalanceData = JSON.parse(response.choices[0].message.content || "{}");
+    const reassignmentList = rebalanceData.reassignments || [];
     
-    const result = JSON.parse(response.choices[0].message.content || "{}");
-    
-    // Convert AI recommendations to our format
-    return result.assignments.map((assignment: any) => ({
-      ...assignment,
-      isAutoAssigned: true
-    }));
+    // Convert to map format
+    for (const item of reassignmentList) {
+      reassignments.set(item.workOrderId, item.toOperatorId);
+    }
     
   } catch (error) {
-    console.error("Error generating AI assignments:", error);
-    throw error;
+    console.error("AI rebalancing failed:", error);
   }
+  
+  return reassignments;
 }
 
-// Main auto-assign function
 export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
   try {
-    console.log("Starting auto-assign process...");
+    // Step 1: Get all production orders with embedded work orders
+    const response = await fetch('http://localhost:5000/api/production-orders');
+    const allProductionOrders = await response.json();
     
-    // Step 1: Prepare operator profiles with historical data
-    const operatorProfiles = await prepareOperatorProfiles();
-    console.log(`Prepared ${operatorProfiles.size} operator profiles`);
+    const allWorkOrders = [];
     
-    // Step 2: Get unassigned work orders
-    const unassignedWorkOrders = await getUnassignedWorkOrders();
-    console.log(`Found ${unassignedWorkOrders.length} unassigned work orders`);
+    // Extract all work orders from production orders
+    for (const po of allProductionOrders) {
+      if (po.workOrders && Array.isArray(po.workOrders)) {
+        for (const wo of po.workOrders) {
+          // Only consider non-finished work orders
+          if (wo.state !== 'finished') {
+            allWorkOrders.push({
+              workOrderId: wo.id,
+              moNumber: po.moNumber,
+              routing: po.routing,
+              quantity: po.quantity,
+              workCenter: wo.workCenter || wo.originalWorkCenter,
+              operation: wo.operation,
+              sequence: 1,
+              productionOrderId: po.id,
+              state: wo.state
+            });
+          }
+        }
+      }
+    }
     
+    // Get existing assignments
+    const existingAssignments = await db
+      .select({
+        workOrderId: workOrderAssignments.workOrderId,
+      })
+      .from(workOrderAssignments)
+      .where(eq(workOrderAssignments.isActive, true));
+    
+    const assignedWorkOrderIds = new Set(existingAssignments.map(a => a.workOrderId));
+    
+    // Filter unassigned work orders
+    const unassignedWorkOrders = allWorkOrders.filter(wo => !assignedWorkOrderIds.has(wo.workOrderId));
+
     if (unassignedWorkOrders.length === 0) {
       return {
         success: true,
@@ -361,46 +276,266 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       };
     }
     
-    // Step 3: Generate AI recommendations
-    console.log("Generating AI recommendations...");
-    const recommendations = await generateAssignmentRecommendations(
-      unassignedWorkOrders, 
-      operatorProfiles
-    );
+    console.log(`Found ${unassignedWorkOrders.length} unassigned work orders`);
+
+    // Step 2: Get all active operators with their UPH data
+    const activeOperators = await db
+      .select({
+        id: operators.id,
+        name: operators.name,
+        isActive: operators.isActive,
+        workCenters: operators.work_centers,
+        routings: operators.product_routings,
+        maxHoursPerWeek: operators.max_hours_per_week,
+      })
+      .from(operators)
+      .where(eq(operators.isActive, true));
+
+    // Build operator profiles with UPH data
+    const operatorProfiles = new Map<number, OperatorProfile>();
     
-    // Step 4: Apply assignments to database
-    const successfulAssignments: AssignmentRecommendation[] = [];
+    for (const op of activeOperators) {
+      const uphData = new Map<string, { uph: number; observations: number }>();
+      
+      // Get all UPH data for this operator
+      const operatorUphData = await db
+        .select({
+          workCenter: historicalUph.workCenter,
+          routing: historicalUph.productRouting,
+          uph: historicalUph.unitsPerHour,
+          observations: historicalUph.observations,
+        })
+        .from(historicalUph)
+        .where(eq(historicalUph.operatorId, op.id));
+      
+      for (const uphRecord of operatorUphData) {
+        const key = `${uphRecord.workCenter}-${uphRecord.routing}`;
+        uphData.set(key, {
+          uph: uphRecord.uph || 0,
+          observations: uphRecord.observations || 0
+        });
+      }
+      
+      operatorProfiles.set(op.id, {
+        id: op.id,
+        name: op.name,
+        skills: [...(op.workCenters || []), ...(op.routings || [])],
+        currentCapacity: 0,
+        maxHours: op.maxHoursPerWeek || 40,
+        hoursAssigned: 0,
+        activeAssignments: 0,
+        uphData
+      });
+    }
+
+    // Step 3: Group work orders by routing for batch processing
+    const routingGroups = groupWorkOrdersByRouting(unassignedWorkOrders);
+    
+    // Step 4: Process each routing group with AI
+    const allAssignments = new Map<number, WorkOrderData[]>();
+    const successfulAssignments: number[] = [];
     const failedAssignments: number[] = [];
     
-    for (const rec of recommendations) {
+    for (const [routing, workOrdersInGroup] of routingGroups) {
+      console.log(`Processing ${workOrdersInGroup.length} work orders for routing: ${routing}`);
+      
+      // Prepare work order data
+      const workOrderData: WorkOrderData[] = workOrdersInGroup.map(wo => ({
+        workOrderId: wo.workOrderId,
+        moNumber: wo.moNumber,
+        routing: wo.routing,
+        quantity: wo.quantity,
+        workCenter: wo.workCenter,
+        operation: wo.operation,
+        expectedHours: 0, // Will be calculated based on UPH
+        sequence: wo.sequence
+      }));
+      
+      // Get operators with experience in this routing
+      const qualifiedOperators = [];
+      for (const [opId, profile] of operatorProfiles) {
+        const hasRoutingExperience = Array.from(profile.uphData.keys()).some(key => 
+          key.includes(routing)
+        );
+        
+        if (hasRoutingExperience) {
+          qualifiedOperators.push({
+            id: opId,
+            name: profile.name,
+            currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
+            remainingHours: profile.maxHours - profile.hoursAssigned,
+            uphPerformance: Array.from(profile.uphData.entries())
+              .filter(([key]) => key.includes(routing))
+              .map(([key, data]) => ({
+                workCenterRouting: key,
+                uph: data.uph,
+                observations: data.observations
+              }))
+          });
+        }
+      }
+      
+      if (qualifiedOperators.length === 0) {
+        console.log(`No qualified operators found for routing: ${routing}`);
+        failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
+        continue;
+      }
+      
+      // Use AI to assign work orders
+      const systemMessage = `You are an expert manufacturing scheduler. Assign work orders to operators based on:
+1. Operator's UPH (Units Per Hour) performance for specific work center and routing combinations
+2. Current capacity utilization (prefer operators with lower utilization)
+3. Number of observations (higher observations = more reliable UPH data)
+4. Remaining available hours
+
+Guidelines:
+- Calculate expected hours = quantity / UPH
+- Don't exceed operator's remaining hours
+- Prefer operators with proven performance (high UPH, many observations)
+- Balance workload across operators
+
+Return assignments as JSON:
+{
+  "assignments": [
+    {
+      "workOrderId": number,
+      "operatorId": number,
+      "expectedHours": number,
+      "reasoning": "brief explanation",
+      "confidence": number (0-1)
+    }
+  ]
+}`;
+
       try {
-        // Insert assignment
-        await db.insert(workOrderAssignments).values({
-          workOrderId: rec.workOrderId,
-          operatorId: rec.operatorId,
+        const response = await openai.chat.completions.create({
+          model: "gpt-4",
+          messages: [
+            { role: "system", content: systemMessage },
+            {
+              role: "user",
+              content: JSON.stringify({
+                workOrders: workOrderData,
+                operators: qualifiedOperators,
+                routing: routing
+              })
+            }
+          ],
+          temperature: 0.5,
+          response_format: { type: "json_object" }
+        });
+
+        const aiResponse = JSON.parse(response.choices[0].message.content || "{}");
+        const assignments = aiResponse.assignments || [];
+        
+        // Process AI assignments
+        for (const assignment of assignments) {
+          const woData = workOrderData.find(wo => wo.workOrderId === assignment.workOrderId);
+          if (!woData) continue;
+          
+          woData.expectedHours = assignment.expectedHours || 0;
+          
+          // Update operator profile
+          const profile = operatorProfiles.get(assignment.operatorId);
+          if (profile) {
+            profile.hoursAssigned += assignment.expectedHours;
+            profile.activeAssignments++;
+            
+            // Track assignment for this operator
+            if (!allAssignments.has(assignment.operatorId)) {
+              allAssignments.set(assignment.operatorId, []);
+            }
+            allAssignments.get(assignment.operatorId)!.push(woData);
+          }
+          
+          successfulAssignments.push(assignment.workOrderId);
+        }
+        
+      } catch (error) {
+        console.error(`AI assignment failed for routing ${routing}:`, error);
+        failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
+      }
+    }
+    
+    // Step 5: Check for overloaded operators and rebalance if needed
+    const reassignments = await rebalanceOverloadedOperators(allAssignments, operatorProfiles);
+    
+    // Apply reassignments
+    for (const [workOrderId, newOperatorId] of reassignments) {
+      // Find current assignment
+      let currentOperatorId: number | null = null;
+      let workOrderData: WorkOrderData | null = null;
+      
+      for (const [opId, assignments] of allAssignments) {
+        const wo = assignments.find(a => a.workOrderId === workOrderId);
+        if (wo) {
+          currentOperatorId = opId;
+          workOrderData = wo;
+          break;
+        }
+      }
+      
+      if (currentOperatorId && workOrderData) {
+        // Remove from current operator
+        const currentAssignments = allAssignments.get(currentOperatorId) || [];
+        allAssignments.set(
+          currentOperatorId,
+          currentAssignments.filter(a => a.workOrderId !== workOrderId)
+        );
+        
+        const currentProfile = operatorProfiles.get(currentOperatorId);
+        if (currentProfile) {
+          currentProfile.hoursAssigned -= workOrderData.expectedHours;
+          currentProfile.activeAssignments--;
+        }
+        
+        // Add to new operator
+        if (!allAssignments.has(newOperatorId)) {
+          allAssignments.set(newOperatorId, []);
+        }
+        allAssignments.get(newOperatorId)!.push(workOrderData);
+        
+        const newProfile = operatorProfiles.get(newOperatorId);
+        if (newProfile) {
+          newProfile.hoursAssigned += workOrderData.expectedHours;
+          newProfile.activeAssignments++;
+        }
+      }
+    }
+    
+    // Step 6: Save all assignments to database
+    const assignmentRecords = [];
+    for (const [operatorId, workOrdersList] of allAssignments) {
+      for (const wo of workOrdersList) {
+        assignmentRecords.push({
+          workOrderId: wo.workOrderId,
+          operatorId: operatorId,
           assignedBy: "AI Auto-Assign",
           assignedAt: new Date(),
           isActive: true,
           isAutoAssigned: true,
-          autoAssignReason: rec.reason,
-          autoAssignConfidence: rec.confidence
+          autoAssignReason: `Assigned based on UPH performance for ${wo.routing} - ${wo.workCenter}`,
+          autoAssignConfidence: 0.85
         });
-        
-        successfulAssignments.push(rec);
-        
-        // Update operator profile hours
-        const profile = operatorProfiles.get(rec.operatorId);
-        if (profile) {
-          profile.hoursAssigned += rec.expectedHours;
-        }
-        
-      } catch (error) {
-        console.error(`Failed to assign WO ${rec.workOrderId}:`, error);
-        failedAssignments.push(rec.workOrderId);
       }
     }
     
-    // Calculate utilization
+    // Insert assignments in batches
+    const batchSize = 50;
+    for (let i = 0; i < assignmentRecords.length; i += batchSize) {
+      const batch = assignmentRecords.slice(i, i + batchSize);
+      try {
+        await db.insert(workOrderAssignments).values(batch);
+      } catch (error) {
+        console.error("Error inserting assignment batch:", error);
+        // Track failed assignments
+        const failedIds = batch.map(a => a.workOrderId);
+        failedAssignments.push(...failedIds);
+        successfulAssignments.filter(id => !failedIds.includes(id));
+      }
+    }
+    
+    // Calculate final metrics
     const operatorUtilization = new Map<number, number>();
     let totalHoursOptimized = 0;
     
@@ -418,14 +553,13 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       totalHoursOptimized,
       operatorUtilization
     };
-    
   } catch (error) {
     console.error("Auto-assign error:", error);
     return {
       success: false,
       assignments: [],
       unassigned: [],
-      summary: `Auto-assign failed: ${error.message}`,
+      summary: error instanceof Error ? error.message : "Auto-assign failed",
       totalHoursOptimized: 0,
       operatorUtilization: new Map()
     };
@@ -456,54 +590,6 @@ export async function clearAllAssignments(): Promise<{ success: boolean; cleared
     };
   } catch (error) {
     console.error("Error clearing assignments:", error);
-    return {
-      success: false,
-      cleared: 0
-    };
-  }
-}
-
-// Clear assignments for specific work center or routing
-export async function clearAssignmentsByFilter(
-  filter: { workCenter?: string; routing?: string }
-): Promise<{ success: boolean; cleared: number }> {
-  try {
-    // Get work order IDs matching filter
-    let query = db
-      .select({ id: workOrders.id })
-      .from(workOrders);
-      
-    if (filter.workCenter) {
-      query = query.where(eq(workOrders.workCenter, filter.workCenter));
-    }
-    
-    if (filter.routing) {
-      query = query
-        .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
-        .where(eq(productionOrders.routing, filter.routing));
-    }
-    
-    const workOrderIds = await query;
-    const ids = workOrderIds.map(wo => wo.id);
-    
-    if (ids.length === 0) {
-      return { success: true, cleared: 0 };
-    }
-    
-    // Delete assignments for these work orders
-    const result = await db
-      .delete(workOrderAssignments)
-      .where(and(
-        inArray(workOrderAssignments.workOrderId, ids),
-        eq(workOrderAssignments.isActive, true)
-      ));
-      
-    return {
-      success: true,
-      cleared: result.rowCount || 0
-    };
-  } catch (error) {
-    console.error("Error clearing filtered assignments:", error);
     return {
       success: false,
       cleared: 0
