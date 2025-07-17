@@ -129,6 +129,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Debug: log first few work orders
             if (allWorkOrders.length > 0) {
               console.log('Sample work order:', JSON.stringify(allWorkOrders[0], null, 2));
+              console.log('Work order production IDs:', allWorkOrders.slice(0, 5).map(wo => ({ id: wo.id, production: wo.production })));
+            } else {
+              console.log('WARNING: No work orders found for MO IDs:', moIds);
             }
           } else {
             console.error('Work order fetch failed:', workOrderResponse.status);
