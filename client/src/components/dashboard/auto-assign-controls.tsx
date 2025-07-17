@@ -181,7 +181,7 @@ export function AutoAssignControls() {
             </TooltipContent>
           </Tooltip>
 
-          {lastResult && lastResult.assignments.length > 0 && (
+          {lastResult && lastResult.assignments && lastResult.assignments.length > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
