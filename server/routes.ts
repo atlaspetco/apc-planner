@@ -458,30 +458,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { db } = await import("./db.js");
       const { workOrderAssignments, operators, workOrders, productionOrders } = await import("../shared/schema.js");
-      const { eq } = await import("drizzle-orm");
+      const { eq, sql } = await import("drizzle-orm");
       
-      const assignments = await db
+      // First get basic assignments
+      const basicAssignments = await db
         .select({
           workOrderId: workOrderAssignments.workOrderId,
           operatorId: workOrderAssignments.operatorId,
           operatorName: operators.name,
           assignedAt: workOrderAssignments.assignedAt,
-          isActive: workOrderAssignments.isActive,
-          workCenter: workOrders.workCenter,
-          operation: workOrders.operation,
-          routing: workOrders.routing,
-          quantity: workOrders.quantity,
-          productionOrderId: workOrders.productionOrderId,
-          productName: productionOrders.productName,
-          productRouting: productionOrders.productRouting
+          isActive: workOrderAssignments.isActive
         })
         .from(workOrderAssignments)
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
-        .leftJoin(workOrders, eq(workOrderAssignments.workOrderId, workOrders.id))
-        .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
         .where(eq(workOrderAssignments.isActive, true));
       
-      res.json({ assignments });
+      // Then enrich with work order and production order data
+      const enrichedAssignments = await Promise.all(
+        basicAssignments.map(async (assignment) => {
+          // Get work order details
+          const workOrderData = await db
+            .select()
+            .from(workOrders)
+            .where(eq(workOrders.id, assignment.workOrderId))
+            .limit(1);
+          
+          const workOrder = workOrderData[0];
+          
+          if (!workOrder) {
+            return assignment;
+          }
+          
+          // Get production order details
+          const productionOrderData = await db
+            .select()
+            .from(productionOrders)
+            .where(eq(productionOrders.id, workOrder.productionOrderId))
+            .limit(1);
+          
+          const productionOrder = productionOrderData[0];
+          
+          return {
+            ...assignment,
+            workCenter: workOrder.workCenter,
+            operation: workOrder.operation,
+            routing: workOrder.routing,
+            quantity: workOrder.quantity,
+            productionOrderId: workOrder.productionOrderId,
+            productName: productionOrder?.productName || '',
+            productRouting: productionOrder?.productRouting || productionOrder?.routing || ''
+          };
+        })
+      );
+      
+      res.json({ assignments: enrichedAssignments });
     } catch (error) {
       console.error('Error fetching work order assignments:', error);
       res.status(500).json({ message: 'Failed to fetch assignments' });
