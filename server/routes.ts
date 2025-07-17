@@ -457,7 +457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/assignments", async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db.js");
-      const { workOrderAssignments, operators } = await import("../shared/schema.js");
+      const { workOrderAssignments, operators, workOrders, productionOrders } = await import("../shared/schema.js");
       const { eq } = await import("drizzle-orm");
       
       const assignments = await db
@@ -466,10 +466,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           operatorId: workOrderAssignments.operatorId,
           operatorName: operators.name,
           assignedAt: workOrderAssignments.assignedAt,
-          isActive: workOrderAssignments.isActive
+          isActive: workOrderAssignments.isActive,
+          workCenter: workOrders.workCenter,
+          operation: workOrders.operation,
+          routing: workOrders.routing,
+          quantity: workOrders.quantity,
+          productionOrderId: workOrders.productionOrderId,
+          productName: productionOrders.productName,
+          productRouting: productionOrders.productRouting
         })
         .from(workOrderAssignments)
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
+        .leftJoin(workOrders, eq(workOrderAssignments.workOrderId, workOrders.id))
+        .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
         .where(eq(workOrderAssignments.isActive, true));
       
       res.json({ assignments });

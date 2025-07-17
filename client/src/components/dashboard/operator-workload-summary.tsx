@@ -82,6 +82,15 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
     return Array.from(operatorMap.values()).map(operator => {
       const capacityPercent = Math.round((operator.totalEstimatedHours / operator.availableHours) * 100);
       
+      // Calculate total observations from UPH data
+      let totalObservations = 0;
+      if (uphData?.uphResults) {
+        const operatorUphEntries = uphData.uphResults.filter(entry => 
+          entry.operatorName === operator.operatorName
+        );
+        totalObservations = operatorUphEntries.reduce((sum, entry) => sum + (entry.observations || 0), 0);
+      }
+      
       // Estimate completion date based on workload
       const daysToComplete = Math.ceil(operator.totalEstimatedHours / 8); // 8 hours per day
       const completionDate = new Date();
@@ -89,6 +98,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
       
       return {
         ...operator,
+        observations: totalObservations,
         capacityPercent,
         estimatedCompletion: completionDate.toLocaleDateString('en-US', { 
           weekday: 'short', 
