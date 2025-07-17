@@ -7,7 +7,7 @@ import {
   productionOrders,
   historicalUph 
 } from "@shared/schema.js";
-import { eq, and, sql, inArray, gt } from "drizzle-orm";
+import { eq, and, sql, inArray, gt, notInArray } from "drizzle-orm";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -141,42 +141,46 @@ export async function prepareOperatorProfiles(): Promise<Map<number, OperatorPro
 // Get unassigned work orders
 export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
   try {
-    // Get all work orders with production order details
+    // Get assigned work order IDs first
+    const assignedWorkOrderIds = await db
+      .select({ workOrderId: workOrderAssignments.workOrderId })
+      .from(workOrderAssignments)
+      .where(eq(workOrderAssignments.isActive, true));
+      
+    const assignedIds = new Set(assignedWorkOrderIds.map(a => a.workOrderId));
+    console.log(`Found ${assignedIds.size} work orders with active assignments`);
+    
+    // Get all work orders that are not finished or done
     const allWorkOrdersRaw = await db
       .select()
       .from(workOrders)
       .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
-      .where(eq(workOrders.state, 'request'));
+      .where(notInArray(workOrders.state, ['finished', 'done']));
       
-    console.log(`Found ${allWorkOrdersRaw.length} work orders in 'request' state`);
+    console.log(`Found ${allWorkOrdersRaw.length} work orders not in finished/done state`);
     
-  // Get assigned work order IDs
-  const assignedWorkOrderIds = await db
-    .select({ workOrderId: workOrderAssignments.workOrderId })
-    .from(workOrderAssignments)
-    .where(eq(workOrderAssignments.isActive, true));
-    
-  const assignedIds = new Set(assignedWorkOrderIds.map(a => a.workOrderId));
-  
-  // Transform and filter unassigned work orders
-  const allWorkOrders = allWorkOrdersRaw.map(row => ({
-    workOrder: row.work_orders,
-    productionOrder: row.production_orders
-  }));
-  
-  // Filter unassigned work orders and exclude zero quantity production orders
-  return allWorkOrders
-    .filter(wo => !assignedIds.has(wo.workOrder.id) && wo.productionOrder && wo.productionOrder.quantity > 0)
-    .map(wo => ({
-      id: wo.workOrder.id,
-      workCenter: wo.workOrder.workCenter,
-      operation: wo.workOrder.operation || '',
-      routing: wo.workOrder.routing || wo.productionOrder?.routing || '',
-      quantity: wo.productionOrder!.quantity,
-      productionOrderId: wo.workOrder.productionOrderId,
-      moNumber: wo.productionOrder?.moNumber || '',
-      productName: wo.productionOrder?.productName || ''
+    // Transform work orders
+    const allWorkOrders = allWorkOrdersRaw.map(row => ({
+      workOrder: row.work_orders,
+      productionOrder: row.production_orders
     }));
+    
+    // Filter to only unassigned work orders with valid production orders
+    const unassignedWorkOrders = allWorkOrders
+      .filter(wo => !assignedIds.has(wo.workOrder.id) && wo.productionOrder && wo.productionOrder.quantity > 0)
+      .map(wo => ({
+        id: wo.workOrder.id,
+        workCenter: wo.workOrder.workCenter,
+        operation: wo.workOrder.operation || '',
+        routing: wo.workOrder.routing || wo.productionOrder?.routing || '',
+        quantity: wo.productionOrder!.quantity,
+        productionOrderId: wo.workOrder.productionOrderId,
+        moNumber: wo.productionOrder?.moNumber || '',
+        productName: wo.productionOrder?.productName || ''
+      }));
+      
+    console.log(`Found ${unassignedWorkOrders.length} unassigned work orders to process`);
+    return unassignedWorkOrders;
   } catch (error) {
     console.error('Error in getUnassignedWorkOrders:', error);
     throw error;
