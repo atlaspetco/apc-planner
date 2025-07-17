@@ -54,8 +54,13 @@ export function OperatorWorkloadDetailModal({
   const assignmentsByRouting = React.useMemo(() => {
     const grouped = new Map<string, WorkOrderDetail[]>();
     
+    if (!operator.assignments || !Array.isArray(operator.assignments)) {
+      console.warn('No assignments found for operator:', operator);
+      return grouped;
+    }
+    
     operator.assignments.forEach(assignment => {
-      const routing = assignment.productRouting || 'Unknown';
+      const routing = assignment.productRouting || assignment.routing || 'Unknown';
       if (!grouped.has(routing)) {
         grouped.set(routing, []);
       }
@@ -67,30 +72,34 @@ export function OperatorWorkloadDetailModal({
       
       // Calculate estimated hours based on UPH data if available
       let estimatedHours = 1; // Default fallback
-      if (uphData?.uphResults) {
+      if (uphData?.uphResults && assignment.quantity > 0) {
         const uphEntry = uphData.uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
           entry.productRouting === routing
         );
         
-        if (uphEntry && uphEntry.unitsPerHour > 0 && assignment.quantity) {
+        if (uphEntry && uphEntry.unitsPerHour > 0) {
           estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
         }
       }
       
+      // Get MO quantity from production order if work order quantity is 0
+      const displayQuantity = assignment.quantity || mo?.quantity || 0;
+      
       grouped.get(routing)!.push({
-        moNumber: mo?.moNumber || `MO${assignment.productionOrderId}`,
-        quantity: assignment.quantity || 0,
+        moNumber: mo?.moNumber || `MO${assignment.productionOrderId || 'unknown'}`,
+        quantity: displayQuantity,
         estimatedHours: estimatedHours,
-        workCenter: assignment.workCenter,
+        workCenter: assignment.workCenter || 'Unknown',
         productRouting: routing,
-        operation: assignment.operation
+        operation: assignment.operation || 'Unknown',
+        productName: assignment.productName || mo?.productName || 'Unknown Product'
       });
     });
     
     return grouped;
-  }, [operator.assignments, productionOrdersData]);
+  }, [operator.assignments, productionOrdersData, uphData]);
 
   // Calculate total hours per routing
   const routingSummary = Array.from(assignmentsByRouting.entries()).map(([routing, workOrders]) => {

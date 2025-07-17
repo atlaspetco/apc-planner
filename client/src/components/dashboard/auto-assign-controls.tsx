@@ -239,16 +239,16 @@ export function AutoAssignControls() {
                   <CheckCircle2 className="h-4 w-4" />
                   <AlertTitle>Assigned</AlertTitle>
                   <AlertDescription>
-                    {lastResult.assignments.length} work orders
+                    {lastResult.assignments?.length || 0} work orders
                   </AlertDescription>
                 </Alert>
                 
-                {lastResult.unassigned.length > 0 && (
+                {lastResult.unassigned?.length > 0 && (
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Unassigned</AlertTitle>
                     <AlertDescription>
-                      {lastResult.unassigned.length} work orders
+                      {lastResult.unassigned?.length || 0} work orders
                     </AlertDescription>
                   </Alert>
                 )}
@@ -257,7 +257,7 @@ export function AutoAssignControls() {
                   <Info className="h-4 w-4" />
                   <AlertTitle>Total Hours</AlertTitle>
                   <AlertDescription>
-                    {lastResult.totalHoursOptimized.toFixed(1)} hours optimized
+                    {(lastResult.totalHoursOptimized || 0).toFixed(1)} hours optimized
                   </AlertDescription>
                 </Alert>
               </div>
@@ -266,7 +266,7 @@ export function AutoAssignControls() {
               <div className="space-y-2">
                 <h4 className="font-semibold">Assignment Details</h4>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {lastResult.assignments.map((assignment) => (
+                  {(lastResult.assignments || []).map((assignment) => (
                     <div
                       key={assignment.workOrderId}
                       className="border rounded-lg p-3 space-y-1"

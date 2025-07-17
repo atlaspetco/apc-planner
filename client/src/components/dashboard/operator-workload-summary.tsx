@@ -58,18 +58,26 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
       const operator = operatorMap.get(assignment.operatorId);
       if (operator) {
         operator.totalAssignments++;
-        operator.assignments.push(assignment);
+        // Store complete assignment data for the modal
+        operator.assignments.push({
+          ...assignment,
+          // Ensure all required fields are present
+          productRouting: assignment.productRouting || assignment.routing || 'Unknown',
+          workCenter: assignment.workCenter || 'Unknown',
+          quantity: assignment.quantity || 0,
+          productionOrderId: assignment.productionOrderId || null
+        });
         
         // Calculate estimated hours based on UPH data if available
         let estimatedHours = 1; // Default fallback
-        if (uphData?.uphResults) {
+        if (uphData?.uphResults && assignment.quantity > 0) {
           const uphEntry = uphData.uphResults.find(entry => 
             entry.operatorName === assignment.operatorName &&
             entry.workCenter === assignment.workCenter &&
-            entry.productRouting === assignment.productRouting
+            entry.productRouting === (assignment.productRouting || assignment.routing)
           );
           
-          if (uphEntry && uphEntry.unitsPerHour > 0 && assignment.quantity) {
+          if (uphEntry && uphEntry.unitsPerHour > 0) {
             estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
           }
         }

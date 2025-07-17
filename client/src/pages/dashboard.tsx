@@ -1,16 +1,24 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw, Factory } from "lucide-react";
+import { RefreshCw, Factory, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ProductionGrid from "@/components/dashboard/production-grid";
 import { OperatorWorkloadSummary } from "@/components/dashboard/operator-workload-summary";
 import { AutoAssignControls } from "@/components/dashboard/auto-assign-controls";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
 
   const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
     queryKey: ["/api/production-orders"],
@@ -96,7 +104,10 @@ export default function Dashboard() {
               <AutoAssignControls />
               
               {/* Live status indicator */}
-              <div className="flex items-center space-x-2">
+              <div 
+                className={`flex items-center space-x-2 ${errorPOs ? 'cursor-pointer hover:bg-gray-100 rounded p-1' : ''}`}
+                onClick={() => errorPOs && setShowErrorDialog(true)}
+              >
                 <div className={`w-3 h-3 rounded-full ${
                   statusIndicator === "green" ? "bg-green-500" : 
                   statusIndicator === "yellow" ? "bg-yellow-500 animate-pulse" : 
@@ -107,6 +118,7 @@ export default function Dashboard() {
                    isLoadingPOs ? "Loading..." : 
                    errorPOs ? "Error" : "Live"}
                 </span>
+                {errorPOs && <AlertCircle className="w-4 h-4 text-red-500" />}
               </div>
               
               {/* Refresh button */}
@@ -173,6 +185,42 @@ export default function Dashboard() {
           onAssignmentChange={refetchAssignments}
         />
       </div>
+
+      {/* Error Dialog */}
+      <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              Connection Error
+            </DialogTitle>
+            <DialogDescription>
+              Unable to load production orders from the server. Please check your connection and try again.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm font-medium text-gray-700 mb-2">Error Details:</p>
+              <pre className="text-xs text-gray-600 overflow-auto">
+                {errorPOs ? JSON.stringify(errorPOs, null, 2) : 'Unknown error'}
+              </pre>
+            </div>
+            
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setShowErrorDialog(false)}>
+                Close
+              </Button>
+              <Button onClick={() => {
+                setShowErrorDialog(false);
+                handleRefresh();
+              }}>
+                Try Again
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
