@@ -62,10 +62,7 @@ async function getOperatorUPH(
 ): Promise<number | null> {
   try {
     const uphResults = await db
-      .select({
-        uph: historicalUph.unitsPerHour,
-        observations: historicalUph.observations,
-      })
+      .select()
       .from(historicalUph)
       .where(
         and(
@@ -76,18 +73,15 @@ async function getOperatorUPH(
       )
       .limit(1);
 
-    if (uphResults.length > 0 && uphResults[0].uph) {
-      return uphResults[0].uph;
+    if (uphResults.length > 0 && uphResults[0].unitsPerHour) {
+      return uphResults[0].unitsPerHour;
     }
 
     // Check alternate work centers
     const alternateWorkCenters = workCenter === "Assembly" ? ["Sewing", "Rope"] : [];
     for (const altWC of alternateWorkCenters) {
       const altUphResults = await db
-        .select({
-          uph: historicalUph.unitsPerHour,
-          observations: historicalUph.observations,
-        })
+        .select()
         .from(historicalUph)
         .where(
           and(
@@ -98,8 +92,8 @@ async function getOperatorUPH(
         )
         .limit(1);
 
-      if (altUphResults.length > 0 && altUphResults[0].uph) {
-        return altUphResults[0].uph;
+      if (altUphResults.length > 0 && altUphResults[0].unitsPerHour) {
+        return altUphResults[0].unitsPerHour;
       }
     }
 
@@ -192,7 +186,7 @@ Return a JSON array of reassignments:
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemMessage },
         {
@@ -280,14 +274,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
 
     // Step 2: Get all active operators with their UPH data
     const activeOperators = await db
-      .select({
-        id: operators.id,
-        name: operators.name,
-        isActive: operators.isActive,
-        workCenters: operators.workCenters,
-        routings: operators.routings,
-        maxHoursPerWeek: operators.availableHours,
-      })
+      .select()
       .from(operators)
       .where(eq(operators.isActive, true));
 
@@ -299,19 +286,14 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       
       // Get all UPH data for this operator
       const operatorUphData = await db
-        .select({
-          workCenter: historicalUph.workCenter,
-          routing: historicalUph.productRouting,
-          uph: historicalUph.unitsPerHour,
-          observations: historicalUph.observations,
-        })
+        .select()
         .from(historicalUph)
         .where(eq(historicalUph.operatorId, op.id));
       
       for (const uphRecord of operatorUphData) {
-        const key = `${uphRecord.workCenter}-${uphRecord.routing}`;
+        const key = `${uphRecord.workCenter}-${uphRecord.productRouting}`;
         uphData.set(key, {
-          uph: uphRecord.uph || 0,
+          uph: uphRecord.unitsPerHour || 0,
           observations: uphRecord.observations || 0
         });
       }
@@ -321,7 +303,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         name: op.name,
         skills: [...(op.workCenters || []), ...(op.routings || [])],
         currentCapacity: 0,
-        maxHours: op.maxHoursPerWeek || 40,
+        maxHours: op.availableHours || 40,
         hoursAssigned: 0,
         activeAssignments: 0,
         uphData
@@ -409,7 +391,7 @@ Return assignments as JSON:
 
       try {
         const response = await openai.chat.completions.create({
-          model: "gpt-4",
+          model: "gpt-4o-mini",
           messages: [
             { role: "system", content: systemMessage },
             {
