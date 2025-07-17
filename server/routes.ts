@@ -92,14 +92,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Import product routing mapper
       const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
 
-      // Collect all manufacturing order IDs to fetch work orders
-      const moIds = manufacturingOrdersData.map(mo => mo.id);
-      
-      // Fetch work orders by production (MO) ID in bulk
+      // Collect all work order IDs from manufacturing orders
+      const allWorkOrderIds = [];
+      manufacturingOrdersData.forEach(mo => {
+        if (mo.works && mo.works.length > 0) {
+          allWorkOrderIds.push(...mo.works);
+        }
+      });
+
+      // Fetch work orders by ID in bulk
       let allWorkOrders = [];
-      console.log(`Fetching work orders for ${moIds.length} manufacturing orders...`);
-      if (moIds.length > 0) {
+      if (allWorkOrderIds.length > 0) {
         try {
+          console.log(`Fetching ${allWorkOrderIds.length} work orders by ID...`);
           const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work/search_read', {
             method: 'PUT',
             headers: {
@@ -108,7 +113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             },
             body: JSON.stringify({
               filters: [
-                ["production", "in", moIds] // Get work orders by manufacturing order IDs
+                ["id", "in", allWorkOrderIds] // Get specific work orders by ID
               ],
               fields: [
                 "id",
@@ -116,9 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 "work_center.name",
                 "operation.name", 
                 "state",
-                "production", // MO ID to match with
-                "employee.name", // Add employee name for finished work orders
-                "employee.id" // Add employee ID for finished work orders
+                "production" // MO ID to match with
               ]
             })
           });
@@ -126,13 +129,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (workOrderResponse.ok) {
             allWorkOrders = await workOrderResponse.json();
             console.log(`Successfully fetched ${allWorkOrders.length} work orders`);
-            // Debug: log first few work orders
-            if (allWorkOrders.length > 0) {
-              console.log('Sample work order:', JSON.stringify(allWorkOrders[0], null, 2));
-              console.log('Work order production IDs:', allWorkOrders.slice(0, 5).map(wo => ({ id: wo.id, production: wo.production })));
-            } else {
-              console.log('WARNING: No work orders found for MO IDs:', moIds);
-            }
           } else {
             console.error('Work order fetch failed:', workOrderResponse.status);
             const errorText = await workOrderResponse.text();
