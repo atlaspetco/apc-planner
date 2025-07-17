@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ProductionGrid from "@/components/dashboard/production-grid";
 import { OperatorWorkloadSummary } from "@/components/dashboard/operator-workload-summary";
+import { AutoAssignControls } from "@/components/dashboard/auto-assign-controls";
 
 export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -91,6 +92,9 @@ export default function Dashboard() {
             
             {/* Right side controls */}
             <div className="flex items-center space-x-4">
+              {/* Auto-assign controls */}
+              <AutoAssignControls />
+              
               {/* Live status indicator */}
               <div className="flex items-center space-x-2">
                 <div className={`w-3 h-3 rounded-full ${

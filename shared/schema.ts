@@ -81,7 +81,10 @@ export const workOrderAssignments = pgTable("work_order_assignments", {
   operatorId: integer("operator_id").references(() => operators.id, { onDelete: "cascade" }).notNull(),
   assignedAt: timestamp("assigned_at").defaultNow(),
   assignedBy: text("assigned_by").default("dashboard"), // Could track which user made assignment
-  isActive: boolean("is_active").default(true)
+  isActive: boolean("is_active").default(true),
+  isAutoAssigned: boolean("is_auto_assigned").default(false), // Track if assignment was made by AI
+  autoAssignReason: text("auto_assign_reason"), // AI's reasoning for the assignment
+  autoAssignConfidence: real("auto_assign_confidence") // Confidence score (0-1)
 });
 
 export const uphData = pgTable("uph_data", {

@@ -467,7 +467,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           operatorId: workOrderAssignments.operatorId,
           operatorName: operators.name,
           assignedAt: workOrderAssignments.assignedAt,
-          isActive: workOrderAssignments.isActive
+          isActive: workOrderAssignments.isActive,
+          isAutoAssigned: workOrderAssignments.isAutoAssigned,
+          autoAssignReason: workOrderAssignments.autoAssignReason,
+          autoAssignConfidence: workOrderAssignments.autoAssignConfidence
         })
         .from(workOrderAssignments)
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
@@ -4605,6 +4608,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Auto-assign endpoints
+  app.post("/api/auto-assign", async (req: Request, res: Response) => {
+    try {
+      const { autoAssignWorkOrders } = await import("./ai-auto-assign.js");
+      const result = await autoAssignWorkOrders();
+      res.json(result);
+    } catch (error) {
+      console.error("Auto-assign error:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Auto-assign failed"
+      });
+    }
+  });
+
+  app.post("/api/auto-assign/regenerate", async (req: Request, res: Response) => {
+    try {
+      const { regenerateAssignments } = await import("./ai-auto-assign.js");
+      const result = await regenerateAssignments();
+      res.json(result);
+    } catch (error) {
+      console.error("Regenerate assignments error:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Regenerate failed"
+      });
+    }
+  });
+
+  app.post("/api/auto-assign/clear-all", async (req: Request, res: Response) => {
+    try {
+      const { clearAllAssignments } = await import("./ai-auto-assign.js");
+      const result = await clearAllAssignments();
+      res.json(result);
+    } catch (error) {
+      console.error("Clear assignments error:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Clear failed"
+      });
+    }
+  });
+
+  app.post("/api/auto-assign/clear-filtered", async (req: Request, res: Response) => {
+    try {
+      const { workCenter, routing } = req.body;
+      const { clearAssignmentsByFilter } = await import("./ai-auto-assign.js");
+      const result = await clearAssignmentsByFilter({ workCenter, routing });
+      res.json(result);
+    } catch (error) {
+      console.error("Clear filtered assignments error:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Clear failed"
       });
     }
   });

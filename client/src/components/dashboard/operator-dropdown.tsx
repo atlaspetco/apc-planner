@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { Sparkles } from 'lucide-react';
 
 interface QualifiedOperator {
   id: number;
@@ -51,6 +52,9 @@ export function OperatorDropdown({
   
   const assignedOperators = bulkAssignmentInfo.map(info => info.assignment.operatorName).filter(Boolean);
   const uniqueOperators = [...new Set(assignedOperators)];
+  
+  // Check if any assignments are auto-assigned
+  const hasAutoAssignment = bulkAssignmentInfo.some(info => info.assignment?.isAutoAssigned);
   
   // Debug logging  
   if (uniqueOperators.length > 0) {
@@ -176,6 +180,10 @@ export function OperatorDropdown({
   const currentOperator = currentOperatorId 
     ? qualifiedOperators.find(op => op.id === currentOperatorId)
     : null;
+    
+  // For single work order, check if it's auto-assigned
+  const currentAssignment = workOrderId && assignments ? assignments.get(workOrderId) : null;
+  const isCurrentAutoAssigned = currentAssignment?.isAutoAssigned || false;
 
   return (
     <div className={`space-y-1 ${className || ''}`}>
@@ -196,7 +204,10 @@ export function OperatorDropdown({
                       const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
                       return operatorDetails ? (
                         <div className="flex items-center justify-between w-full min-w-0">
-                          <span className="truncate text-green-700">{operatorDetails.name}</span>
+                          <div className="flex items-center space-x-1">
+                            {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
+                            <span className="truncate text-green-700">{operatorDetails.name}</span>
+                          </div>
                           <div className="flex items-center space-x-1 ml-2">
                             {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
                               <div className="flex items-center space-x-1">
@@ -217,7 +228,10 @@ export function OperatorDropdown({
                           </div>
                         </div>
                       ) : (
-                        <span className="text-green-700">{operatorName}</span>
+                        <div className="flex items-center space-x-1">
+                          {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
+                          <span className="text-green-700">{operatorName}</span>
+                        </div>
                       );
                     })() : 
                     <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
@@ -225,7 +239,10 @@ export function OperatorDropdown({
               ) : (
                 currentOperator ? (
                   <div className="flex items-center justify-between w-full min-w-0">
-                    <span className="truncate text-green-700">{currentOperator.name}</span>
+                    <div className="flex items-center space-x-1">
+                      {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-purple-600" />}
+                      <span className="truncate text-green-700">{currentOperator.name}</span>
+                    </div>
                     <div className="flex items-center space-x-1 ml-2">
                       {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
                         <div className="flex items-center space-x-1">

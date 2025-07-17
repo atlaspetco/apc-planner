@@ -1,0 +1,46 @@
+Multi-Step Prompt for OpenAI-powered Auto-Assign Feature:
+
+Implement an intelligent Auto-Assign feature leveraging our OpenAI integration, trained on historical UPH and production data from our app. Clearly follow these steps:
+
+Step 1: Data Preparation & Training
+
+Aggregate historical UPH data by operator, work center, operation, and routing.
+
+Train OpenAI integration to recognize operator strengths and constraints based on historical assignments and UPH.
+
+Step 2: Auto-Assignment Logic
+
+When the user clicks "Auto-Assign," OpenAI should evaluate all MOs and available operators, assigning operators to tasks by optimizing total production hours and rigorously respecting operator constraints.
+
+Clearly document and log all OpenAI recommendations for transparency.
+
+Prioritize accurate projections based on validated historical performance data.
+
+Step 3: UX/UI Features for Auto-Assign
+
+Add an "Auto-Assign" button prominently at the top of the Production Planning Grid.
+
+Include visual indicators showing auto-assigned tasks distinctly from manually assigned tasks (e.g., different color or icon).
+
+Step 4: Sub-Features & Controls
+
+Implement a "Try Again" button allowing users to quickly regenerate auto-assignments if unsatisfied with initial assignments. There should be a button next to the refresh (table) button that allows a full refresh, as well as refresh icons on each routing row as well as workcenter column.
+
+Add a "Clear All" button to remove all current assignments (both auto and manual) quickly. This should also be on each routing row and work center column.
+
+Provide detailed tooltips or modals explaining the rationale behind each auto-assignment decision, explicitly highlighting operator constraints and historical performance accuracy.
+
+Step 5: Manual Override Capability
+
+Ensure users can manually override any OpenAI-generated assignment through dropdown adjustments.
+
+Visually indicate manual overrides clearly.
+
+Step 6: Validation and Error Handling
+
+Include robust validation to strictly enforce operator constraints post auto-assignment.
+
+Clearly communicate any detected issues or conflicts via warnings or actionable notifications, ensuring all assignments meet constraints and accurate performance projections.
+
+This structured approach ensures a reliable, user-friendly, AI-enhanced auto-assignment workflow that complements manual scheduling efforts and rigorously adheres to operator constraints and accuracy.
+
