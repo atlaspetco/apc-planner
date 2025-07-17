@@ -102,6 +102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fetch work orders by ID in bulk
       let allWorkOrders = [];
+      console.log(`All work order IDs to fetch: ${allWorkOrderIds.length}`, allWorkOrderIds);
       if (allWorkOrderIds.length > 0) {
         try {
           console.log(`Fetching ${allWorkOrderIds.length} work orders by ID...`);
@@ -131,6 +132,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (workOrderResponse.ok) {
             allWorkOrders = await workOrderResponse.json();
             console.log(`Successfully fetched ${allWorkOrders.length} work orders`);
+            // Debug: log first few work orders
+            if (allWorkOrders.length > 0) {
+              console.log('Sample work order:', JSON.stringify(allWorkOrders[0], null, 2));
+            }
           } else {
             console.error('Work order fetch failed:', workOrderResponse.status);
             const errorText = await workOrderResponse.text();
