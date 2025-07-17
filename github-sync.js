@@ -74,11 +74,21 @@ async function syncProject() {
     'server/rec-name-parser.ts',
     'server/work-order-enrichment.ts', 
     'server/enhanced-uph-calculation.ts',
+    'server/ai-auto-assign.ts',
+    'server/storage.ts',
+    'server/db.ts',
     'client/src/App.tsx',
     'client/src/components/dashboard/production-grid.tsx',
+    'client/src/components/dashboard/auto-assign-controls.tsx',
+    'client/src/components/dashboard/operator-workload-summary.tsx',
+    'client/src/components/dashboard/operator-dropdown.tsx',
     'client/src/pages/dashboard.tsx',
     'client/src/pages/uph-analytics.tsx',
-    'shared/schema.ts'
+    'client/src/pages/operators.tsx',
+    'shared/schema.ts',
+    'drizzle.config.ts',
+    'vite.config.ts',
+    'tsconfig.json'
   ];
 
   for (const file of filesToSync) {
