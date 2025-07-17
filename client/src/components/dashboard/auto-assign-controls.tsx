@@ -99,7 +99,7 @@ export function AutoAssignControls() {
           } else if (progress > 60 && progress < 80) {
             setCurrentRouting('Processing collar orders...');
           } else if (progress > 80) {
-            setCurrentRouting('Finalizing assignments...');
+            setCurrentRouting('Saving assignments to database...');
           }
         }, 500);
         

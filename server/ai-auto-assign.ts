@@ -584,18 +584,25 @@ Return assignments as JSON:
       }
     }
     
-    // Insert assignments in batches
-    const batchSize = 50;
-    for (let i = 0; i < assignmentRecords.length; i += batchSize) {
-      const batch = assignmentRecords.slice(i, i + batchSize);
+    // Insert all assignments in one batch for better performance
+    if (assignmentRecords.length > 0) {
       try {
-        await db.insert(workOrderAssignments).values(batch);
+        console.log(`Saving ${assignmentRecords.length} assignments to database...`);
+        await db.insert(workOrderAssignments).values(assignmentRecords);
       } catch (error) {
-        console.error("Error inserting assignment batch:", error);
-        // Track failed assignments
-        const failedIds = batch.map(a => a.workOrderId);
-        failedAssignments.push(...failedIds);
-        successfulAssignments.filter(id => !failedIds.includes(id));
+        console.error("Error inserting assignments:", error);
+        // If bulk insert fails, fall back to smaller batches
+        const batchSize = 50;
+        for (let i = 0; i < assignmentRecords.length; i += batchSize) {
+          const batch = assignmentRecords.slice(i, i + batchSize);
+          try {
+            await db.insert(workOrderAssignments).values(batch);
+          } catch (batchError) {
+            console.error("Error inserting assignment batch:", batchError);
+            const failedIds = batch.map(a => a.workOrderId);
+            failedAssignments.push(...failedIds);
+          }
+        }
       }
     }
     
