@@ -1,4 +1,4 @@
-import { OpenAI } from "openai";
+import OpenAI from "openai";
 import { db } from "./db.js";
 import { workOrders, operators, workOrderAssignments, productionOrders, historicalUph } from "../shared/schema.js";
 import { eq, and, inArray, isNull, isNotNull, gt, sql, desc } from "drizzle-orm";
@@ -594,5 +594,41 @@ export async function clearAllAssignments(): Promise<{ success: boolean; cleared
       success: false,
       cleared: 0
     };
+  }
+}
+
+// Clear assignments by optional work center and routing filter
+export async function clearAssignmentsByFilter({
+  workCenter,
+  routing,
+}: { workCenter?: string; routing?: string }): Promise<{ success: boolean; cleared: number }> {
+  try {
+    const conditions = [] as any[];
+
+    if (workCenter) {
+      conditions.push(
+        inArray(
+          workOrderAssignments.workOrderId,
+          sql`(select ${workOrders.id} from ${workOrders} where ${workOrders.workCenter} = ${workCenter})`
+        )
+      );
+    }
+    if (routing) {
+      conditions.push(
+        inArray(
+          workOrderAssignments.workOrderId,
+          sql`(select ${workOrders.id} from ${workOrders} where ${workOrders.routing} = ${routing})`
+        )
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const result = await db.delete(workOrderAssignments).where(whereClause);
+
+    return { success: true, cleared: result.rowCount || 0 };
+  } catch (error) {
+    console.error("Error clearing assignments by filter:", error);
+    return { success: false, cleared: 0 };
   }
 }
