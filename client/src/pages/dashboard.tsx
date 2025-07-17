@@ -100,9 +100,6 @@ export default function Dashboard() {
             
             {/* Right side controls */}
             <div className="flex items-center space-x-4">
-              {/* Auto-assign controls */}
-              <AutoAssignControls />
-              
               {/* Live status indicator */}
               <div 
                 className={`flex items-center space-x-2 ${errorPOs ? 'cursor-pointer hover:bg-gray-100 rounded p-1' : ''}`}
@@ -131,6 +128,9 @@ export default function Dashboard() {
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span>Refresh</span>
               </Button>
+              
+              {/* Auto-assign controls */}
+              <AutoAssignControls />
             </div>
           </div>
           

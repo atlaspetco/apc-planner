@@ -254,7 +254,6 @@ export function AutoAssignControls() {
                   </>
                 ) : (
                   <>
-                    <Bot className="mr-2 h-4 w-4" />
                     Auto-Assign
                     <Sparkles className="ml-1 h-3 w-3" />
                   </>
