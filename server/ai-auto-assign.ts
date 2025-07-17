@@ -68,7 +68,7 @@ async function getOperatorUPH(
         and(
           eq(historicalUph.operatorId, operatorId),
           eq(historicalUph.workCenter, workCenter),
-          eq(historicalUph.productRouting, routing)
+          eq(historicalUph.routing, routing)
         )
       )
       .limit(1);
@@ -87,7 +87,7 @@ async function getOperatorUPH(
           and(
             eq(historicalUph.operatorId, operatorId),
             eq(historicalUph.workCenter, altWC),
-            eq(historicalUph.productRouting, routing)
+            eq(historicalUph.routing, routing)
           )
         )
         .limit(1);
@@ -291,7 +291,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         .where(eq(historicalUph.operatorId, op.id));
       
       for (const uphRecord of operatorUphData) {
-        const key = `${uphRecord.workCenter}-${uphRecord.productRouting}`;
+        const key = `${uphRecord.workCenter}-${uphRecord.routing}`;
         uphData.set(key, {
           uph: uphRecord.unitsPerHour || 0,
           observations: uphRecord.observations || 0

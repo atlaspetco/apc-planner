@@ -250,3 +250,5 @@ Changelog:
 Preferred communication style: Simple, everyday language.
 
 **CRITICAL DATA INTEGRITY REQUIREMENT**: Never use estimates, guesses, or fallback calculations for production planning. System must ONLY use actual data from Fulfil API or fail gracefully. Any hardcoded UPH estimates, routing-specific time calculations, or fallback values violate the core system principle and render the application worthless.
+
+**PRODUCT ROUTING REQUIREMENT**: All product routings are distinct products and must match exactly. Never map between different products (e.g., "Lifetime Air Harness", "Lifetime Air - Bio", and "Lifetime Harness" are all completely different products). Only exact routing name matches should be used for operator qualification and UPH calculations.
