@@ -639,23 +639,6 @@ Return assignments as JSON:
       summary += ` Failed to assign work orders for ${failedRoutings.length} routings: ${failedRoutings.map(r => `${r.routing} (${r.error || 'Unknown error'})`).join(', ')}.`;
     }
     
-    // Check for unassignable work orders
-    const unassignableWorkOrders = failedAssignments.filter(id => {
-      const wo = unassignedWorkOrders.find(w => w.workOrderId === id);
-      if (!wo) return false;
-      
-      // Check if any operator has the required skills
-      const hasQualifiedOperators = Array.from(operatorProfiles.values()).some(profile => {
-        const key = `${wo.workCenter}-${wo.routing}`;
-        return profile.uphData.has(key);
-      });
-      
-      return !hasQualifiedOperators;
-    });
-    
-    // Calculate actual failed assignments (excluding unassignable)
-    const actualFailures = failedAssignments.filter(id => !unassignableWorkOrders.includes(id));
-    
     if (unassignableWorkOrders.length > 0) {
       summary += ` ${unassignableWorkOrders.length} work orders couldn't be assigned (no operators with historical data).`;
     }
