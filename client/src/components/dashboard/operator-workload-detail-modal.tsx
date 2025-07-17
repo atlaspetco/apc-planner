@@ -13,6 +13,7 @@ interface WorkOrderDetail {
   workCenter: string;
   productRouting: string;
   operation?: string;
+  productName?: string;
 }
 
 interface OperatorWorkloadDetailModalProps {
@@ -60,15 +61,11 @@ export function OperatorWorkloadDetailModal({
     }
     
     operator.assignments.forEach(assignment => {
+      console.log('Processing assignment:', assignment);
       const routing = assignment.productRouting || assignment.routing || 'Unknown';
       if (!grouped.has(routing)) {
         grouped.set(routing, []);
       }
-      
-      // Find the corresponding production order
-      const mo = productionOrdersData?.find((po: any) => 
-        po.id === assignment.productionOrderId
-      );
       
       // Calculate estimated hours based on UPH data if available
       let estimatedHours = 1; // Default fallback
@@ -84,17 +81,15 @@ export function OperatorWorkloadDetailModal({
         }
       }
       
-      // Get MO quantity from production order if work order quantity is 0
-      const displayQuantity = assignment.quantity || mo?.quantity || 0;
-      
+      // Use enriched assignment data directly
       grouped.get(routing)!.push({
-        moNumber: mo?.moNumber || `MO${assignment.productionOrderId || 'unknown'}`,
-        quantity: displayQuantity,
+        moNumber: assignment.moNumber || 'Unknown',
+        quantity: assignment.quantity || 0,
         estimatedHours: estimatedHours,
         workCenter: assignment.workCenter || 'Unknown',
         productRouting: routing,
         operation: assignment.operation || 'Unknown',
-        productName: assignment.productName || mo?.productName || 'Unknown Product'
+        productName: assignment.productName || 'Unknown Product'
       });
     });
     

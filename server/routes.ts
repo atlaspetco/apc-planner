@@ -470,8 +470,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
         .where(eq(workOrderAssignments.isActive, true));
       
-      // Get all production orders to find work order details
-      const allProductionOrders = await db.select().from(productionOrders);
+      // Get fresh production orders directly from Fulfil API to avoid circular dependency
+      let allProductionOrders = [];
+      try {
+        // Directly call the Fulfil API logic instead of making an internal HTTP request
+        const { getProductionOrders } = await import('./fulfil-current.js');
+        
+        // Fetch manufacturing orders from Fulfil API
+        const manufacturingOrders = await getProductionOrders();
+        
+        // Convert to production orders format
+        const productionOrdersData = await convertToProductionOrders(manufacturingOrders);
+        allProductionOrders = productionOrdersData;
+      } catch (error) {
+        console.error('Failed to fetch from Fulfil API, using database:', error);
+        // Fallback to database if API fails
+        allProductionOrders = await db.select().from(productionOrders);
+      }
       
       // Create a map of work order ID to production order and work order details
       const workOrderMap = new Map();
@@ -487,10 +502,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       // Enrich assignments with production order data
-      const enrichedAssignments = assignments.map(assignment => {
+      const enrichedAssignments = await Promise.all(assignments.map(async (assignment) => {
         const workOrderData = workOrderMap.get(assignment.workOrderId);
         
         if (!workOrderData) {
+          // Try to find work order by looking through all production orders
+          // This handles cases where work order IDs are stored differently
+          let foundWorkOrder = null;
+          let foundProductionOrder = null;
+          
+          for (const po of allProductionOrders) {
+            if (po.workOrders && Array.isArray(po.workOrders)) {
+              // Check both number and string comparisons
+              const wo = po.workOrders.find((w: any) => 
+                w.id === assignment.workOrderId || 
+                String(w.id) === String(assignment.workOrderId)
+              );
+              if (wo) {
+                foundWorkOrder = wo;
+                foundProductionOrder = po;
+                break;
+              }
+            }
+          }
+          
+          if (foundWorkOrder && foundProductionOrder) {
+            return {
+              ...assignment,
+              workCenter: foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter || 'Unknown',
+              operation: foundWorkOrder.operation || 'Unknown',
+              routing: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
+              productRouting: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
+              quantity: foundWorkOrder.quantity || foundProductionOrder.quantity || 0,
+              productionOrderId: foundProductionOrder.id,
+              productName: foundProductionOrder.productName || 'Unknown',
+              moNumber: foundProductionOrder.moNumber || 'Unknown'
+            };
+          }
+          
+          // If still not found, try to get data from the actual work orders table
+          try {
+            const workOrderResult = await db
+              .select()
+              .from(workOrders)
+              .where(eq(workOrders.id, assignment.workOrderId))
+              .limit(1);
+            
+            if (workOrderResult.length > 0) {
+              const wo = workOrderResult[0];
+              // Find production order for this work order
+              const poResult = await db
+                .select()
+                .from(productionOrders)
+                .where(eq(productionOrders.id, wo.productionOrderId))
+                .limit(1);
+              
+              const po = poResult.length > 0 ? poResult[0] : null;
+              
+              return {
+                ...assignment,
+                workCenter: wo.workCenter || 'Unknown',
+                operation: wo.operation || 'Unknown',
+                routing: wo.routing || po?.routing || 'Unknown',
+                productRouting: wo.routing || po?.routing || 'Unknown',
+                quantity: wo.quantityRequired || po?.quantity || 0,
+                productionOrderId: po?.id || null,
+                productName: po?.productName || 'Unknown',
+                moNumber: po?.moNumber || `MO${assignment.workOrderId}`
+              };
+            }
+          } catch (error) {
+            console.log(`Could not fetch work order data for ${assignment.workOrderId}:`, error);
+          }
+          
           console.warn(`No work order found for assignment ${assignment.workOrderId}`);
           return {
             ...assignment,
@@ -501,7 +585,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             quantity: 0,
             productionOrderId: null,
             productName: 'Unknown',
-            moNumber: 'Unknown'
+            moNumber: `WO${assignment.workOrderId}`
           };
         }
         
@@ -518,7 +602,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           productName: productionOrder.productName || 'Unknown',
           moNumber: productionOrder.moNumber || 'Unknown'
         };
-      });
+      }));
       
       console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
       res.json({ assignments: enrichedAssignments });
