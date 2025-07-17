@@ -59,14 +59,18 @@ export function AutoAssignControls() {
   const autoAssignMutation = useMutation({
     mutationFn: () => apiRequest('POST', '/api/auto-assign'),
     onSuccess: (data: AssignmentResult) => {
+      setLastResult(data);
+      queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
+      
       if (data.success) {
-        setLastResult(data);
         setShowResults(true);
-        queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
-        queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
+        
+        // Check if it's partial success
+        const hasUnassignable = data.summary.includes("couldn't be assigned");
         
         toast({
-          title: "Auto-Assign Complete",
+          title: hasUnassignable ? "Auto-Assign Partial Success" : "Auto-Assign Complete",
           description: data.summary,
           action: (
             <Button
@@ -80,9 +84,9 @@ export function AutoAssignControls() {
         });
       } else {
         toast({
-          title: "Auto-Assign Failed",
-          description: data.summary || "Failed to generate assignments",
-          variant: "destructive",
+          title: "Auto-Assign Info",
+          description: data.summary || "No assignments could be made",
+          variant: data.summary.includes("couldn't be assigned") ? "default" : "destructive",
         });
       }
     },

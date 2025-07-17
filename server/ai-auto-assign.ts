@@ -527,11 +527,37 @@ Return assignments as JSON:
       totalHoursOptimized += profile.hoursAssigned;
     }
     
+    // Track unassignable work orders (no operators with historical data)
+    const unassignableWorkOrders: number[] = [];
+    for (const wo of unassignedWorkOrders) {
+      const hasQualifiedOperators = [...operatorProfiles.values()].some(profile => {
+        const key = `${wo.workCenter}-${wo.routing}`;
+        return profile.uphData.has(key);
+      });
+      
+      if (!hasQualifiedOperators) {
+        unassignableWorkOrders.push(wo.workOrderId);
+        console.log(`No operators with historical data for: ${wo.routing} - ${wo.workCenter}`);
+      }
+    }
+    
+    // Calculate actual failed assignments (excluding unassignable)
+    const actualFailures = failedAssignments.filter(id => !unassignableWorkOrders.includes(id));
+    
+    // Create detailed summary
+    let summary = `Successfully assigned ${successfulAssignments.length} work orders.`;
+    if (unassignableWorkOrders.length > 0) {
+      summary += ` ${unassignableWorkOrders.length} work orders couldn't be assigned (no operators with historical data).`;
+    }
+    if (actualFailures.length > 0) {
+      summary += ` ${actualFailures.length} assignments failed.`;
+    }
+    
     return {
-      success: true,
+      success: successfulAssignments.length > 0,
       assignments: successfulAssignments,
-      unassigned: failedAssignments,
-      summary: `Successfully assigned ${successfulAssignments.length} work orders. ${failedAssignments.length} failed.`,
+      unassigned: [...actualFailures, ...unassignableWorkOrders],
+      summary,
       totalHoursOptimized,
       operatorUtilization
     };
