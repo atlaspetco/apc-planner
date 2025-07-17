@@ -141,7 +141,7 @@ export async function prepareOperatorProfiles(): Promise<Map<number, OperatorPro
 // Get unassigned work orders
 export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
   try {
-    // Get assigned work order IDs first
+    // Get assigned work order IDs from assignments table
     const assignedWorkOrderIds = await db
       .select({ workOrderId: workOrderAssignments.workOrderId })
       .from(workOrderAssignments)
@@ -150,36 +150,47 @@ export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
     const assignedIds = new Set(assignedWorkOrderIds.map(a => a.workOrderId));
     console.log(`Found ${assignedIds.size} work orders with active assignments`);
     
-    // Get all work orders that are not finished or done
-    const allWorkOrdersRaw = await db
-      .select()
-      .from(workOrders)
-      .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
-      .where(notInArray(workOrders.state, ['finished', 'done']));
-      
-    console.log(`Found ${allWorkOrdersRaw.length} work orders not in finished/done state`);
+    // Fetch production orders with embedded work orders from API
+    const response = await fetch('http://localhost:3000/api/production-orders');
+    if (!response.ok) {
+      throw new Error('Failed to fetch production orders');
+    }
     
-    // Transform work orders
-    const allWorkOrders = allWorkOrdersRaw.map(row => ({
-      workOrder: row.work_orders,
-      productionOrder: row.production_orders
-    }));
+    const productionOrdersData = await response.json();
+    console.log(`Fetched ${productionOrdersData.length} production orders from API`);
     
-    // Filter to only unassigned work orders with valid production orders
-    const unassignedWorkOrders = allWorkOrders
-      .filter(wo => !assignedIds.has(wo.workOrder.id) && wo.productionOrder && wo.productionOrder.quantity > 0)
-      .map(wo => ({
-        id: wo.workOrder.id,
-        workCenter: wo.workOrder.workCenter,
-        operation: wo.workOrder.operation || '',
-        routing: wo.workOrder.routing || wo.productionOrder?.routing || '',
-        quantity: wo.productionOrder!.quantity,
-        productionOrderId: wo.workOrder.productionOrderId,
-        moNumber: wo.productionOrder?.moNumber || '',
-        productName: wo.productionOrder?.productName || ''
-      }));
+    // Extract all work orders from production orders
+    const unassignedWorkOrders: WorkOrderToAssign[] = [];
+    
+    for (const mo of productionOrdersData) {
+      // Skip production orders with zero quantity
+      if (!mo.quantity || mo.quantity <= 0) continue;
       
+      // Process embedded work orders
+      if (mo.workOrders && Array.isArray(mo.workOrders)) {
+        for (const wo of mo.workOrders) {
+          // Skip if already assigned or if state is finished/done
+          if (assignedIds.has(wo.id) || wo.state === 'finished' || wo.state === 'done') {
+            continue;
+          }
+          
+          // Add to unassigned list
+          unassignedWorkOrders.push({
+            id: wo.id,
+            workCenter: wo.workCenter || 'Unknown',
+            operation: wo.operation || '',
+            routing: mo.routing || '',
+            quantity: mo.quantity,
+            productionOrderId: mo.id,
+            moNumber: mo.moNumber || '',
+            productName: mo.productName || ''
+          });
+        }
+      }
+    }
+    
     console.log(`Found ${unassignedWorkOrders.length} unassigned work orders to process`);
+    console.log('Sample unassigned work orders:', unassignedWorkOrders.slice(0, 3));
     return unassignedWorkOrders;
   } catch (error) {
     console.error('Error in getUnassignedWorkOrders:', error);

@@ -126,12 +126,33 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
     );
   }
 
+  // Calculate summary stats
+  const totalAssignments = workloadSummary.reduce((sum, op) => sum + op.totalAssignments, 0);
+  const totalHours = workloadSummary.reduce((sum, op) => sum + op.totalEstimatedHours, 0);
+  const avgCapacity = Math.round(workloadSummary.reduce((sum, op) => sum + op.capacityPercent, 0) / workloadSummary.length);
+
   return (
     <>
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center space-x-2 mb-4">
-          <Users className="text-blue-600 w-5 h-5" />
-          <h2 className="text-lg font-semibold text-gray-900">Operator Workload Summary</h2>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <Users className="text-blue-600 w-5 h-5" />
+            <h2 className="text-lg font-semibold text-gray-900">Operator Workload Summary</h2>
+          </div>
+          <div className="flex items-center space-x-6 text-sm">
+            <div className="flex items-center space-x-1">
+              <span className="font-bold text-blue-600">{totalAssignments}</span>
+              <span className="text-gray-600">Total Assignments</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <span className="font-bold text-green-600">{totalHours.toFixed(0)}h</span>
+              <span className="text-gray-600">Total Hours</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <span className="font-bold text-orange-600">{avgCapacity}%</span>
+              <span className="text-gray-600">Avg Capacity</span>
+            </div>
+          </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -200,29 +221,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
         ))}
       </div>
 
-      {/* Summary Stats */}
-      <div className="mt-4 pt-4 border-t border-gray-200">
-        <div className="grid grid-cols-3 gap-4 text-center">
-          <div>
-            <div className="text-2xl font-bold text-blue-600">
-              {workloadSummary.reduce((sum, op) => sum + op.totalAssignments, 0)}
-            </div>
-            <div className="text-sm text-gray-600">Total Assignments</div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-green-600">
-              {workloadSummary.reduce((sum, op) => sum + op.totalEstimatedHours, 0)}h
-            </div>
-            <div className="text-sm text-gray-600">Total Hours</div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-orange-600">
-              {Math.round(workloadSummary.reduce((sum, op) => sum + op.capacityPercent, 0) / workloadSummary.length)}%
-            </div>
-            <div className="text-sm text-gray-600">Avg Capacity</div>
-          </div>
-        </div>
-        </div>
+
       </div>
 
       {/* Operator Workload Detail Modal */}
