@@ -57,7 +57,7 @@ export function AutoAssignControls() {
 
   // Auto-assign mutation
   const autoAssignMutation = useMutation({
-    mutationFn: () => apiRequest('/api/auto-assign', 'POST'),
+    mutationFn: () => apiRequest('POST', '/api/auto-assign'),
     onSuccess: (data: AssignmentResult) => {
       if (data.success) {
         setLastResult(data);
@@ -97,7 +97,7 @@ export function AutoAssignControls() {
 
   // Regenerate assignments mutation
   const regenerateMutation = useMutation({
-    mutationFn: () => apiRequest('/api/auto-assign/regenerate', 'POST'),
+    mutationFn: () => apiRequest('POST', '/api/auto-assign/regenerate'),
     onSuccess: (data: AssignmentResult) => {
       if (data.success) {
         setLastResult(data);
@@ -122,7 +122,7 @@ export function AutoAssignControls() {
 
   // Clear all assignments mutation
   const clearAllMutation = useMutation({
-    mutationFn: () => apiRequest('/api/auto-assign/clear-all', 'POST'),
+    mutationFn: () => apiRequest('POST', '/api/auto-assign/clear-all'),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });

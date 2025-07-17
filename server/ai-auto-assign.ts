@@ -76,18 +76,21 @@ export async function prepareOperatorProfiles(): Promise<Map<number, OperatorPro
     .select()
     .from(historicalUph);
     
-  // Get current assignments
-  const currentAssignments = await db
-    .select({
-      operatorId: workOrderAssignments.operatorId,
-      workOrderId: workOrderAssignments.workOrderId,
-      quantity: workOrders.quantity,
-      workCenter: workOrders.workCenter,
-      routing: workOrders.routing
-    })
+  // Get current assignments with work order details
+  const assignmentsRaw = await db
+    .select()
     .from(workOrderAssignments)
     .leftJoin(workOrders, eq(workOrderAssignments.workOrderId, workOrders.id))
     .where(eq(workOrderAssignments.isActive, true));
+    
+  // Transform to required format
+  const currentAssignments = assignmentsRaw.map(row => ({
+    operatorId: row.work_order_assignments.operatorId,
+    workOrderId: row.work_order_assignments.workOrderId,
+    quantity: row.work_orders?.quantity || 0,
+    workCenter: row.work_orders?.workCenter || '',
+    routing: row.work_orders?.routing || ''
+  }));
     
   // Build operator profiles
   for (const operator of activeOperators) {
@@ -137,12 +140,9 @@ export async function prepareOperatorProfiles(): Promise<Map<number, OperatorPro
 
 // Get unassigned work orders
 export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
-  // Get all work orders
-  const allWorkOrders = await db
-    .select({
-      workOrder: workOrders,
-      productionOrder: productionOrders
-    })
+  // Get all work orders with production order details
+  const allWorkOrdersRaw = await db
+    .select()
     .from(workOrders)
     .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
     .where(and(
@@ -157,6 +157,12 @@ export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
     .where(eq(workOrderAssignments.isActive, true));
     
   const assignedIds = new Set(assignedWorkOrderIds.map(a => a.workOrderId));
+  
+  // Transform and filter unassigned work orders
+  const allWorkOrders = allWorkOrdersRaw.map(row => ({
+    workOrder: row.work_orders,
+    productionOrder: row.production_orders
+  }));
   
   // Filter unassigned work orders
   return allWorkOrders
