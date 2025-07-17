@@ -7,7 +7,7 @@ import {
   productionOrders,
   historicalUph 
 } from "@shared/schema.js";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, gt } from "drizzle-orm";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -140,15 +140,15 @@ export async function prepareOperatorProfiles(): Promise<Map<number, OperatorPro
 
 // Get unassigned work orders
 export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
-  // Get all work orders with production order details
-  const allWorkOrdersRaw = await db
-    .select()
-    .from(workOrders)
-    .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
-    .where(and(
-      eq(workOrders.state, 'request'),
-      sql`${workOrders.quantity} > 0`
-    ));
+  try {
+    // Get all work orders with production order details
+    const allWorkOrdersRaw = await db
+      .select()
+      .from(workOrders)
+      .leftJoin(productionOrders, eq(workOrders.productionOrderId, productionOrders.id))
+      .where(eq(workOrders.state, 'request'));
+      
+    console.log(`Found ${allWorkOrdersRaw.length} work orders in 'request' state`);
     
   // Get assigned work order IDs
   const assignedWorkOrderIds = await db
@@ -164,19 +164,23 @@ export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
     productionOrder: row.production_orders
   }));
   
-  // Filter unassigned work orders
+  // Filter unassigned work orders and exclude zero quantity production orders
   return allWorkOrders
-    .filter(wo => !assignedIds.has(wo.workOrder.id))
+    .filter(wo => !assignedIds.has(wo.workOrder.id) && wo.productionOrder && wo.productionOrder.quantity > 0)
     .map(wo => ({
       id: wo.workOrder.id,
       workCenter: wo.workOrder.workCenter,
       operation: wo.workOrder.operation || '',
       routing: wo.workOrder.routing || wo.productionOrder?.routing || '',
-      quantity: wo.workOrder.quantity,
+      quantity: wo.productionOrder!.quantity,
       productionOrderId: wo.workOrder.productionOrderId,
       moNumber: wo.productionOrder?.moNumber || '',
       productName: wo.productionOrder?.productName || ''
     }));
+  } catch (error) {
+    console.error('Error in getUnassignedWorkOrders:', error);
+    throw error;
+  }
 }
 
 // Generate AI-powered assignment recommendations

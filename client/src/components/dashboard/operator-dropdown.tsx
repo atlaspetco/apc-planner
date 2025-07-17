@@ -28,6 +28,15 @@ interface OperatorDropdownProps {
   className?: string;
 }
 
+// Helper function to format operator name as "First L."
+function formatOperatorName(fullName: string): string {
+  const parts = fullName.trim().split(' ');
+  if (parts.length < 2) return fullName;
+  const firstName = parts[0];
+  const lastInitial = parts[parts.length - 1][0];
+  return `${firstName} ${lastInitial}.`;
+}
+
 export function OperatorDropdown({
   workOrderId,
   workOrderIds,
@@ -206,7 +215,7 @@ export function OperatorDropdown({
                         <div className="flex items-center justify-between w-full min-w-0">
                           <div className="flex items-center space-x-1">
                             {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                            <span className="truncate text-green-700">{operatorDetails.name}</span>
+                            <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)}</span>
                           </div>
                           <div className="flex items-center space-x-1 ml-2">
                             {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
@@ -230,7 +239,7 @@ export function OperatorDropdown({
                       ) : (
                         <div className="flex items-center space-x-1">
                           {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                          <span className="text-green-700">{operatorName}</span>
+                          <span className="text-green-700">{formatOperatorName(operatorName)}</span>
                         </div>
                       );
                     })() : 
@@ -241,7 +250,7 @@ export function OperatorDropdown({
                   <div className="flex items-center justify-between w-full min-w-0">
                     <div className="flex items-center space-x-1">
                       {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-purple-600" />}
-                      <span className="truncate text-green-700">{currentOperator.name}</span>
+                      <span className="truncate text-green-700">{formatOperatorName(currentOperator.name)}</span>
                     </div>
                     <div className="flex items-center space-x-1 ml-2">
                       {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
@@ -282,7 +291,7 @@ export function OperatorDropdown({
               <div className="flex items-center justify-between w-full">
                 <span className="text-green-700 font-medium">
                   {uniqueOperators.length === 1 ? 
-                    uniqueOperators[0] : 
+                    formatOperatorName(uniqueOperators[0]) : 
                     `${uniqueOperators.length} operators assigned`
                   }
                 </span>
@@ -298,7 +307,27 @@ export function OperatorDropdown({
             })
             .map(operator => (
               <SelectItem key={operator.id} value={operator.id.toString()}>
-                <span className="truncate">{operator.name}</span>
+                <div className="flex items-center justify-between w-full">
+                  <span className="truncate">{formatOperatorName(operator.name)}</span>
+                  <div className="flex items-center space-x-2 ml-2">
+                    {operator.observations > 0 && operator.averageUph > 0 ? (
+                      <>
+                        <span className="text-xs text-muted-foreground">
+                          {operator.averageUph.toFixed(1)} UPH
+                        </span>
+                        {quantity > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            • {calculateEstimatedTime(operator.averageUph)}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="text-xs px-1 py-0">
+                        No data
+                      </Badge>
+                    )}
+                  </div>
+                </div>
               </SelectItem>
             ))}
         </SelectContent>

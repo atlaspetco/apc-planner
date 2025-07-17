@@ -179,7 +179,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                           {workOrdersInCenter.length > 0 ? (
                             <div className="space-y-2">
                               <div className="text-xs text-gray-500">
-                                {workOrdersInCenter.length} operations
+                                {workOrdersInCenter.length} operation{workOrdersInCenter.length > 1 ? 's' : ''}
                               </div>
                               <OperatorDropdown
                                 workCenter={workCenter}
@@ -240,7 +240,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                             {workOrdersInCenter.length > 0 ? (
                               <div className="space-y-2">
                                 <div className="text-xs text-gray-500">
-                                  {workOrdersInCenter.length} operations
+                                  {workOrdersInCenter.length} operation{workOrdersInCenter.length > 1 ? 's' : ''}
                                 </div>
                                 <OperatorDropdown
                                   workCenter={workCenter}
