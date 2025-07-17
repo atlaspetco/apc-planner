@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,12 @@ export default function OperatorCard({
   const { toast } = useToast();
   const [localOperator, setLocalOperator] = useState<Operator>(operator);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Reset local state when operator prop changes
+  useEffect(() => {
+    setLocalOperator(operator);
+    setHasChanges(false);
+  }, [operator.id, operator.isActive, operator.workCenters, operator.operations, operator.routings, operator.slackUserId]);
 
   const updateOperatorMutation = useMutation({
     mutationFn: async (updates: Partial<Operator>) => {
