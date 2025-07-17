@@ -450,11 +450,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/assignments", async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db.js");
-      const { workOrderAssignments, operators, workOrders, productionOrders } = await import("../shared/schema.js");
+      const { workOrderAssignments, operators, productionOrders } = await import("../shared/schema.js");
       const { eq, sql } = await import("drizzle-orm");
       
-      // First get basic assignments
-      const basicAssignments = await db
+      // Get assignments with operator info
+      const assignments = await db
         .select({
           workOrderId: workOrderAssignments.workOrderId,
           operatorId: workOrderAssignments.operatorId,
@@ -463,50 +463,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isActive: workOrderAssignments.isActive,
           isAutoAssigned: workOrderAssignments.isAutoAssigned,
           autoAssignReason: workOrderAssignments.autoAssignReason,
-          autoAssignConfidence: workOrderAssignments.autoAssignConfidence
+          autoAssignConfidence: workOrderAssignments.autoAssignConfidence,
+          assignedBy: workOrderAssignments.assignedBy
         })
         .from(workOrderAssignments)
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
         .where(eq(workOrderAssignments.isActive, true));
       
-      // Then enrich with work order and production order data
-      const enrichedAssignments = await Promise.all(
-        basicAssignments.map(async (assignment) => {
-          // Get work order details
-          const workOrderData = await db
-            .select()
-            .from(workOrders)
-            .where(eq(workOrders.id, assignment.workOrderId))
-            .limit(1);
-          
-          const workOrder = workOrderData[0];
-          
-          if (!workOrder) {
-            return assignment;
-          }
-          
-          // Get production order details
-          const productionOrderData = await db
-            .select()
-            .from(productionOrders)
-            .where(eq(productionOrders.id, workOrder.productionOrderId))
-            .limit(1);
-          
-          const productionOrder = productionOrderData[0];
-          
+      // Get all production orders to find work order details
+      const allProductionOrders = await db.select().from(productionOrders);
+      
+      // Create a map of work order ID to production order and work order details
+      const workOrderMap = new Map();
+      allProductionOrders.forEach(po => {
+        if (po.workOrders && Array.isArray(po.workOrders)) {
+          po.workOrders.forEach((wo: any) => {
+            workOrderMap.set(wo.id, {
+              workOrder: wo,
+              productionOrder: po
+            });
+          });
+        }
+      });
+      
+      // Enrich assignments with production order data
+      const enrichedAssignments = assignments.map(assignment => {
+        const workOrderData = workOrderMap.get(assignment.workOrderId);
+        
+        if (!workOrderData) {
+          console.warn(`No work order found for assignment ${assignment.workOrderId}`);
           return {
             ...assignment,
-            workCenter: workOrder.workCenter,
-            operation: workOrder.operation,
-            routing: workOrder.routing,
-            quantity: workOrder.quantity,
-            productionOrderId: workOrder.productionOrderId,
-            productName: productionOrder?.productName || '',
-            productRouting: productionOrder?.productRouting || productionOrder?.routing || ''
+            workCenter: 'Unknown',
+            operation: 'Unknown',
+            routing: 'Unknown',
+            productRouting: 'Unknown',
+            quantity: 0,
+            productionOrderId: null,
+            productName: 'Unknown',
+            moNumber: 'Unknown'
           };
-        })
-      );
+        }
+        
+        const { workOrder, productionOrder } = workOrderData;
+        
+        return {
+          ...assignment,
+          workCenter: workOrder.workCenter || workOrder.originalWorkCenter || 'Unknown',
+          operation: workOrder.operation || 'Unknown',
+          routing: productionOrder.routing || productionOrder.routingName || 'Unknown',
+          productRouting: productionOrder.routing || productionOrder.routingName || 'Unknown',
+          quantity: workOrder.quantity || productionOrder.quantity || 0,
+          productionOrderId: productionOrder.id,
+          productName: productionOrder.productName || 'Unknown',
+          moNumber: productionOrder.moNumber || 'Unknown'
+        };
+      });
       
+      console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
       res.json({ assignments: enrichedAssignments });
     } catch (error) {
       console.error('Error fetching work order assignments:', error);
