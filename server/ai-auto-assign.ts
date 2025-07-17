@@ -231,6 +231,12 @@ export async function generateAssignmentRecommendations(
   operatorProfiles: Map<number, OperatorProfile>
 ): Promise<AssignmentRecommendation[]> {
   
+  // Check if OpenAI API key is available
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("OPENAI_API_KEY not found in environment variables");
+    throw new Error("OpenAI API key is required for auto-assign feature. Please add OPENAI_API_KEY to your environment secrets.");
+  }
+  
   // Prepare data for AI analysis
   const operatorData = Array.from(operatorProfiles.values()).map(op => ({
     id: op.id,
@@ -334,11 +340,15 @@ Respond with JSON format:
 // Main auto-assign function
 export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
   try {
+    console.log("Starting auto-assign process...");
+    
     // Step 1: Prepare operator profiles with historical data
     const operatorProfiles = await prepareOperatorProfiles();
+    console.log(`Prepared ${operatorProfiles.size} operator profiles`);
     
     // Step 2: Get unassigned work orders
     const unassignedWorkOrders = await getUnassignedWorkOrders();
+    console.log(`Found ${unassignedWorkOrders.length} unassigned work orders`);
     
     if (unassignedWorkOrders.length === 0) {
       return {
@@ -352,6 +362,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     }
     
     // Step 3: Generate AI recommendations
+    console.log("Generating AI recommendations...");
     const recommendations = await generateAssignmentRecommendations(
       unassignedWorkOrders, 
       operatorProfiles
