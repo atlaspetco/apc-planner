@@ -229,6 +229,11 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
   try {
     // Step 1: Get all production orders with embedded work orders
     const response = await fetch('http://localhost:5000/api/production-orders');
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch production orders: ${response.status} ${response.statusText}`);
+    }
+    
     const allProductionOrders = await response.json();
     
     const allWorkOrders = [];

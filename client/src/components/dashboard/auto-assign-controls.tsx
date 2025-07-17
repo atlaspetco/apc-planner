@@ -67,11 +67,11 @@ export function AutoAssignControls() {
         setShowResults(true);
         
         // Check if it's partial success
-        const hasUnassignable = data.summary.includes("couldn't be assigned");
+        const hasUnassignable = data.summary && data.summary.includes("couldn't be assigned");
         
         toast({
           title: hasUnassignable ? "Auto-Assign Partial Success" : "Auto-Assign Complete",
-          description: data.summary,
+          description: data.summary || "Auto-assignment completed successfully",
           action: (
             <Button
               variant="outline"
@@ -86,7 +86,7 @@ export function AutoAssignControls() {
         toast({
           title: "Auto-Assign Info",
           description: data.summary || "No assignments could be made",
-          variant: data.summary.includes("couldn't be assigned") ? "default" : "destructive",
+          variant: data.summary && data.summary.includes("couldn't be assigned") ? "default" : "destructive",
         });
       }
     },
