@@ -171,14 +171,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
           originalWorkCenter: originalWorkCenter, // Keep for assignment logic
           operation: wo['operation.name'] || wo.rec_name || `WO${wo.id}`,
           state: wo.state || 'unknown',
-          quantity: 0 // Work orders inherit quantity from MO
+          quantity: 0, // Work orders inherit quantity from MO
+          employee_name: wo['employee.name'] || null,
+          employee_id: wo['employee.id'] || null
         });
       });
 
       // Process manufacturing orders with their matched work orders
-      const productionOrders = manufacturingOrdersData.map((mo) => {
+      const productionOrders = await Promise.all(manufacturingOrdersData.map(async (mo) => {
         const workOrders = workOrdersByMO.get(mo.id) || [];
         console.log(`MO ${mo.rec_name} matched with ${workOrders.length} work orders`);
+        
+        // Save finished work order assignments to database
+        for (const wo of workOrders) {
+          if (wo.state === 'finished' && wo.employee_name && wo.employee_id) {
+            try {
+              // Find operator by name
+              const operator = await db.select()
+                .from(operators)
+                .where(eq(operators.name, wo.employee_name))
+                .limit(1);
+              
+              if (operator.length > 0) {
+                // Check if assignment already exists
+                const existing = await db.select()
+                  .from(workOrderAssignments)
+                  .where(
+                    and(
+                      eq(workOrderAssignments.workOrderId, wo.id),
+                      eq(workOrderAssignments.isActive, true)
+                    )
+                  )
+                  .limit(1);
+                
+                if (existing.length === 0) {
+                  // Create assignment for finished work order
+                  await db.insert(workOrderAssignments).values({
+                    workOrderId: wo.id,
+                    operatorId: operator[0].id,
+                    assignedAt: new Date(),
+                    isActive: true,
+                    isAutoAssigned: false,
+                    assignedBy: 'fulfil_sync',
+                    autoAssignReason: `Completed by ${wo.employee_name} in Fulfil`,
+                    autoAssignConfidence: 1.0
+                  });
+                  console.log(`Saved finished work order assignment: WO${wo.id} -> ${wo.employee_name}`);
+                }
+              }
+            } catch (error) {
+              console.error(`Error saving finished work order assignment for WO${wo.id}:`, error);
+            }
+          }
+        }
         
         // Extract product information from manufacturing order
         const productCode = mo['product.code'] || '';
@@ -216,7 +261,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           product_code: productCode,
           workOrders
         };
-      });
+      }));
       
       console.log(`Converted to ${productionOrders.length} production orders from manufacturing orders`);
       
@@ -474,14 +519,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let allProductionOrders = [];
       try {
         // Directly call the Fulfil API logic instead of making an internal HTTP request
-        const { getProductionOrders } = await import('./fulfil-current.js');
+        const { FulfilCurrentService } = await import('./fulfil-current.js');
+        const fulfilService = new FulfilCurrentService();
         
         // Fetch manufacturing orders from Fulfil API
-        const manufacturingOrders = await getProductionOrders();
+        const manufacturingOrders = await fulfilService.getCurrentProductionOrders();
         
         // Convert to production orders format
-        const productionOrdersData = await convertToProductionOrders(manufacturingOrders);
-        allProductionOrders = productionOrdersData;
+        allProductionOrders = manufacturingOrders;
       } catch (error) {
         console.error('Failed to fetch from Fulfil API, using database:', error);
         // Fallback to database if API fails

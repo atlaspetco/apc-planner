@@ -68,21 +68,24 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
           productionOrderId: assignment.productionOrderId || null
         });
         
-        // Calculate estimated hours based on UPH data if available
-        let estimatedHours = 1; // Default fallback
-        if (uphData?.uphResults && assignment.quantity > 0) {
-          const uphEntry = uphData.uphResults.find(entry => 
-            entry.operatorName === assignment.operatorName &&
-            entry.workCenter === assignment.workCenter &&
-            entry.productRouting === (assignment.productRouting || assignment.routing)
-          );
-          
-          if (uphEntry && uphEntry.unitsPerHour > 0) {
-            estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
+        // Only include hours for non-finished work orders
+        if (assignment.workOrderState !== 'finished') {
+          // Calculate estimated hours based on UPH data if available
+          let estimatedHours = 1; // Default fallback
+          if (uphData?.uphResults && assignment.quantity > 0) {
+            const uphEntry = uphData.uphResults.find(entry => 
+              entry.operatorName === assignment.operatorName &&
+              entry.workCenter === assignment.workCenter &&
+              entry.productRouting === (assignment.productRouting || assignment.routing)
+            );
+            
+            if (uphEntry && uphEntry.unitsPerHour > 0) {
+              estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
+            }
           }
+          
+          operator.totalEstimatedHours += estimatedHours;
         }
-        
-        operator.totalEstimatedHours += estimatedHours;
       }
     });
 

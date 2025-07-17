@@ -111,7 +111,9 @@ export class FulfilCurrentService {
                   'work_center.rec_name',
                   'operation.rec_name', 
                   'quantity_done',
-                  'state'
+                  'state',
+                  'employee.rec_name',
+                  'employee.id'
                 ]
               }),
               signal: AbortSignal.timeout(10000)
@@ -206,7 +208,9 @@ export class FulfilCurrentService {
             work_center: mappedWorkCenter,
             operation: rawOperation,
             quantity_done: wo.quantity_done || 0,
-            state: wo.state || 'pending'
+            state: wo.state || 'pending',
+            employee_name: wo['employee.rec_name'] || null,
+            employee_id: wo['employee.id'] || null
           });
         }
       });

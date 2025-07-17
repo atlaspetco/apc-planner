@@ -16,6 +16,8 @@ interface QualifiedOperator {
 interface OperatorDropdownProps {
   workOrderId?: number; // Optional for backward compatibility
   workOrderIds?: number[]; // For bulk assignment
+  workOrderStates?: string[]; // States of work orders
+  finishedOperatorNames?: string[]; // Names of operators who finished work orders
   workCenter: string;
   routing: string;
   operation: string;
@@ -40,6 +42,8 @@ function formatOperatorName(fullName: string): string {
 export function OperatorDropdown({
   workOrderId,
   workOrderIds,
+  workOrderStates,
+  finishedOperatorNames,
   workCenter,
   routing,
   operation,
@@ -52,14 +56,26 @@ export function OperatorDropdown({
   className
 }: OperatorDropdownProps) {
   
+  // Check if all work orders are finished
+  const allFinished = workOrderStates && workOrderStates.length > 0 && 
+    workOrderStates.every(state => state === 'finished');
+  
+  // Get unique finished operator names
+  const uniqueFinishedOperators = finishedOperatorNames ? 
+    [...new Set(finishedOperatorNames.filter(Boolean))] : [];
+  
   // For bulk assignments, analyze current assignments
   const bulkAssignmentInfo = workOrderIds && assignments ? 
-    workOrderIds.map(woId => {
+    workOrderIds.map((woId, index) => {
       const assignment = assignments.get(woId);
-      return { workOrderId: woId, assignment };
-    }).filter(info => info.assignment) : [];
+      const isFinished = workOrderStates?.[index] === 'finished';
+      const finishedOperator = finishedOperatorNames?.[index];
+      return { workOrderId: woId, assignment, isFinished, finishedOperator };
+    }).filter(info => info.assignment || info.isFinished) : [];
   
-  const assignedOperators = bulkAssignmentInfo.map(info => info.assignment.operatorName).filter(Boolean);
+  const assignedOperators = bulkAssignmentInfo
+    .map(info => info.finishedOperator || info.assignment?.operatorName)
+    .filter(Boolean);
   const uniqueOperators = [...new Set(assignedOperators)];
   
   // Check if any assignments are auto-assigned
@@ -194,14 +210,32 @@ export function OperatorDropdown({
   const currentAssignment = workOrderId && assignments ? assignments.get(workOrderId) : null;
   const isCurrentAutoAssigned = currentAssignment?.isAutoAssigned || false;
 
+  // If all work orders are finished, show the finished operators
+  if (allFinished && uniqueFinishedOperators.length > 0) {
+    return (
+      <div className={`space-y-1 ${className || ''}`}>
+        <div className="w-full h-8 text-xs bg-gray-100 border border-gray-300 rounded px-2 py-1 flex items-center justify-between cursor-not-allowed">
+          <span className="text-gray-700">
+            {uniqueFinishedOperators.length === 1 
+              ? uniqueFinishedOperators[0]
+              : `${uniqueFinishedOperators.length} operators finished`}
+          </span>
+          <Badge variant="outline" className="text-xs px-1 py-0 bg-gray-50">
+            Finished
+          </Badge>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`space-y-1 ${className || ''}`}>
       <Select 
         value={workOrderIds ? (uniqueOperators.length > 0 ? "bulk-assigned" : "") : (currentOperatorId?.toString() || "")} 
         onValueChange={handleAssignment}
-        disabled={loading}
+        disabled={loading || allFinished}
       >
-        <SelectTrigger className="w-full h-8 text-xs bg-white border-gray-300">
+        <SelectTrigger className={`w-full h-8 text-xs ${allFinished ? 'bg-gray-100' : 'bg-white'} border-gray-300`}>
           <SelectValue>
             {loading ? "Loading..." : 
               workOrderIds ? (

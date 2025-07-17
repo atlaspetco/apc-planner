@@ -187,6 +187,8 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 operation=""
                                 quantity={totalQuantity}
                                 workOrderIds={workOrdersInCenter.map(wo => wo.id)}
+                                workOrderStates={workOrdersInCenter.map(wo => wo.state)}
+                                finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'finished').map(wo => wo.employee_name)}
                                 assignments={assignments}
                                 onAssign={async (operatorId) => {
                                   // Bulk assign to all work orders in this work center for this routing
@@ -248,6 +250,8 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                   operation=""
                                   quantity={order.quantity}
                                   workOrderIds={workOrdersInCenter.map(wo => wo.id)}
+                                  workOrderStates={workOrdersInCenter.map(wo => wo.state)}
+                                  finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'finished').map(wo => wo.employee_name)}
                                   assignments={assignments}
                                   onAssign={async (operatorId) => {
                                     // Bulk assign to all work orders in this work center for this MO
