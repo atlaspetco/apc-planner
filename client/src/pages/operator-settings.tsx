@@ -59,6 +59,13 @@ export default function OperatorSettings() {
         Object.keys(operator.workCenterPerformance).forEach(wc => {
           if (operator.workCenterPerformance[wc] !== null) {
             workCenters.add(wc);
+            
+            // If operator has Assembly data, they also have Sewing and Rope data
+            // since Assembly is the aggregated form of Sewing and Rope
+            if (wc === 'Assembly') {
+              workCenters.add('Sewing');
+              workCenters.add('Rope');
+            }
           }
         });
       }
@@ -94,6 +101,18 @@ export default function OperatorSettings() {
             const workCenterInfo = workCenterData?.find((wc: any) => wc.workCenter === workCenter);
             if (workCenterInfo?.operations) {
               workCenterInfo.operations.forEach((op: string) => operations.add(op));
+            }
+            
+            // If operator has Assembly data, include Sewing and Rope operations
+            if (workCenter === 'Assembly') {
+              const sewingInfo = workCenterData?.find((wc: any) => wc.workCenter === 'Sewing');
+              if (sewingInfo?.operations) {
+                sewingInfo.operations.forEach((op: string) => operations.add(op));
+              }
+              const ropeInfo = workCenterData?.find((wc: any) => wc.workCenter === 'Rope');
+              if (ropeInfo?.operations) {
+                ropeInfo.operations.forEach((op: string) => operations.add(op));
+              }
             }
           }
         });
