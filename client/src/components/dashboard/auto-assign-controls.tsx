@@ -8,8 +8,10 @@ import {
   Sparkles,
   AlertCircle,
   CheckCircle2,
-  Info
+  Info,
+  XCircle
 } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -32,6 +34,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+interface RoutingAssignmentResult {
+  routing: string;
+  workOrderCount: number;
+  success: boolean;
+  assignedCount: number;
+  failedCount: number;
+  retryAttempts: number;
+  error?: string;
+}
+
 interface AssignmentResult {
   success: boolean;
   assignments: Array<{
@@ -47,17 +59,67 @@ interface AssignmentResult {
   summary: string;
   totalHoursOptimized: number;
   operatorUtilization: Map<number, number>;
+  routingResults?: RoutingAssignmentResult[];
+  progress?: {
+    current: number;
+    total: number;
+    currentRouting?: string;
+  };
 }
 
 export function AutoAssignControls() {
   const [showResults, setShowResults] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
   const [lastResult, setLastResult] = useState<AssignmentResult | null>(null);
+  const [currentProgress, setCurrentProgress] = useState(0);
+  const [currentRouting, setCurrentRouting] = useState('');
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   // Auto-assign mutation
   const autoAssignMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/auto-assign'),
+    mutationFn: async () => {
+      setShowProgress(true);
+      setCurrentProgress(0);
+      setCurrentRouting('Analyzing work orders...');
+      
+      // Simulate progress updates
+      const simulateProgress = () => {
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += Math.random() * 15;
+          if (progress > 90) progress = 90;
+          setCurrentProgress(progress);
+          
+          // Update routing messages
+          if (progress > 20 && progress < 40) {
+            setCurrentRouting('Processing Lifetime Leash orders...');
+          } else if (progress > 40 && progress < 60) {
+            setCurrentRouting('Processing Lifetime Pouch orders...');
+          } else if (progress > 60 && progress < 80) {
+            setCurrentRouting('Processing collar orders...');
+          } else if (progress > 80) {
+            setCurrentRouting('Finalizing assignments...');
+          }
+        }, 500);
+        
+        return () => clearInterval(interval);
+      };
+      
+      const cleanup = simulateProgress();
+      
+      try {
+        const result = await apiRequest('POST', '/api/auto-assign');
+        cleanup();
+        setCurrentProgress(100);
+        setTimeout(() => setShowProgress(false), 500);
+        return result;
+      } catch (error) {
+        cleanup();
+        setShowProgress(false);
+        throw error;
+      }
+    },
     onSuccess: (data: AssignmentResult) => {
       setLastResult(data);
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
@@ -66,13 +128,45 @@ export function AutoAssignControls() {
       if (data.success) {
         setShowResults(true);
         
-        // Check if it's partial success
-        const hasUnassignable = data.summary && data.summary.includes("couldn't be assigned");
+        // Check for failed routings
+        const failedRoutings = data.routingResults?.filter(r => !r.success) || [];
+        const successfulRoutings = data.routingResults?.filter(r => r.success) || [];
         
+        if (failedRoutings.length > 0) {
+          toast({
+            title: "Auto-Assign Partial Success",
+            description: `Assigned ${data.assignments.length} work orders. ${failedRoutings.length} routings failed.`,
+            action: (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowResults(true)}
+              >
+                View Details
+              </Button>
+            ),
+          });
+        } else {
+          toast({
+            title: "Auto-Assign Complete",
+            description: data.summary || "Auto-assignment completed successfully",
+            action: (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowResults(true)}
+              >
+                View Details
+              </Button>
+            ),
+          });
+        }
+      } else {
         toast({
-          title: hasUnassignable ? "Auto-Assign Partial Success" : "Auto-Assign Complete",
-          description: data.summary || "Auto-assignment completed successfully",
-          action: (
+          title: "Auto-Assign Failed",
+          description: data.summary || "No assignments could be made",
+          variant: "destructive",
+          action: data.routingResults && data.routingResults.length > 0 ? (
             <Button
               variant="outline"
               size="sm"
@@ -80,17 +174,12 @@ export function AutoAssignControls() {
             >
               View Details
             </Button>
-          ),
-        });
-      } else {
-        toast({
-          title: "Auto-Assign Info",
-          description: data.summary || "No assignments could be made",
-          variant: data.summary && data.summary.includes("couldn't be assigned") ? "default" : "destructive",
+          ) : undefined,
         });
       }
     },
     onError: (error) => {
+      setShowProgress(false);
       toast({
         title: "Auto-Assign Error",
         description: error.message || "An unexpected error occurred",
@@ -218,6 +307,36 @@ export function AutoAssignControls() {
         </TooltipProvider>
       </div>
 
+      {/* Progress Dialog */}
+      <Dialog open={showProgress} onOpenChange={setShowProgress}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-blue-600" />
+              Auto-Assigning Work Orders
+            </DialogTitle>
+            <DialogDescription>
+              Processing routing groups sequentially...
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Progress</span>
+                <span>{Math.round(currentProgress)}%</span>
+              </div>
+              <Progress value={currentProgress} className="h-2" />
+            </div>
+            {currentRouting && (
+              <div className="text-sm text-muted-foreground text-center">
+                <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
+                Processing: {currentRouting}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Results Dialog */}
       <Dialog open={showResults} onOpenChange={setShowResults}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
@@ -261,6 +380,43 @@ export function AutoAssignControls() {
                   </AlertDescription>
                 </Alert>
               </div>
+
+              {/* Routing Results */}
+              {lastResult.routingResults && lastResult.routingResults.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold">Routing Assignment Results</h4>
+                  <div className="space-y-2">
+                    {lastResult.routingResults.map((result, index) => (
+                      <div
+                        key={index}
+                        className={`border rounded-lg p-3 ${
+                          result.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {result.success ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-red-600" />
+                            )}
+                            <span className="font-medium">{result.routing}</span>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {result.retryAttempts > 1 && (
+                              <span className="mr-2">Attempts: {result.retryAttempts}</span>
+                            )}
+                            {result.assignedCount}/{result.workOrderCount} assigned
+                          </div>
+                        </div>
+                        {result.error && (
+                          <p className="text-sm text-red-600 mt-1">{result.error}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Assignment Details */}
               <div className="space-y-2">

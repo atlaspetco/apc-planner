@@ -45,6 +45,16 @@ interface WorkOrderData {
   sequence: number;
 }
 
+interface RoutingAssignmentResult {
+  routing: string;
+  workOrderCount: number;
+  success: boolean;
+  assignedCount: number;
+  failedCount: number;
+  retryAttempts: number;
+  error?: string;
+}
+
 interface AutoAssignResult {
   success: boolean;
   assignments: number[];
@@ -52,6 +62,12 @@ interface AutoAssignResult {
   summary: string;
   totalHoursOptimized: number;
   operatorUtilization: Map<number, number>;
+  routingResults?: RoutingAssignmentResult[];
+  progress?: {
+    current: number;
+    total: number;
+    currentRouting?: string;
+  };
 }
 
 // Helper function to get UPH for an operator on a specific work center and routing
@@ -326,14 +342,28 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
 
     // Step 3: Group work orders by routing for batch processing
     const routingGroups = groupWorkOrdersByRouting(unassignedWorkOrders);
+    const routingResults: RoutingAssignmentResult[] = [];
     
     // Step 4: Process each routing group with AI
     const allAssignments = new Map<number, WorkOrderData[]>();
     const successfulAssignments: number[] = [];
     const failedAssignments: number[] = [];
     
+    let currentRoutingIndex = 0;
+    const totalRoutings = routingGroups.size;
+    
     for (const [routing, workOrdersInGroup] of routingGroups) {
-      console.log(`Processing ${workOrdersInGroup.length} work orders for routing: ${routing}`);
+      currentRoutingIndex++;
+      console.log(`Processing routing ${currentRoutingIndex}/${totalRoutings}: ${routing} (${workOrdersInGroup.length} work orders)`);
+      
+      const routingResult: RoutingAssignmentResult = {
+        routing,
+        workOrderCount: workOrdersInGroup.length,
+        success: false,
+        assignedCount: 0,
+        failedCount: 0,
+        retryAttempts: 0
+      };
       
       // Prepare work order data
       const workOrderData: WorkOrderData[] = workOrdersInGroup.map(wo => ({
@@ -381,11 +411,22 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       if (qualifiedOperators.length === 0) {
         console.log(`No qualified operators found for routing: ${routing}`);
         failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
+        routingResult.failedCount = workOrderData.length;
+        routingResult.error = "No qualified operators found";
+        routingResults.push(routingResult);
         continue;
       }
       
-      // Use AI to assign work orders
-      const systemMessage = `You are an expert manufacturing scheduler. Assign work orders to operators based on:
+      // Try up to 2 times to assign work orders for this routing
+      const maxRetries = 2;
+      let assignmentSuccess = false;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        routingResult.retryAttempts = attempt;
+        console.log(`Attempt ${attempt}/${maxRetries} for routing: ${routing}`);
+        
+        // Use AI to assign work orders
+        const systemMessage = `You are an expert manufacturing scheduler. Assign work orders to operators based on:
 1. Operator's UPH (Units Per Hour) performance for specific work center and routing combinations
 2. Current capacity utilization (prefer operators with lower utilization)
 3. Number of observations (higher observations = more reliable UPH data)
@@ -410,54 +451,74 @@ Return assignments as JSON:
   ]
 }`;
 
-      try {
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemMessage },
-            {
-              role: "user",
-              content: JSON.stringify({
-                workOrders: workOrderData,
-                operators: qualifiedOperators,
-                routing: routing
-              })
-            }
-          ],
-          temperature: 0.5,
-          response_format: { type: "json_object" }
-        });
+        try {
+          const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: systemMessage },
+              {
+                role: "user",
+                content: JSON.stringify({
+                  workOrders: workOrderData,
+                  operators: qualifiedOperators,
+                  routing: routing
+                })
+              }
+            ],
+            temperature: 0.5,
+            response_format: { type: "json_object" }
+          });
 
-        const aiResponse = JSON.parse(response.choices[0].message.content || "{}");
-        const assignments = aiResponse.assignments || [];
-        
-        // Process AI assignments
-        for (const assignment of assignments) {
-          const woData = workOrderData.find(wo => wo.workOrderId === assignment.workOrderId);
-          if (!woData) continue;
+          const aiResponse = JSON.parse(response.choices[0].message.content || "{}");
+          const assignments = aiResponse.assignments || [];
           
-          woData.expectedHours = assignment.expectedHours || 0;
-          
-          // Update operator profile
-          const profile = operatorProfiles.get(assignment.operatorId);
-          if (profile) {
-            profile.hoursAssigned += assignment.expectedHours;
-            profile.activeAssignments++;
+          // Process AI assignments
+          let routingAssignedCount = 0;
+          for (const assignment of assignments) {
+            const woData = workOrderData.find(wo => wo.workOrderId === assignment.workOrderId);
+            if (!woData) continue;
             
-            // Track assignment for this operator
-            if (!allAssignments.has(assignment.operatorId)) {
-              allAssignments.set(assignment.operatorId, []);
+            woData.expectedHours = assignment.expectedHours || 0;
+            
+            // Update operator profile
+            const profile = operatorProfiles.get(assignment.operatorId);
+            if (profile) {
+              profile.hoursAssigned += assignment.expectedHours;
+              profile.activeAssignments++;
+              
+              // Track assignment for this operator
+              if (!allAssignments.has(assignment.operatorId)) {
+                allAssignments.set(assignment.operatorId, []);
+              }
+              allAssignments.get(assignment.operatorId)!.push(woData);
             }
-            allAssignments.get(assignment.operatorId)!.push(woData);
+            
+            successfulAssignments.push(assignment.workOrderId);
+            routingAssignedCount++;
           }
           
-          successfulAssignments.push(assignment.workOrderId);
+          if (routingAssignedCount > 0) {
+            assignmentSuccess = true;
+            routingResult.success = true;
+            routingResult.assignedCount = routingAssignedCount;
+            routingResult.failedCount = workOrderData.length - routingAssignedCount;
+            break; // Success, no need to retry
+          }
+          
+        } catch (error) {
+          console.error(`AI assignment failed for routing ${routing} (attempt ${attempt}):`, error);
+          routingResult.error = error instanceof Error ? error.message : "AI assignment failed";
+          
+          if (attempt === maxRetries) {
+            // Final attempt failed
+            failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
+            routingResult.failedCount = workOrderData.length;
+          }
+          // Otherwise, continue to next attempt
         }
-        
-      } catch (error) {
-        console.error(`AI assignment failed for routing ${routing}:`, error);
-        failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
       }
+      
+      routingResults.push(routingResult);
     }
     
     // Step 5: Check for overloaded operators and rebalance if needed
@@ -566,21 +627,51 @@ Return assignments as JSON:
     const actualFailures = failedAssignments.filter(id => !unassignableWorkOrders.includes(id));
     
     // Create detailed summary
-    let summary = `Successfully assigned ${successfulAssignments.length} work orders.`;
+    let summary = "";
+    const successfulRoutings = routingResults.filter(r => r.success);
+    const failedRoutings = routingResults.filter(r => !r.success);
+    
+    if (successfulRoutings.length > 0) {
+      summary += `Successfully assigned ${successfulAssignments.length} work orders across ${successfulRoutings.length} routings.`;
+    }
+    
+    if (failedRoutings.length > 0) {
+      summary += ` Failed to assign work orders for ${failedRoutings.length} routings: ${failedRoutings.map(r => `${r.routing} (${r.error || 'Unknown error'})`).join(', ')}.`;
+    }
+    
+    // Check for unassignable work orders
+    const unassignableWorkOrders = failedAssignments.filter(id => {
+      const wo = unassignedWorkOrders.find(w => w.workOrderId === id);
+      if (!wo) return false;
+      
+      // Check if any operator has the required skills
+      const hasQualifiedOperators = Array.from(operatorProfiles.values()).some(profile => {
+        const key = `${wo.workCenter}-${wo.routing}`;
+        return profile.uphData.has(key);
+      });
+      
+      return !hasQualifiedOperators;
+    });
+    
+    // Calculate actual failed assignments (excluding unassignable)
+    const actualFailures = failedAssignments.filter(id => !unassignableWorkOrders.includes(id));
+    
     if (unassignableWorkOrders.length > 0) {
       summary += ` ${unassignableWorkOrders.length} work orders couldn't be assigned (no operators with historical data).`;
-    }
-    if (actualFailures.length > 0) {
-      summary += ` ${actualFailures.length} assignments failed.`;
     }
     
     return {
       success: successfulAssignments.length > 0,
       assignments: successfulAssignments,
       unassigned: [...actualFailures, ...unassignableWorkOrders],
-      summary,
+      summary: summary.trim(),
       totalHoursOptimized,
-      operatorUtilization
+      operatorUtilization,
+      routingResults,
+      progress: {
+        current: totalRoutings,
+        total: totalRoutings
+      }
     };
   } catch (error) {
     console.error("Auto-assign error:", error);
