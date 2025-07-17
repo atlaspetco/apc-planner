@@ -61,39 +61,48 @@ async function getOperatorUPH(
   routing: string
 ): Promise<number | null> {
   try {
-    const uphResults = await db
-      .select()
-      .from(historicalUph)
-      .where(
-        and(
-          eq(historicalUph.operatorId, operatorId),
-          eq(historicalUph.workCenter, workCenter),
-          eq(historicalUph.routing, routing)
-        )
-      )
-      .limit(1);
-
-    if (uphResults.length > 0 && uphResults[0].unitsPerHour) {
-      return uphResults[0].unitsPerHour;
+    // Handle routing mapping for products that use different manufacturing routing
+    // Lifetime Air Harness products use Lifetime Harness routing for manufacturing
+    const routingsToCheck = [routing];
+    if (routing === 'Lifetime Air Harness') {
+      routingsToCheck.push('Lifetime Harness');
     }
-
-    // Check alternate work centers
-    const alternateWorkCenters = workCenter === "Assembly" ? ["Sewing", "Rope"] : [];
-    for (const altWC of alternateWorkCenters) {
-      const altUphResults = await db
+    
+    for (const checkRouting of routingsToCheck) {
+      const uphResults = await db
         .select()
         .from(historicalUph)
         .where(
           and(
             eq(historicalUph.operatorId, operatorId),
-            eq(historicalUph.workCenter, altWC),
-            eq(historicalUph.routing, routing)
+            eq(historicalUph.workCenter, workCenter),
+            eq(historicalUph.routing, checkRouting)
           )
         )
         .limit(1);
 
-      if (altUphResults.length > 0 && altUphResults[0].unitsPerHour) {
-        return altUphResults[0].unitsPerHour;
+      if (uphResults.length > 0 && uphResults[0].unitsPerHour) {
+        return uphResults[0].unitsPerHour;
+      }
+
+      // Check alternate work centers
+      const alternateWorkCenters = workCenter === "Assembly" ? ["Sewing", "Rope"] : [];
+      for (const altWC of alternateWorkCenters) {
+        const altUphResults = await db
+          .select()
+          .from(historicalUph)
+          .where(
+            and(
+              eq(historicalUph.operatorId, operatorId),
+              eq(historicalUph.workCenter, altWC),
+              eq(historicalUph.routing, checkRouting)
+            )
+          )
+          .limit(1);
+
+        if (altUphResults.length > 0 && altUphResults[0].unitsPerHour) {
+          return altUphResults[0].unitsPerHour;
+        }
       }
     }
 
@@ -336,8 +345,15 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       // Get operators with experience in this routing
       const qualifiedOperators = [];
       for (const [opId, profile] of operatorProfiles) {
+        // Handle routing mapping for products that use different manufacturing routing
+        // Lifetime Air Harness products use Lifetime Harness routing for manufacturing
+        const routingsToCheck = [routing];
+        if (routing === 'Lifetime Air Harness') {
+          routingsToCheck.push('Lifetime Harness');
+        }
+        
         const hasRoutingExperience = Array.from(profile.uphData.keys()).some(key => 
-          key.includes(routing)
+          routingsToCheck.some(r => key.includes(r))
         );
         
         if (hasRoutingExperience) {
@@ -347,7 +363,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
             currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
             remainingHours: profile.maxHours - profile.hoursAssigned,
             uphPerformance: Array.from(profile.uphData.entries())
-              .filter(([key]) => key.includes(routing))
+              .filter(([key]) => routingsToCheck.some(r => key.includes(r)))
               .map(([key, data]) => ({
                 workCenterRouting: key,
                 uph: data.uph,

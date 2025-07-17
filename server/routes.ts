@@ -184,15 +184,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const productCode = mo['product.code'] || '';
         const productName = mo['product.name'] || mo.rec_name;
         
-        // Use our corrected routing logic, especially for LHA- products which Fulfil incorrectly maps
+        // Use routing from Fulfil API - it correctly returns "Lifetime Harness" for LHA products
         let routing = mo['routing.name'] || getRoutingForProduct(productCode);
-        
-        // Override incorrect Fulfil routing for specific product codes
-        if (productCode.startsWith('LHA-')) {
-          console.log(`LHA Override: Original routing='${routing}', Product code='${productCode}'`);
-          routing = 'Lifetime Air Harness';
-          console.log(`LHA Override: New routing='${routing}'`);
-        }
         
         // Parse planned_date if it exists
         let plannedDate = null;
