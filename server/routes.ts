@@ -4059,6 +4059,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Sync active work orders from Fulfil API to local database
+  app.post("/api/fulfil/sync-active-work-orders", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { FulfilAPIService } = await import("./fulfil-api.js");
+      const fulfilAPI = new FulfilAPIService();
+      fulfilAPI.setApiKey(process.env.FULFIL_ACCESS_TOKEN);
+
+      // Test connection first
+      const connectionTest = await fulfilAPI.testConnection();
+      if (!connectionTest.connected) {
+        return res.status(500).json({
+          success: false,
+          message: `Fulfil API connection failed: ${connectionTest.message}`
+        });
+      }
+
+      console.log("Starting sync of active work orders from Fulfil to local database...");
+      
+      // Fetch active work orders from Fulfil API
+      const result = await fulfilAPI.getActiveProductionOrdersWithWorkOrders(200, 0);
+      
+      console.log(`Found ${result.workOrders.length} active work orders to sync`);
+
+      // Clear old 'done' work orders from active_work_orders table first
+      await storage.deleteActiveWorkOrdersByState('done');
+      
+      let synced = 0;
+      let failed = 0;
+
+      // Sync each work order to the active_work_orders table
+      for (const wo of result.workOrders) {
+        try {
+          // Extract required fields from the work order
+          const activeWorkOrder: InsertActiveWorkOrder = {
+            id: wo.id,
+            productionOrderId: wo.production?.id || 0,
+            workCenter: wo.work_center?.name || wo['work_center.name'] || 'Unknown',
+            operation: wo.operation?.name || wo['operation.name'] || 'Unknown',
+            routing: wo.routing || 'Standard',
+            state: wo.state || 'waiting',
+            rec_name: wo.rec_name || '',
+            planned_date: wo.planned_date || null,
+            quantity_done: wo.quantity_done || 0,
+            quantity_pending: wo.quantity_pending || wo.quantity || 0,
+            employee_id: wo.employee?.id || wo['employee.id'] || null,
+            employee_name: wo.employee?.name || wo['employee.name'] || null,
+            production_routing: wo.production?.routing?.name || null,
+            production_number: wo.production?.number || null,
+            production_state: wo.production?.state || null,
+            notes: wo.notes || null,
+            sequence: wo.sequence || 0,
+            product_code: wo.production?.product?.code || null,
+            product_name: wo.production?.product?.name || null
+          };
+
+          await storage.upsertActiveWorkOrder(activeWorkOrder);
+          synced++;
+        } catch (error) {
+          console.error(`Failed to sync work order ${wo.id}:`, error);
+          failed++;
+        }
+      }
+
+      // Update sync time
+      await storage.updateActiveWorkOrderSyncTime();
+
+      console.log(`Sync complete: ${synced} work orders synced, ${failed} failed`);
+
+      res.json({
+        success: true,
+        message: `Successfully synced ${synced} active work orders`,
+        synced,
+        failed,
+        total: result.workOrders.length,
+        lastSyncedAt: new Date()
+      });
+
+    } catch (error) {
+      console.error("Error syncing active work orders:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to sync active work orders",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Calculate estimated completion times for active MOs using UPH data
   app.get("/api/fulfil/mo-time-estimates", async (req: Request, res: Response) => {
     try {

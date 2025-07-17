@@ -150,39 +150,68 @@ export async function getUnassignedWorkOrders(): Promise<WorkOrderToAssign[]> {
     const assignedIds = new Set(assignedWorkOrderIds.map(a => a.workOrderId));
     console.log(`Found ${assignedIds.size} work orders with active assignments`);
     
-    // Fetch production orders with embedded work orders from API
-    const response = await fetch('http://localhost:3000/api/production-orders');
-    if (!response.ok) {
-      throw new Error('Failed to fetch production orders');
-    }
+    // Get production orders and work orders from database
+    const productionOrdersData = await db
+      .select({
+        id: productionOrders.id,
+        moNumber: productionOrders.moNumber,
+        quantity: productionOrders.quantity,
+        routing: productionOrders.routing,
+        status: productionOrders.status,
+        state: productionOrders.state
+      })
+      .from(productionOrders)
+      .where(
+        and(
+          not(eq(productionOrders.status, 'Done')),
+          not(eq(productionOrders.state, 'done'))
+        )
+      );
+    console.log(`Found ${productionOrdersData.length} active production orders in database`);
     
-    const productionOrdersData = await response.json();
-    console.log(`Fetched ${productionOrdersData.length} production orders from API`);
+    // Get work orders for active production orders
+    const workOrdersData = await db
+      .select({
+        id: workOrders.id,
+        workCenter: workOrders.workCenter,
+        operation: workOrders.operation,
+        routing: workOrders.routing,
+        quantity: workOrders.quantity,
+        productionOrderId: workOrders.productionOrderId,
+        moNumber: workOrders.moNumber,
+        state: workOrders.state
+      })
+      .from(workOrders)
+      .where(
+        inArray(
+          workOrders.productionOrderId,
+          productionOrdersData.map(po => po.id)
+        )
+      );
     
-    // Extract all work orders from production orders
+    console.log(`Found ${workOrdersData.length} work orders for active production orders`);
+    
+    // Extract all unassigned work orders
     const unassignedWorkOrders: WorkOrderToAssign[] = [];
     
-    for (const mo of productionOrdersData) {
-      // Skip production orders with zero quantity
-      if (!mo.quantity || mo.quantity <= 0) continue;
+    for (const wo of workOrdersData) {
+      // Skip if already assigned or if state is finished/done
+      if (assignedIds.has(wo.id) || wo.state === 'finished' || wo.state === 'done') {
+        continue;
+      }
       
-      // Process embedded work orders
-      if (mo.workOrders && Array.isArray(mo.workOrders)) {
-        for (const wo of mo.workOrders) {
-          // Skip if already assigned or if state is finished/done
-          if (assignedIds.has(wo.id) || wo.state === 'finished' || wo.state === 'done') {
-            continue;
-          }
-          
-          // Add to unassigned list
-          unassignedWorkOrders.push({
-            id: wo.id,
-            workCenter: wo.workCenter || 'Unknown',
-            operation: wo.operation || '',
-            routing: mo.routing || '',
-            quantity: mo.quantity,
-            productionOrderId: mo.id,
-            moNumber: mo.moNumber || '',
+      const mo = productionOrdersData.find(p => p.id === wo.productionOrderId);
+      if (!mo || !mo.quantity || mo.quantity <= 0) continue;
+      
+      // Add to unassigned list
+      unassignedWorkOrders.push({
+        id: wo.id,
+        workCenter: wo.workCenter || 'Unknown',
+        operation: wo.operation || '',
+        routing: wo.routing || mo.routing || '',
+        quantity: wo.quantity || mo.quantity,
+        productionOrderId: wo.productionOrderId,
+        moNumber: wo.moNumber || mo.moNumber || '',
             productName: mo.productName || ''
           });
         }

@@ -61,6 +61,26 @@ export const workOrders = pgTable("work_orders", {
   operatorName: text("operator_name"), // Denormalized operator name
 });
 
+// Active Work Orders table - stores current work orders from Fulfil for planning
+export const activeWorkOrders = pgTable("active_work_orders", {
+  id: integer("id").primaryKey(), // Use Fulfil work order ID as primary key
+  productionOrderId: integer("production_order_id").notNull().references(() => productionOrders.id, { onDelete: "cascade" }),
+  moNumber: text("mo_number").notNull(),
+  productName: text("product_name").notNull(),
+  productCode: text("product_code"),
+  workCenter: text("work_center").notNull(), // Display work center (Cutting, Assembly, Packaging)
+  originalWorkCenter: text("original_work_center"), // Original from Fulfil
+  operation: text("operation").notNull(),
+  routing: text("routing").notNull(),
+  state: text("state").notNull(), // request, draft, waiting, assigned, running, finished, done
+  quantity: integer("quantity").notNull(),
+  plannedDate: timestamp("planned_date"),
+  rec_name: text("rec_name"),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
 export const operators = pgTable("operators", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -235,6 +255,12 @@ export const insertWorkOrderSchema = createInsertSchema(workOrders).omit({
   id: true,
 });
 
+export const insertActiveWorkOrderSchema = createInsertSchema(activeWorkOrders).omit({
+  lastSyncedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertOperatorSchema = createInsertSchema(operators).omit({
   id: true,
   lastActiveDate: true,
@@ -242,7 +268,8 @@ export const insertOperatorSchema = createInsertSchema(operators).omit({
 
 export const insertUphDataSchema = createInsertSchema(uphData).omit({
   id: true,
-  lastUpdated: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 export const insertBatchSchema = createInsertSchema(batches).omit({
@@ -278,6 +305,8 @@ export type ProductionOrder = typeof productionOrders.$inferSelect;
 export type InsertProductionOrder = z.infer<typeof insertProductionOrderSchema>;
 export type WorkOrder = typeof workOrders.$inferSelect;
 export type InsertWorkOrder = z.infer<typeof insertWorkOrderSchema>;
+export type ActiveWorkOrder = typeof activeWorkOrders.$inferSelect;
+export type InsertActiveWorkOrder = z.infer<typeof insertActiveWorkOrderSchema>;
 export type Operator = typeof operators.$inferSelect;
 export type InsertOperator = z.infer<typeof insertOperatorSchema>;
 export type UphData = typeof uphData.$inferSelect;

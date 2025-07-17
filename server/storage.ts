@@ -7,6 +7,7 @@ import {
   batches,
   historicalUph,
   workCycles,
+  activeWorkOrders,
   type User, 
   type InsertUser,
   type ProductionOrder,
@@ -18,7 +19,9 @@ import {
   type UphData,
   type InsertUphData,
   type Batch,
-  type InsertBatch
+  type InsertBatch,
+  type ActiveWorkOrder,
+  type InsertActiveWorkOrder
 } from "@shared/schema";
 
 export interface IStorage {
@@ -59,6 +62,14 @@ export interface IStorage {
   createBatch(batch: InsertBatch): Promise<Batch>;
   updateBatch(id: number, updates: Partial<Batch>): Promise<Batch | undefined>;
   assignProductionOrdersToBatch(productionOrderIds: number[], batchId: string): Promise<void>;
+
+  // Active Work Orders
+  upsertActiveWorkOrder(workOrder: InsertActiveWorkOrder): Promise<ActiveWorkOrder>;
+  getActiveWorkOrders(states?: string[]): Promise<ActiveWorkOrder[]>;
+  getActiveWorkOrderById(id: number): Promise<ActiveWorkOrder | undefined>;
+  deleteActiveWorkOrdersByState(state: string): Promise<void>;
+  deleteActiveWorkOrderById(id: number): Promise<void>;
+  updateActiveWorkOrderSyncTime(): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -97,7 +108,7 @@ export class MemStorage implements IStorage {
     ];
 
     testOperators.forEach(op => {
-      const operator = { ...op, id: this.currentId++, isActive: true, uphCalculationWindow: 30, slackUserId: null, lastActiveDate: new Date() };
+      const operator = { ...op, id: this.currentId++, fulfilId: null, isActive: true, uphCalculationWindow: 30, slackUserId: null, lastActiveDate: new Date() };
       this.operators.set(operator.id, operator);
     });
 
@@ -121,7 +132,25 @@ export class MemStorage implements IStorage {
     ];
 
     uphTestData.forEach(uph => {
-      const uphRecord = { ...uph, id: this.currentId++, calculationPeriod: 30, lastUpdated: new Date() };
+      const operator = this.operators.get(uph.operatorId);
+      const uphRecord = { 
+        id: this.currentId++,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        operatorId: uph.operatorId,
+        operatorName: operator?.name || 'Unknown',
+        workCenter: uph.workCenter,
+        operation: uph.operation,
+        productRouting: uph.routing,
+        uph: uph.unitsPerHour,
+        unitsPerHour: uph.unitsPerHour,
+        observationCount: 10,
+        calculationPeriod: 30,
+        metaId: null,
+        totalDurationHours: 10,
+        totalQuantity: uph.unitsPerHour * 10,
+        dataSource: 'manual' as const
+      };
       this.uphData.set(uphRecord.id, uphRecord);
     });
 
@@ -136,9 +165,6 @@ export class MemStorage implements IStorage {
     ];
 
     testPOs.forEach(po => {
-      const productionOrder = { ...po, id: this.currentId++, createdAt: new Date(), fulfilId: null };
-      this.productionOrders.set(productionOrder.id, productionOrder);
-
       // Determine routing based on product name
       let routing = "Lifetime Leash";
       if (po.productName.includes("Harness")) routing = "Lifetime Harness";
@@ -146,6 +172,20 @@ export class MemStorage implements IStorage {
       else if (po.productName.includes("Fi Snap")) routing = "Fi Snap";
       else if (po.productName.includes("Lite Leash")) routing = "Lifetime Lite Leash";
       else if (po.productName.includes("Bowl")) routing = "Lifetime Bowl";
+      
+      const productionOrder = { 
+        ...po, 
+        id: this.currentId++, 
+        fulfilId: null,
+        routing: routing,
+        rec_name: po.moNumber,
+        state: po.status.toLowerCase(),
+        planned_date: po.dueDate.toISOString().split('T')[0],
+        create_date: new Date().toISOString(),
+        product_code: null,
+        createdAt: new Date()
+      };
+      this.productionOrders.set(productionOrder.id, productionOrder);
 
       // Create work orders for each production order
       const workOrdersData = [
@@ -163,7 +203,38 @@ export class MemStorage implements IStorage {
           estimatedHours: null,
           actualHours: null,
           status: "Pending",
-          fulfilId: null
+          fulfilId: null,
+          type: null,
+          priority: po.priority,
+          rec_name: `WO${this.currentId} | ${wo.operation} | ${po.moNumber}`,
+          state: "waiting",
+          planned_date: po.dueDate.toISOString().split('T')[0],
+          create_date: new Date().toISOString(),
+          write_date: new Date().toISOString(),
+          quantityDone: 0,
+          quantity: po.quantity,
+          createdBy: null,
+          operatorName: null,
+          operatorFullName: null,
+          moNumber: po.moNumber,
+          productCode: null,
+          productName: po.productName,
+          assignedByAi: false,
+          aiConfidence: null,
+          aiReasoning: null,
+          work_center: wo.workCenter,
+          cycleIds: [],
+          totalCycleDuration: null,
+          quantity_done: 0,
+          production: productionOrder.id,
+          production_display_name: po.moNumber,
+          operation_display_name: wo.operation,
+          work_center_display_name: wo.workCenter,
+          operationId: null,
+          operator: null,
+          cost: null,
+          workCenterName: wo.workCenter,
+          operationName: wo.operation
         };
         this.workOrders.set(workOrder.id, workOrder);
       });
@@ -211,7 +282,21 @@ export class MemStorage implements IStorage {
 
   async createProductionOrder(po: InsertProductionOrder): Promise<ProductionOrder> {
     const id = this.currentId++;
-    const productionOrder: ProductionOrder = { ...po, id, createdAt: new Date() };
+    const productionOrder: ProductionOrder = { 
+      ...po, 
+      id,
+      createdAt: new Date(),
+      routing: po.routing ?? null,
+      dueDate: po.dueDate ?? null,
+      batchId: po.batchId ?? null,
+      priority: po.priority ?? null,
+      fulfilId: po.fulfilId ?? null,
+      rec_name: po.rec_name ?? null,
+      state: po.state ?? null,
+      planned_date: po.planned_date ?? null,
+      create_date: po.create_date ?? null,
+      product_code: po.product_code ?? null
+    };
     this.productionOrders.set(id, productionOrder);
     return productionOrder;
   }
@@ -243,7 +328,37 @@ export class MemStorage implements IStorage {
 
   async createWorkOrder(wo: InsertWorkOrder): Promise<WorkOrder> {
     const id = this.currentId++;
-    const workOrder: WorkOrder = { ...wo, id };
+    const workOrder: WorkOrder = { 
+      ...wo, 
+      id,
+      // Handle all nullable fields
+      type: wo.type ?? null,
+      status: wo.status ?? null,
+      priority: wo.priority ?? null,
+      fulfilId: wo.fulfilId ?? null,
+      rec_name: wo.rec_name ?? null,
+      state: wo.state ?? null,
+      planned_date: wo.planned_date ?? null,
+      create_date: wo.create_date ?? null,
+      cycleIds: wo.cycleIds ?? [],
+      totalCycleDuration: wo.totalCycleDuration ?? null,
+      quantity_done: wo.quantity_done ?? null,
+      production: wo.production ?? null,
+      estimatedHours: wo.estimatedHours ?? null,
+      actualHours: wo.actualHours ?? null,
+      assignedOperatorId: wo.assignedOperatorId ?? null,
+      operatorName: wo.operatorName ?? null,
+      assignedByAi: wo.assignedByAi ?? false,
+      aiConfidence: wo.aiConfidence ?? null,
+      aiReasoning: wo.aiReasoning ?? null,
+      operationId: wo.operationId ?? null,
+      operator: wo.operator ?? null,
+      cost: wo.cost ?? null,
+      workCenterName: wo.workCenterName ?? null,
+      operationName: wo.operationName ?? null,
+      work_center: wo.work_center ?? null,
+      quantity: wo.quantity ?? null
+    };
     this.workOrders.set(id, workOrder);
     return workOrder;
   }
@@ -269,7 +384,19 @@ export class MemStorage implements IStorage {
 
   async createOperator(operator: InsertOperator): Promise<Operator> {
     const id = this.currentId++;
-    const newOperator: Operator = { ...operator, id, lastActiveDate: new Date() };
+    const newOperator: Operator = { 
+      ...operator, 
+      id, 
+      lastActiveDate: new Date(),
+      fulfilId: operator.fulfilId ?? null,
+      slackUserId: operator.slackUserId ?? null,
+      availableHours: operator.availableHours ?? null,
+      workCenters: operator.workCenters ?? null,
+      routings: operator.routings ?? null,
+      operations: operator.operations ?? null,
+      isActive: operator.isActive ?? true,
+      uphCalculationWindow: operator.uphCalculationWindow ?? null
+    };
     this.operators.set(id, newOperator);
     return newOperator;
   }
@@ -339,7 +466,16 @@ export class MemStorage implements IStorage {
 
   async createBatch(batch: InsertBatch): Promise<Batch> {
     const id = this.currentId++;
-    const newBatch: Batch = { ...batch, id, createdAt: new Date() };
+    const newBatch: Batch = { 
+      ...batch, 
+      id, 
+      createdAt: new Date(),
+      status: batch.status ?? null,
+      dueDate: batch.dueDate ?? null,
+      priority: batch.priority ?? null,
+      description: batch.description ?? null,
+      totalEstimatedHours: batch.totalEstimatedHours ?? null
+    };
     this.batches.set(id, newBatch);
     return newBatch;
   }
@@ -360,6 +496,62 @@ export class MemStorage implements IStorage {
         const updated = { ...po, batchId };
         this.productionOrders.set(id, updated);
       }
+    });
+  }
+
+  // Active Work Orders (MemStorage implementation - not used in production)
+  private activeWorkOrders: Map<number, ActiveWorkOrder> = new Map();
+  
+  async upsertActiveWorkOrder(workOrder: InsertActiveWorkOrder): Promise<ActiveWorkOrder> {
+    const id = workOrder.id!;
+    const existing = this.activeWorkOrders.get(id);
+    const now = new Date();
+    
+    if (existing) {
+      const updated = { ...existing, ...workOrder, updatedAt: now };
+      this.activeWorkOrders.set(id, updated);
+      return updated;
+    } else {
+      const newOrder: ActiveWorkOrder = {
+        ...workOrder,
+        id,
+        lastSyncedAt: now,
+        createdAt: now,
+        updatedAt: now
+      } as ActiveWorkOrder;
+      this.activeWorkOrders.set(id, newOrder);
+      return newOrder;
+    }
+  }
+
+  async getActiveWorkOrders(states?: string[]): Promise<ActiveWorkOrder[]> {
+    const all = Array.from(this.activeWorkOrders.values());
+    if (states && states.length > 0) {
+      return all.filter(order => states.includes(order.state));
+    }
+    return all;
+  }
+
+  async getActiveWorkOrderById(id: number): Promise<ActiveWorkOrder | undefined> {
+    return this.activeWorkOrders.get(id);
+  }
+
+  async deleteActiveWorkOrdersByState(state: string): Promise<void> {
+    const toDelete = Array.from(this.activeWorkOrders.entries())
+      .filter(([_, order]) => order.state === state)
+      .map(([id]) => id);
+    
+    toDelete.forEach(id => this.activeWorkOrders.delete(id));
+  }
+
+  async deleteActiveWorkOrderById(id: number): Promise<void> {
+    this.activeWorkOrders.delete(id);
+  }
+
+  async updateActiveWorkOrderSyncTime(): Promise<void> {
+    const now = new Date();
+    this.activeWorkOrders.forEach((order, id) => {
+      this.activeWorkOrders.set(id, { ...order, lastSyncedAt: now });
     });
   }
 }
@@ -724,6 +916,58 @@ export class DatabaseStorage implements IStorage {
     }
 
     return result;
+  }
+
+  // Active Work Orders
+  async upsertActiveWorkOrder(workOrder: InsertActiveWorkOrder): Promise<ActiveWorkOrder> {
+    const [result] = await db
+      .insert(activeWorkOrders)
+      .values(workOrder)
+      .onConflictDoUpdate({
+        target: activeWorkOrders.id,
+        set: {
+          ...workOrder,
+          updatedAt: new Date()
+        }
+      })
+      .returning();
+    return result;
+  }
+
+  async getActiveWorkOrders(states?: string[]): Promise<ActiveWorkOrder[]> {
+    if (states && states.length > 0) {
+      return await db
+        .select()
+        .from(activeWorkOrders)
+        .where(inArray(activeWorkOrders.state, states));
+    }
+    return await db.select().from(activeWorkOrders);
+  }
+
+  async getActiveWorkOrderById(id: number): Promise<ActiveWorkOrder | undefined> {
+    const [workOrder] = await db
+      .select()
+      .from(activeWorkOrders)
+      .where(eq(activeWorkOrders.id, id));
+    return workOrder || undefined;
+  }
+
+  async deleteActiveWorkOrdersByState(state: string): Promise<void> {
+    await db
+      .delete(activeWorkOrders)
+      .where(eq(activeWorkOrders.state, state));
+  }
+
+  async deleteActiveWorkOrderById(id: number): Promise<void> {
+    await db
+      .delete(activeWorkOrders)
+      .where(eq(activeWorkOrders.id, id));
+  }
+
+  async updateActiveWorkOrderSyncTime(): Promise<void> {
+    await db
+      .update(activeWorkOrders)
+      .set({ lastSyncedAt: new Date() });
   }
 }
 
