@@ -121,7 +121,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 "work_center.name",
                 "operation.name", 
                 "state",
-                "production" // MO ID to match with
+                "production", // MO ID to match with
+                "employee.name", // Add employee name for finished work orders
+                "employee.id" // Add employee ID for finished work orders
               ]
             })
           });
