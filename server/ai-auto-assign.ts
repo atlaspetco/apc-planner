@@ -584,26 +584,51 @@ Return assignments as JSON:
       }
     }
     
-    // Insert all assignments in one batch for better performance
+    // Insert assignments with better error handling
     if (assignmentRecords.length > 0) {
+      console.log(`Saving ${assignmentRecords.length} assignments to database...`);
+      
+      // First, clear any existing AI assignments for these work orders
+      const workOrderIds = assignmentRecords.map(a => a.workOrderId);
       try {
-        console.log(`Saving ${assignmentRecords.length} assignments to database...`);
-        await db.insert(workOrderAssignments).values(assignmentRecords);
-      } catch (error) {
-        console.error("Error inserting assignments:", error);
-        // If bulk insert fails, fall back to smaller batches
-        const batchSize = 50;
-        for (let i = 0; i < assignmentRecords.length; i += batchSize) {
-          const batch = assignmentRecords.slice(i, i + batchSize);
-          try {
-            await db.insert(workOrderAssignments).values(batch);
-          } catch (batchError) {
-            console.error("Error inserting assignment batch:", batchError);
-            const failedIds = batch.map(a => a.workOrderId);
-            failedAssignments.push(...failedIds);
+        await db
+          .delete(workOrderAssignments)
+          .where(
+            and(
+              inArray(workOrderAssignments.workOrderId, workOrderIds),
+              eq(workOrderAssignments.assignedBy, "AI Auto-Assign")
+            )
+          );
+      } catch (deleteError) {
+        console.error("Error clearing existing assignments:", deleteError);
+      }
+      
+      // Insert in smaller batches to avoid database timeouts
+      const batchSize = 20;
+      let savedCount = 0;
+      
+      for (let i = 0; i < assignmentRecords.length; i += batchSize) {
+        const batch = assignmentRecords.slice(i, i + batchSize);
+        try {
+          await db.insert(workOrderAssignments).values(batch);
+          savedCount += batch.length;
+          console.log(`Saved ${savedCount}/${assignmentRecords.length} assignments...`);
+        } catch (batchError) {
+          console.error(`Error inserting batch ${i/batchSize + 1}:`, batchError);
+          // Try individual inserts for failed batch
+          for (const record of batch) {
+            try {
+              await db.insert(workOrderAssignments).values([record]);
+              savedCount++;
+            } catch (individualError) {
+              console.error(`Failed to save assignment for WO ${record.workOrderId}:`, individualError);
+              failedAssignments.push(record.workOrderId);
+            }
           }
         }
       }
+      
+      console.log(`Successfully saved ${savedCount} out of ${assignmentRecords.length} assignments`);
     }
     
     // Calculate final metrics
