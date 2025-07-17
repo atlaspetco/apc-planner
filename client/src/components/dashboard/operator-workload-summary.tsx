@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, Clock, TrendingUp } from 'lucide-react';
+import { Users, Clock, TrendingUp, Expand } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { OperatorWorkloadDetailModal } from './operator-workload-detail-modal';
 
 interface OperatorWorkload {
   operatorId: number;
@@ -18,6 +20,8 @@ interface OperatorWorkloadSummaryProps {
 }
 
 export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummaryProps) {
+  const [selectedOperator, setSelectedOperator] = useState<any | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   // Fetch operator data for workload calculations
   const { data: operatorsData, error: operatorsError } = useQuery({
     queryKey: ["/api/operators"],
@@ -113,15 +117,29 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-      <div className="flex items-center space-x-2 mb-4">
-        <Users className="text-blue-600 w-5 h-5" />
-        <h2 className="text-lg font-semibold text-gray-900">Operator Workload Summary</h2>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <Users className="text-blue-600 w-5 h-5" />
+          <h2 className="text-lg font-semibold text-gray-900">Operator Workload Summary</h2>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {workloadSummary.slice(0, 6).map((operator) => (
-          <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+          <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100 relative">
+            {/* Expand button in top right */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute top-2 right-2 p-1 h-6 w-6"
+              onClick={() => {
+                setSelectedOperator(operator);
+                setIsModalOpen(true);
+              }}
+            >
+              <Expand className="w-4 h-4" />
+            </Button>
+            
             {/* Operator Header */}
             <div className="flex items-center space-x-3 mb-3">
               <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
@@ -131,7 +149,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
                 <div className="font-medium text-gray-900">{operator.operatorName}</div>
                 <div className="text-xs text-gray-500">{operator.observations} observations</div>
               </div>
-              <div className="ml-auto text-right">
+              <div className="ml-auto text-right pr-6">
                 <div className="text-lg font-bold text-gray-900">{operator.totalEstimatedHours.toFixed(1)}h</div>
                 <div className="text-xs text-gray-500">of {operator.availableHours}h available</div>
               </div>
@@ -194,7 +212,20 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
             <div className="text-sm text-gray-600">Avg Capacity</div>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+
+      {/* Operator Workload Detail Modal */}
+      {selectedOperator && (
+        <OperatorWorkloadDetailModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedOperator(null);
+          }}
+          operator={selectedOperator}
+        />
+      )}
+    </>
   );
 }

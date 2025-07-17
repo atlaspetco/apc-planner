@@ -4570,6 +4570,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Send operator workload summary to Slack
+  app.post("/api/slack/send-workload", async (req, res) => {
+    try {
+      const { operatorId, workloadSummary } = req.body;
+      
+      if (!operatorId || !workloadSummary) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Missing required fields: operatorId and workloadSummary" 
+        });
+      }
+
+      // Format the workload summary message
+      const { operatorName, totalEstimatedHours, availableHours, capacityPercent, totalAssignments, routingSummary } = workloadSummary;
+      
+      let message = `📊 *Weekly Workload Summary for ${operatorName}*\n\n`;
+      message += `📈 *Capacity:* ${capacityPercent}% (${totalEstimatedHours.toFixed(1)}h / ${availableHours}h)\n`;
+      message += `📋 *Total Assignments:* ${totalAssignments} MOs\n\n`;
+      
+      if (routingSummary && routingSummary.length > 0) {
+        message += `*Work by Product Routing:*\n`;
+        routingSummary.forEach((routing: any) => {
+          message += `• ${routing.routing}: ${routing.moCount} MOs, ${routing.totalHours.toFixed(1)}h\n`;
+        });
+      }
+      
+      message += `\n_View full details in the Production Planning Dashboard_`;
+
+      // Import the Slack integration module
+      const { sendMessageToOperator } = await import('./slack-integration.js');
+      
+      // Send the message
+      const success = await sendMessageToOperator(operatorId, message);
+      
+      if (success) {
+        res.json({ 
+          success: true, 
+          message: "Workload summary sent to Slack successfully" 
+        });
+      } else {
+        res.status(500).json({ 
+          success: false, 
+          message: "Failed to send Slack message. Check Slack configuration." 
+        });
+      }
+    } catch (error) {
+      console.error("Error sending workload to Slack:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to send workload summary to Slack",
+        error: error instanceof Error ? error.message : "Unknown error" 
+      });
+    }
+  });
+
   // Helper function to update import status
   global.updateImportStatus = (update: any) => {
     importStatus = { ...importStatus, ...update, lastUpdate: new Date() };
