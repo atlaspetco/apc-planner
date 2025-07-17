@@ -92,20 +92,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Import product routing mapper
       const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
 
-      // Collect all work order IDs from manufacturing orders
-      const allWorkOrderIds = [];
-      manufacturingOrdersData.forEach(mo => {
-        if (mo.works && mo.works.length > 0) {
-          allWorkOrderIds.push(...mo.works);
-        }
-      });
-
-      // Fetch work orders by ID in bulk
+      // Collect all manufacturing order IDs to fetch work orders
+      const moIds = manufacturingOrdersData.map(mo => mo.id);
+      
+      // Fetch work orders by production (MO) ID in bulk
       let allWorkOrders = [];
-      console.log(`All work order IDs to fetch: ${allWorkOrderIds.length}`, allWorkOrderIds);
-      if (allWorkOrderIds.length > 0) {
+      console.log(`Fetching work orders for ${moIds.length} manufacturing orders...`);
+      if (moIds.length > 0) {
         try {
-          console.log(`Fetching ${allWorkOrderIds.length} work orders by ID...`);
           const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work/search_read', {
             method: 'PUT',
             headers: {
@@ -114,7 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             },
             body: JSON.stringify({
               filters: [
-                ["id", "in", allWorkOrderIds] // Get specific work orders by ID
+                ["production", "in", moIds] // Get work orders by manufacturing order IDs
               ],
               fields: [
                 "id",
