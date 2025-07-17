@@ -1,0 +1,123 @@
+diff --git a/client/src/components/dashboard/operator-workload-summary.tsx b/client/src/components/dashboard/operator-workload-summary.tsx
+index 131d932ebf5955381bdbfa686abd5b3676e69fb0..0844bacf7aba3112b75e2b8b6b8608be98795e91 100644
+--- a/client/src/components/dashboard/operator-workload-summary.tsx
++++ b/client/src/components/dashboard/operator-workload-summary.tsx
+@@ -19,93 +19,100 @@ interface OperatorWorkloadSummaryProps {
+   assignments: Map<number, any>;
+ }
+ 
+ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummaryProps) {
+   const [selectedOperator, setSelectedOperator] = useState<any | null>(null);
+   const [isModalOpen, setIsModalOpen] = useState(false);
+   // Fetch operator data for workload calculations
+   const { data: operatorsData, error: operatorsError } = useQuery({
+     queryKey: ["/api/operators"],
+     staleTime: 5 * 60 * 1000, // 5 minutes
+   });
+ 
+   // Fetch UPH data for more accurate time calculations
+   const { data: uphData } = useQuery({
+     queryKey: ["/api/uph-analytics/table-data"],
+     staleTime: 5 * 60 * 1000, // 5 minutes
+   });
+ 
+   // Calculate workload summary from assignments
+   const workloadSummary = React.useMemo(() => {
+     // Handle both direct array and wrapped operators response
+     const operators = operatorsData?.operators || operatorsData || [];
+     if (!assignments || !operators.length) return [];
+ 
+     const operatorMap = new Map();
++    const operatorMoSets = new Map<number, Set<number>>();
++
+     operators.forEach(op => {
+       operatorMap.set(op.id, {
+         operatorId: op.id,
+         operatorName: op.name,
+         totalAssignments: 0,
+         totalEstimatedHours: 0,
+         availableHours: op.availableHours || 40, // Default 40h/week
+         observations: op.observations || 0,
+         assignments: []
+       });
++      operatorMoSets.set(op.id, new Set());
+     });
+ 
+     // Process assignments to calculate workload using UPH data
+     Array.from(assignments.values()).forEach(assignment => {
+       const operator = operatorMap.get(assignment.operatorId);
+-      if (operator) {
++      if (!operator) return;
++
++      const moSet = operatorMoSets.get(operator.operatorId)!;
++      const isNewMo = assignment.productionOrderId && !moSet.has(assignment.productionOrderId);
++
++      if (isNewMo) {
++        moSet.add(assignment.productionOrderId);
+         operator.totalAssignments++;
+-        // Store complete assignment data for the modal
+         operator.assignments.push({
+           ...assignment,
+-          // Ensure all required fields are present
+           productRouting: assignment.productRouting || assignment.routing || 'Unknown',
+           workCenter: assignment.workCenter || 'Unknown',
+           quantity: assignment.quantity || 0,
+           productionOrderId: assignment.productionOrderId || null
+         });
+-        
+-        // Calculate estimated hours based on UPH data if available
+-        let estimatedHours = 1; // Default fallback
+-        if (uphData?.uphResults && assignment.quantity > 0) {
+-          const uphEntry = uphData.uphResults.find(entry => 
+-            entry.operatorName === assignment.operatorName &&
+-            entry.workCenter === assignment.workCenter &&
+-            entry.productRouting === (assignment.productRouting || assignment.routing)
+-          );
+-          
+-          if (uphEntry && uphEntry.unitsPerHour > 0) {
+-            estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
+-          }
++      }
++
++      // Calculate estimated hours based on UPH data if available
++      let estimatedHours = 1; // Default fallback
++      if (uphData?.uphResults && assignment.quantity > 0) {
++        const uphEntry = uphData.uphResults.find(entry =>
++          entry.operatorName === assignment.operatorName &&
++          entry.workCenter === assignment.workCenter &&
++          entry.productRouting === (assignment.productRouting || assignment.routing)
++        );
++
++        if (uphEntry && uphEntry.unitsPerHour > 0) {
++          estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
+         }
+-        
+-        operator.totalEstimatedHours += estimatedHours;
+       }
++
++      operator.totalEstimatedHours += estimatedHours;
+     });
+ 
+     // Convert to array and add calculated fields
+     return Array.from(operatorMap.values()).map(operator => {
+       const capacityPercent = Math.round((operator.totalEstimatedHours / operator.availableHours) * 100);
+       
+       // Calculate total observations from UPH data
+       let totalObservations = 0;
+       if (uphData?.uphResults) {
+         const operatorUphEntries = uphData.uphResults.filter(entry => 
+           entry.operatorName === operator.operatorName
+         );
+         totalObservations = operatorUphEntries.reduce((sum, entry) => sum + (entry.observations || 0), 0);
+       }
+       
+       // Estimate completion date based on workload
+       const daysToComplete = Math.ceil(operator.totalEstimatedHours / 8); // 8 hours per day
+       const completionDate = new Date();
+       completionDate.setDate(completionDate.getDate() + daysToComplete);
+       
+       return {
+         ...operator,
+         observations: totalObservations,
+         capacityPercent,
+         estimatedCompletion: completionDate.toLocaleDateString('en-US', { 
