@@ -46,8 +46,8 @@ export function OperatorWorkloadDetailModal({
   });
 
   // Fetch UPH data for accurate time calculations
-  const { data: uphData } = useQuery({
-    queryKey: ["/api/uph-analytics/table-data"],
+  const { data: uphResults } = useQuery({
+    queryKey: ["/api/uph-data"],
     enabled: isOpen,
   });
 
@@ -69,16 +69,16 @@ export function OperatorWorkloadDetailModal({
       
       // Calculate estimated hours based on UPH data if available
       let estimatedHours = 0; // No fallback
-      if (uphData?.uphResults && assignment.quantity > 0) {
-        const uphEntry = uphData.uphResults.find((entry: any) => 
+      if (uphResults && assignment.quantity > 0) {
+        const uphEntry = uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
           entry.productRouting === routing
         );
         
-        if (uphEntry && uphEntry.unitsPerHour > 0) {
-          estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
-          console.log(`Modal: Found UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.unitsPerHour} UPH`);
+        if (uphEntry && uphEntry.uph > 0) {
+          estimatedHours = assignment.quantity / uphEntry.uph;
+          console.log(`Modal: Found UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH`);
         } else {
           console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}`);
         }
@@ -97,7 +97,7 @@ export function OperatorWorkloadDetailModal({
     });
     
     return grouped;
-  }, [operator.assignments, productionOrdersData, uphData]);
+  }, [operator.assignments, productionOrdersData, uphResults]);
 
   // Calculate total hours per routing
   const routingSummary = Array.from(assignmentsByRouting.entries()).map(([routing, workOrders]) => {

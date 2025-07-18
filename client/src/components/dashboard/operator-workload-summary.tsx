@@ -30,8 +30,8 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
   });
 
   // Fetch UPH data for more accurate time calculations
-  const { data: uphData } = useQuery({
-    queryKey: ["/api/uph-analytics/table-data"],
+  const { data: uphResults } = useQuery({
+    queryKey: ["/api/uph-data"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
@@ -42,7 +42,13 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
     if (!assignmentsData?.assignments || !operators.length) return [];
 
     console.log('Processing assignments:', assignmentsData.assignments.length);
-    console.log('UPH data available:', uphData?.uphResults?.length || 0);
+    console.log('UPH data available:', uphResults?.length || 0);
+    
+    // Debug log some sample UPH data
+    if (uphResults?.length > 0) {
+      const sampleUph = uphResults.slice(0, 3);
+      console.log('Sample UPH data:', sampleUph);
+    }
 
     const operatorMap = new Map();
     operators.forEach(op => {
@@ -95,17 +101,17 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         if (assignment.workOrderState !== 'finished') {
           // Calculate estimated hours based on UPH data if available
           let estimatedHours = 0;
-          if (uphData?.uphResults && assignment.quantity > 0) {
-            const uphEntry = uphData.uphResults.find(entry => 
+          if (uphResults && assignment.quantity > 0) {
+            const uphEntry = uphResults.find(entry => 
               entry.operatorName === operator.operatorName &&
               entry.workCenter === workCenter &&
               entry.productRouting === routing
             );
             
-            if (uphEntry && uphEntry.unitsPerHour > 0) {
-              estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
-              productData.uph = uphEntry.unitsPerHour;
-              console.log(`Found UPH for ${operator.operatorName} - ${workCenter}/${routing}: ${uphEntry.unitsPerHour} UPH, Hours: ${estimatedHours}`);
+            if (uphEntry && uphEntry.uph > 0) {
+              estimatedHours = assignment.quantity / uphEntry.uph;
+              productData.uph = uphEntry.uph;
+              console.log(`Found UPH for ${operator.operatorName} - ${workCenter}/${routing}: ${uphEntry.uph} UPH, Hours: ${estimatedHours}`);
             } else {
               console.log(`No UPH data found for ${operator.operatorName} - ${workCenter}/${routing}`);
             }
@@ -123,11 +129,11 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
       
       // Calculate total observations from UPH data
       let totalObservations = 0;
-      if (uphData?.uphResults) {
-        const operatorUphEntries = uphData.uphResults.filter(entry => 
+      if (uphResults) {
+        const operatorUphEntries = uphResults.filter(entry => 
           entry.operatorName === operator.operatorName
         );
-        totalObservations = operatorUphEntries.reduce((sum, entry) => sum + (entry.observations || 0), 0);
+        totalObservations = operatorUphEntries.reduce((sum, entry) => sum + (entry.observationCount || 0), 0);
       }
       
       // Estimate completion date based on workload
@@ -148,7 +154,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
       };
     }).filter(operator => operator.totalAssignments > 0) // Only show operators with assignments
      .sort((a, b) => b.totalAssignments - a.totalAssignments); // Sort by workload
-  }, [assignmentsData, operatorsData, uphData]);
+  }, [assignmentsData, operatorsData, uphResults]);
 
 
 
