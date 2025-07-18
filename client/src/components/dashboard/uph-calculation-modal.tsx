@@ -20,10 +20,10 @@ interface WorkCycleDetail {
   moNumber: string;
   woNumber: string;
   quantity: number;
-  duration: number;
+  duration?: number;
   durationHours: number;
   uph: number;
-  date: string;
+  date?: string;
   operation: string;
   workCenter: string;
 }
@@ -146,7 +146,7 @@ export function UphCalculationModal({
                     {cyclesData.cycles.map((cycle: WorkCycleDetail) => (
                       <TableRow key={cycle.id}>
                         <TableCell className="text-sm">
-                          {format(new Date(cycle.date), 'MMM d, yyyy')}
+                          {cycle.date ? format(new Date(cycle.date), 'MMM d, yyyy') : 'N/A'}
                         </TableCell>
                         <TableCell className="font-mono text-sm">{cycle.moNumber}</TableCell>
                         <TableCell className="font-mono text-sm">{cycle.woNumber}</TableCell>

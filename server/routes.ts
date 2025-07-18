@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { FulfilAPIService } from "./fulfil-api";
 import { db } from "./db.js";
 import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph } from "../shared/schema.js";
-import { sql, eq, desc, or, and } from "drizzle-orm";
+import { sql, eq, desc, or, and, inArray } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
 
@@ -3500,56 +3500,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Missing required parameters' });
       }
 
+      console.log('UPH calculation details request:', { operatorName, workCenter, routing });
+
       // Handle Assembly aggregation - Assembly includes both Sewing and Rope work centers
-      let workCenterCondition;
+      let whereConditions = [];
       if (workCenter === 'Assembly') {
-        workCenterCondition = or(
-          eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
-          eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
-          eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
-          eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
+        whereConditions.push(
+          eq(workCycles.work_cycles_operator_rec_name, operatorName as string),
+          or(
+            eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
+            eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
+            eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
+            eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
+          ),
+          eq(workCycles.work_production_routing_rec_name, routing as string)
         );
       } else {
-        workCenterCondition = eq(workCycles.work_cycles_work_center_rec_name, workCenter as string);
+        whereConditions.push(
+          eq(workCycles.work_cycles_operator_rec_name, operatorName as string),
+          eq(workCycles.work_cycles_work_center_rec_name, workCenter as string),
+          eq(workCycles.work_production_routing_rec_name, routing as string)
+        );
       }
 
       // Get work cycles for this specific combination
-      const cycles = await db.select({
-        id: workCycles.id,
-        moNumber: workCycles.mo_number,
-        woNumber: workCycles.wo_number,
-        quantity: workCycles.quantity_done,
-        duration: workCycles.duration_seconds,
-        date: workCycles.create_date,
-        operation: workCycles.work_operation_rec_name,
-        workCenter: workCycles.work_cycles_work_center_rec_name
-      })
-      .from(workCycles)
-      .where(
-        and(
-          eq(workCycles.work_cycles_operator_rec_name, operatorName as string),
-          workCenterCondition,
-          eq(workCycles.work_production_routing_rec_name, routing as string)
-        )
-      )
-      .orderBy(workCycles.create_date);
+      let cycles;
+      try {
+        if (workCenter === 'Assembly') {
+          // For Assembly, we need to look for Sewing and Rope work centers using raw SQL
+          cycles = await db.execute(sql`
+            SELECT * FROM work_cycles 
+            WHERE work_cycles_operator_rec_name = ${operatorName}
+            AND work_cycles_work_center_rec_name IN ('Sewing', 'Rope', 'Sewing / Assembly', 'Rope / Assembly')
+            AND work_production_routing_rec_name = ${routing}
+            ORDER BY created_at
+          `);
+        } else {
+          cycles = await db.execute(sql`
+            SELECT * FROM work_cycles 
+            WHERE work_cycles_operator_rec_name = ${operatorName}
+            AND work_cycles_work_center_rec_name = ${workCenter}
+            AND work_production_routing_rec_name = ${routing}
+            ORDER BY created_at
+          `);
+        }
+      } catch (sqlError) {
+        console.error('SQL error in UPH calculation details:', sqlError);
+        throw sqlError;
+      }
+      
+      // Extract rows from the query result
+      const cycleRows = cycles.rows || [];
+      console.log(`Found ${cycleRows.length} cycles for ${operatorName}/${workCenter}/${routing}`);
 
       // Format the cycles with calculated values
-      const formattedCycles = cycles.map(cycle => {
-        const durationHours = cycle.duration / 3600; // Convert seconds to hours
-        const uph = durationHours > 0 ? cycle.quantity / durationHours : 0;
+      const formattedCycles = cycleRows.map(cycle => {
+        const durationSeconds = cycle.work_cycles_duration || 0;
+        const durationHours = durationSeconds / 3600; // Convert seconds to hours
+        const quantityDone = cycle.work_cycles_quantity_done || 0;
+        const uph = durationHours > 0 ? quantityDone / durationHours : 0;
+        
+        // Extract MO/WO numbers from work_rec_name if available
+        let moNumber = 'Unknown';
+        let woNumber = 'Unknown';
+        
+        if (cycle.work_rec_name) {
+          const parts = cycle.work_rec_name.split('|').map(p => p.trim());
+          if (parts[0]?.startsWith('WO')) {
+            woNumber = parts[0];
+          }
+          if (parts[2]?.startsWith('MO')) {
+            moNumber = parts[2];
+          }
+        } else if (cycle.work_production_number) {
+          // Fallback to production number
+          moNumber = cycle.work_production_number;
+        }
         
         return {
           id: cycle.id,
-          moNumber: cycle.moNumber || 'Unknown',
-          woNumber: cycle.woNumber || 'Unknown',
-          quantity: cycle.quantity,
-          duration: cycle.duration,
-          durationHours: durationHours,
-          uph: uph,
-          date: cycle.date,
-          operation: cycle.operation || 'Unknown',
-          workCenter: cycle.workCenter || 'Unknown'
+          moNumber,
+          woNumber,
+          quantity: quantityDone,
+          durationHours: durationHours > 0 ? durationHours : null,
+          uph: Math.round(uph * 100) / 100, // Round to 2 decimal places
+          operation: cycle.work_operation_rec_name || 'Unknown',
+          workCenter: cycle.work_cycles_work_center_rec_name || 'Unknown',
+          date: cycle.created_at || null
         };
       });
 
