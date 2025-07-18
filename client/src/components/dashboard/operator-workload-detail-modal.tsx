@@ -68,7 +68,7 @@ export function OperatorWorkloadDetailModal({
       }
       
       // Calculate estimated hours based on UPH data if available
-      let estimatedHours = 1; // Default fallback
+      let estimatedHours = 0; // No fallback
       if (uphData?.uphResults && assignment.quantity > 0) {
         const uphEntry = uphData.uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
@@ -78,6 +78,9 @@ export function OperatorWorkloadDetailModal({
         
         if (uphEntry && uphEntry.unitsPerHour > 0) {
           estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
+          console.log(`Modal: Found UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.unitsPerHour} UPH`);
+        } else {
+          console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}`);
         }
       }
       

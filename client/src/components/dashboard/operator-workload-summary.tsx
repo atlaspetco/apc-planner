@@ -28,6 +28,12 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
+  // Fetch assignments data for enriched information
+  const { data: assignmentsData } = useQuery({
+    queryKey: ["/api/assignments"],
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
   // Fetch UPH data for more accurate time calculations
   const { data: uphData } = useQuery({
     queryKey: ["/api/uph-analytics/table-data"],
@@ -38,7 +44,10 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
   const workloadSummary = React.useMemo(() => {
     // Handle both direct array and wrapped operators response
     const operators = operatorsData?.operators || operatorsData || [];
-    if (!assignments || !operators.length) return [];
+    if (!assignmentsData?.assignments || !operators.length) return [];
+
+    console.log('Processing assignments:', assignmentsData.assignments.length);
+    console.log('UPH data available:', uphData?.uphResults?.length || 0);
 
     const operatorMap = new Map();
     operators.forEach(op => {
@@ -55,7 +64,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
     });
 
     // Process assignments to calculate workload using UPH data
-    Array.from(assignments.values()).forEach(assignment => {
+    assignmentsData.assignments.forEach(assignment => {
       const operator = operatorMap.get(assignment.operatorId);
       if (operator) {
         operator.totalAssignments++;
@@ -101,6 +110,9 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
             if (uphEntry && uphEntry.unitsPerHour > 0) {
               estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
               productData.uph = uphEntry.unitsPerHour;
+              console.log(`Found UPH for ${operator.operatorName} - ${workCenter}/${routing}: ${uphEntry.unitsPerHour} UPH, Hours: ${estimatedHours}`);
+            } else {
+              console.log(`No UPH data found for ${operator.operatorName} - ${workCenter}/${routing}`);
             }
           }
           
@@ -141,7 +153,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
       };
     }).filter(operator => operator.totalAssignments > 0) // Only show operators with assignments
      .sort((a, b) => b.totalAssignments - a.totalAssignments); // Sort by workload
-  }, [assignments, operatorsData, uphData]);
+  }, [assignmentsData, operatorsData, uphData]);
 
 
 
