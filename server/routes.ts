@@ -3278,11 +3278,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Get all work cycles from database
-      const allCycles = await db.select().from(workCycles);
+      // Direct database query to get stored UPH data from historical_uph table
+      const uphResults = await db.select().from(historicalUph);
       const allOperators = await db.select().from(operators);
       
-      if (allCycles.length === 0) {
+      if (uphResults.length === 0) {
         return res.json({
           routings: [],
           summary: {
@@ -3290,7 +3290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             totalCombinations: 0,
             totalRoutings: 0,
             avgUphByCeter: {},
-            noDataReason: "No work cycles data available. Import work cycles to generate performance metrics."
+            noDataReason: "No UPH calculations available. Click 'Calculate UPH' to generate performance metrics."
           },
           workCenters: []
         });
@@ -3322,95 +3322,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return workCenter;
       };
       
-      // Calculate UPH from work cycles (same methodology as calculation-details endpoint)
-      const uphCalculations = new Map<string, {
-        operatorId: number,
-        operatorName: string,
-        routing: string,
-        workCenter: string,
-        totalQuantity: number,
-        totalHours: number,
-        observations: number
-      }>();
+      // Clean and consolidate work center names
+      const cleanedUphResults = uphResults.map(row => ({
+        ...row,
+        workCenter: consolidateWorkCenter(row.workCenter),
+        unitsPerHour: row.unitsPerHour, // historicalUph uses unitsPerHour field
+        calculationPeriod: row.observations // historicalUph uses observations field
+      }));
       
-      // Process each work cycle
-      allCycles.forEach(cycle => {
-        // Skip invalid cycles
-        if (!cycle.workCyclesOperatorRecName || !cycle.workProductionRoutingRecName || 
-            !cycle.workCyclesWorkCenterRecName || !cycle.quantityDone || 
-            !cycle.workCyclesDuration || cycle.workCyclesDuration <= 0) {
+      // Get unique work centers and routings after cleaning
+      const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
+      const allRoutings = Array.from(new Set(cleanedUphResults.map(row => row.routing))).sort();
+      
+      // Group UPH data by routing, then by operator
+      const routingData = new Map<string, Map<number, Record<string, number[]>>>();
+      
+      cleanedUphResults.forEach(row => {
+        // Skip rows with null operator ID
+        if (!row.operatorId || !row.routing || !row.workCenter) {
+          console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
           return;
         }
         
-        // Find operator by name
-        const operator = allOperators.find(op => op.name === cycle.workCyclesOperatorRecName);
-        if (!operator) return;
-        
-        const consolidatedWC = consolidateWorkCenter(cycle.workCyclesWorkCenterRecName);
-        const key = `${operator.id}-${cycle.workProductionRoutingRecName}-${consolidatedWC}`;
-        
-        const durationHours = cycle.workCyclesDuration / 3600;
-        
-        if (!uphCalculations.has(key)) {
-          uphCalculations.set(key, {
-            operatorId: operator.id,
-            operatorName: operator.name,
-            routing: cycle.workProductionRoutingRecName,
-            workCenter: consolidatedWC,
-            totalQuantity: 0,
-            totalHours: 0,
-            observations: 0
-          });
+        if (!routingData.has(row.routing)) {
+          routingData.set(row.routing, new Map());
         }
+        const routingOperators = routingData.get(row.routing)!;
         
-        const calc = uphCalculations.get(key)!;
-        calc.totalQuantity += cycle.quantityDone;
-        calc.totalHours += durationHours;
-        calc.observations += 1;
-      });
-      
-      // Get unique work centers and routings
-      const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
-      const allRoutings = Array.from(new Set(Array.from(uphCalculations.values()).map(calc => calc.routing))).sort();
-      
-      // Group UPH data by routing, then by operator
-      const routingData = new Map<string, Map<number, Record<string, number>>>();
-      
-      uphCalculations.forEach(calc => {
-        if (!routingData.has(calc.routing)) {
-          routingData.set(calc.routing, new Map());
+        if (!routingOperators.has(row.operatorId)) {
+          routingOperators.set(row.operatorId, {});
         }
-        const routingOperators = routingData.get(calc.routing)!;
+        const operatorData = routingOperators.get(row.operatorId)!;
         
-        if (!routingOperators.has(calc.operatorId)) {
-          routingOperators.set(calc.operatorId, {});
+        if (!operatorData[row.workCenter]) {
+          operatorData[row.workCenter] = [];
         }
-        const operatorData = routingOperators.get(calc.operatorId)!;
-        
-        // Calculate UPH = Total Quantity / Total Hours
-        const uph = calc.totalHours > 0 ? calc.totalQuantity / calc.totalHours : 0;
-        operatorData[calc.workCenter] = Math.round(uph * 100) / 100;
+        operatorData[row.workCenter].push(row.unitsPerHour);
       });
       
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          const operatorName = operatorMap.get(operatorId) || `Operator ${operatorId}`;
+          // Use operator name directly from historicalUph data
+          const operatorRecord = cleanedUphResults.find(r => r.operatorId === operatorId);
+          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
           let totalObservations = 0;
           
           allWorkCenters.forEach(workCenter => {
-            if (workCenterData[workCenter] !== undefined) {
-              workCenterPerformance[workCenter] = workCenterData[workCenter];
+            const uphValues = workCenterData[workCenter];
+            if (uphValues && uphValues.length > 0) {
+              const avgUph = uphValues.reduce((sum, val) => sum + val, 0) / uphValues.length;
+              workCenterPerformance[workCenter] = Math.round(avgUph * 100) / 100;
               
-              // Get observations for this work center
-              const key = `${operatorId}-${routingName}-${workCenter}`;
-              const calc = uphCalculations.get(key);
-              if (calc) {
-                totalObservations += calc.observations;
-              }
+              // Sum up observations for this work center using cleaned data
+              const operatorWorkCenterRecords = cleanedUphResults.filter(r => 
+                r.operatorId === operatorId && 
+                r.routing === routingName && 
+                r.workCenter === workCenter
+              );
+              totalObservations += operatorWorkCenterRecords.reduce((sum, record) => 
+                sum + (record.calculationPeriod || 0), 0
+              );
             } else {
               workCenterPerformance[workCenter] = null;
             }
@@ -3436,12 +3411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             validOperators.forEach(op => {
               const uph = op.workCenterPerformance[workCenter] as number;
-              
-              // Get actual observations for this specific combination
-              const key = `${op.operatorId}-${routingName}-${workCenter}`;
-              const calc = uphCalculations.get(key);
-              const observations = calc ? calc.observations : 1;
-              
+              const observations = op.totalObservations || 1; // Fallback to 1 if no observations data
               totalWeightedUph += uph * observations;
               totalObservations += observations;
             });
@@ -3464,13 +3434,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
       
-      // Calculate summary statistics from calculated UPH data
+      // Calculate summary statistics from historical UPH data
       const workCenterUph = new Map<string, number[]>();
-      uphCalculations.forEach(calc => {
-        const existing = workCenterUph.get(calc.workCenter) || [];
-        const uph = calc.totalHours > 0 ? calc.totalQuantity / calc.totalHours : 0;
-        existing.push(uph);
-        workCenterUph.set(calc.workCenter, existing);
+      const uniqueOperators = new Set<number>();
+      
+      cleanedUphResults.forEach(row => {
+        if (row.operatorId) {
+          uniqueOperators.add(row.operatorId);
+        }
+        const existing = workCenterUph.get(row.workCenter) || [];
+        existing.push(row.unitsPerHour);
+        workCenterUph.set(row.workCenter, existing);
       });
 
       const avgUphByCenter = Object.fromEntries(
@@ -3483,8 +3457,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         routings: routings.sort((a, b) => a.routingName.localeCompare(b.routingName)),
         summary: {
-          totalOperators: new Set(uphCalculations.values()).size,
-          totalCombinations: uphCalculations.size,
+          totalOperators: uniqueOperators.size,
+          totalCombinations: cleanedUphResults.length,
           totalRoutings: allRoutings.length,
           avgUphByCeter: avgUphByCenter
         },
