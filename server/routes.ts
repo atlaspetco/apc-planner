@@ -82,7 +82,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stateCounts[mo.state] = (stateCounts[mo.state] || 0) + 1;
       });
       console.log('State distribution:', stateCounts);
-      console.log('Sample MO data:', manufacturingOrdersData.slice(0, 2));
+      console.log('Sample MO data:', JSON.stringify(manufacturingOrdersData.slice(0, 2), null, 2));
+      
+      // Log available fields in the first MO
+      if (manufacturingOrdersData.length > 0) {
+        console.log('Available fields in first MO:', Object.keys(manufacturingOrdersData[0]));
+        console.log('Works field value:', manufacturingOrdersData[0].works);
+      }
 
       if (!Array.isArray(manufacturingOrdersData)) {
         console.error('Unexpected API response format:', manufacturingOrdersData);
@@ -92,19 +98,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Import product routing mapper
       const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
 
-      // Collect all work order IDs from manufacturing orders
-      const allWorkOrderIds = [];
-      manufacturingOrdersData.forEach(mo => {
-        if (mo.works && mo.works.length > 0) {
-          allWorkOrderIds.push(...mo.works);
-        }
-      });
+      // Collect all MO IDs to search for work orders
+      const allMOIds = manufacturingOrdersData.map(mo => mo.id);
 
-      // Fetch work orders by ID in bulk
+      // Fetch work orders by production (MO) ID in bulk
       let allWorkOrders = [];
-      if (allWorkOrderIds.length > 0) {
+      if (allMOIds.length > 0) {
         try {
-          console.log(`Fetching ${allWorkOrderIds.length} work orders by ID...`);
+          console.log(`Fetching work orders for ${allMOIds.length} manufacturing orders...`);
           const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work/search_read', {
             method: 'PUT',
             headers: {
@@ -113,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             },
             body: JSON.stringify({
               filters: [
-                ["id", "in", allWorkOrderIds] // Get specific work orders by ID
+                ["production", "in", allMOIds] // Get work orders by parent MO ID
               ],
               fields: [
                 "id",
@@ -121,7 +122,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 "work_center.name",
                 "operation.name", 
                 "state",
-                "production" // MO ID to match with
+                "production", // MO ID to match with
+                "operator.name",
+                "operator.id"
               ]
             })
           });
@@ -172,8 +175,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           operation: wo['operation.name'] || wo.rec_name || `WO${wo.id}`,
           state: wo.state || 'unknown',
           quantity: 0, // Work orders inherit quantity from MO
-          employee_name: wo['employee.name'] || null,
-          employee_id: wo['employee.id'] || null
+          employee_name: wo['operator.name'] || null,
+          employee_id: wo['operator.id'] || null
         });
       });
 
