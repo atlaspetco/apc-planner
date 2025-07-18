@@ -25,6 +25,7 @@ interface WorkCycleDetail {
   uph: number;
   date: string;
   operation: string;
+  workCenter: string;
 }
 
 export function UphCalculationModal({
@@ -118,6 +119,12 @@ export function UphCalculationModal({
           {/* Detailed Work Cycles Table */}
           <div>
             <h3 className="text-sm font-medium mb-2">Work Cycles Used in Calculation:</h3>
+            {workCenter === 'Assembly' && (
+              <p className="text-sm text-amber-600 mb-3 bg-amber-50 p-3 rounded-lg">
+                <strong>Note:</strong> Assembly includes work from both Sewing and Rope work centers. 
+                The cycles below show the actual work center names as recorded in the system.
+              </p>
+            )}
             {isLoading ? (
               <div className="text-center py-4">Loading calculation details...</div>
             ) : cyclesData?.cycles && cyclesData.cycles.length > 0 ? (
@@ -128,6 +135,7 @@ export function UphCalculationModal({
                       <TableHead>Date</TableHead>
                       <TableHead>MO#</TableHead>
                       <TableHead>WO#</TableHead>
+                      <TableHead>Work Center</TableHead>
                       <TableHead>Operation</TableHead>
                       <TableHead className="text-right">Quantity</TableHead>
                       <TableHead className="text-right">Duration (hrs)</TableHead>
@@ -142,6 +150,7 @@ export function UphCalculationModal({
                         </TableCell>
                         <TableCell className="font-mono text-sm">{cycle.moNumber}</TableCell>
                         <TableCell className="font-mono text-sm">{cycle.woNumber}</TableCell>
+                        <TableCell className="text-sm">{cycle.workCenter}</TableCell>
                         <TableCell className="text-sm">{cycle.operation}</TableCell>
                         <TableCell className="text-right">{cycle.quantity.toLocaleString()}</TableCell>
                         <TableCell className="text-right">{cycle.durationHours.toFixed(2)}</TableCell>

@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { FulfilAPIService } from "./fulfil-api";
 import { db } from "./db.js";
 import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph } from "../shared/schema.js";
-import { sql, eq, desc } from "drizzle-orm";
+import { sql, eq, desc, or, and } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
 
@@ -3500,6 +3500,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Missing required parameters' });
       }
 
+      // Handle Assembly aggregation - Assembly includes both Sewing and Rope work centers
+      let workCenterCondition;
+      if (workCenter === 'Assembly') {
+        workCenterCondition = or(
+          eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
+          eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
+          eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
+          eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
+        );
+      } else {
+        workCenterCondition = eq(workCycles.work_cycles_work_center_rec_name, workCenter as string);
+      }
+
       // Get work cycles for this specific combination
       const cycles = await db.select({
         id: workCycles.id,
@@ -3508,13 +3521,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         quantity: workCycles.quantity_done,
         duration: workCycles.duration_seconds,
         date: workCycles.create_date,
-        operation: workCycles.work_operation_rec_name
+        operation: workCycles.work_operation_rec_name,
+        workCenter: workCycles.work_cycles_work_center_rec_name
       })
       .from(workCycles)
       .where(
         and(
           eq(workCycles.work_cycles_operator_rec_name, operatorName as string),
-          eq(workCycles.work_cycles_work_center_rec_name, workCenter as string),
+          workCenterCondition,
           eq(workCycles.work_production_routing_rec_name, routing as string)
         )
       )
@@ -3534,7 +3548,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           durationHours: durationHours,
           uph: uph,
           date: cycle.date,
-          operation: cycle.operation || 'Unknown'
+          operation: cycle.operation || 'Unknown',
+          workCenter: cycle.workCenter || 'Unknown'
         };
       });
 
