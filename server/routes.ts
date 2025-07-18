@@ -95,8 +95,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ message: "Invalid API response format" });
       }
 
-      // Import product routing mapper
+      // Import product routing mapper and rec_name parser
       const { getRoutingForProduct, extractProductCode } = await import('./product-routing-mapper.js');
+      const { parseRecName } = await import('./rec-name-parser.js');
 
       // Collect all MO IDs to search for work orders
       const allMOIds = manufacturingOrdersData.map(mo => mo.id);
@@ -114,7 +115,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             },
             body: JSON.stringify({
               filters: [
-                ["production", "in", allMOIds] // Get work orders by parent MO ID
+                ["production", "in", allMOIds], // Get work orders by parent MO ID
+                ["state", "in", ["draft", "waiting", "assigned", "running", "done"]] // Include all relevant states
               ],
               fields: [
                 "id",
@@ -132,6 +134,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (workOrderResponse.ok) {
             allWorkOrders = await workOrderResponse.json();
             console.log(`Successfully fetched ${allWorkOrders.length} work orders`);
+            // Debug: Show sample work order structure
+            if (allWorkOrders.length > 0) {
+              console.log('Sample work order structure:', JSON.stringify(allWorkOrders[0], null, 2));
+            }
           } else {
             console.error('Work order fetch failed:', workOrderResponse.status);
             const errorText = await workOrderResponse.text();
@@ -168,14 +174,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`Operation categorization: ${wo.rec_name} | operation="${operationName}" | original="${originalWorkCenter}" | display="${displayWorkCenter}"`);
         }
         
+        // Parse rec_name to extract operator information
+        let operatorName = null;
+        let parsedOperation = wo['operation.name'];
+        
+        if (wo.rec_name) {
+          // Try to extract operator name from rec_name patterns like:
+          // "Cutting - Fabric | Courtney Banh | MO67890"
+          // "WO33046 | Sewing | MO178231"
+          const recNameParts = wo.rec_name.split('|').map(p => p.trim());
+          
+          // If there are 3 parts and the middle one looks like a person's name
+          if (recNameParts.length >= 2) {
+            // Check if the second part is a name (contains space or is capitalized)
+            const potentialName = recNameParts[1];
+            if (potentialName && (potentialName.includes(' ') || /^[A-Z]/.test(potentialName))) {
+              operatorName = potentialName;
+            }
+          }
+          
+          // Use parsed rec_name for operation if not available from API
+          if (!parsedOperation && recNameParts.length > 0) {
+            const parsed = parseRecName(wo.rec_name);
+            parsedOperation = parsed.operation || recNameParts[0];
+          }
+        }
+        
         workOrdersByMO.get(moId).push({
           id: wo.id,
           workCenter: displayWorkCenter,
           originalWorkCenter: originalWorkCenter, // Keep for assignment logic
-          operation: wo['operation.name'] || wo.rec_name || `WO${wo.id}`,
+          operation: parsedOperation || wo.rec_name || `WO${wo.id}`,
           state: wo.state || 'unknown',
           quantity: 0, // Work orders inherit quantity from MO
-          employee_name: wo['operator.name'] || null,
+          employee_name: operatorName || wo['operator.name'] || null,
           employee_id: wo['operator.id'] || null
         });
       });
