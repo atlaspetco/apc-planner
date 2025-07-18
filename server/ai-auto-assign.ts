@@ -379,7 +379,30 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       
       // Get operators with experience in this routing
       const qualifiedOperators = [];
+      
+      // Get all unique work centers needed for this routing group
+      const workCentersNeeded = new Set(workOrdersInGroup.map(wo => wo.workCenter));
+      
       for (const [opId, profile] of operatorProfiles) {
+        // First check if operator has all required work centers enabled
+        const operator = activeOperators.find(op => op.id === opId);
+        if (!operator) continue;
+        
+        const operatorWorkCenters = operator.workCenters || [];
+        const hasRequiredWorkCenters = Array.from(workCentersNeeded).every(wc => {
+          // Handle Assembly work center - operator can have Assembly, Sewing, or Rope
+          if (wc === 'Assembly') {
+            return operatorWorkCenters.includes('Assembly') || 
+                   operatorWorkCenters.includes('Sewing') || 
+                   operatorWorkCenters.includes('Rope');
+          }
+          return operatorWorkCenters.includes(wc);
+        });
+        
+        if (!hasRequiredWorkCenters) {
+          continue; // Skip this operator if they don't have required work centers enabled
+        }
+        
         // Handle routing mapping for products that use different manufacturing routing
         // Lifetime Air Harness products use Lifetime Harness routing for manufacturing
         const routingsToCheck = [routing];
