@@ -169,10 +169,17 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     </td>
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
-                      // Use manufacturing order quantities instead of work order quantities (which are often 0)
-                      const totalQuantity = orders
-                        .filter(order => (order.workOrders || []).some(wo => wo.workCenter === workCenter))
-                        .reduce((sum, order) => sum + (order.quantity || 0), 0);
+                      
+                      // Calculate total MO quantities (deduplicated) for this work center
+                      // Group work orders by their parent MO to avoid double-counting
+                      const uniqueMOQuantities = new Map<string, number>();
+                      workOrdersInCenter.forEach(wo => {
+                        const parentOrder = orders.find(o => o.workOrders?.some(workOrder => workOrder.id === wo.id));
+                        if (parentOrder && !uniqueMOQuantities.has(parentOrder.moNumber)) {
+                          uniqueMOQuantities.set(parentOrder.moNumber, parentOrder.quantity || 0);
+                        }
+                      });
+                      const totalUniqueQuantity = Array.from(uniqueMOQuantities.values()).reduce((sum, qty) => sum + qty, 0);
                       
                       return (
                         <td key={workCenter} className="p-4 text-center">
@@ -185,7 +192,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 workCenter={workCenter}
                                 routing={routing}
                                 operation=""
-                                quantity={totalQuantity}
+                                quantity={totalUniqueQuantity}
                                 workOrderIds={workOrdersInCenter.map(wo => wo.id)}
                                 workOrderStates={workOrdersInCenter.map(wo => wo.state)}
                                 finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
@@ -193,7 +200,9 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 onAssign={async (operatorId) => {
                                   // Bulk assign to all work orders in this work center for this routing
                                   for (const wo of workOrdersInCenter) {
-                                    await handleOperatorAssign(wo.id, operatorId, wo.quantity || totalQuantity, routing, workCenter, wo.operation);
+                                    // Get the MO for this work order to find the correct quantity
+                                    const parentOrder = orders.find(o => o.workOrders?.some(workOrder => workOrder.id === wo.id));
+                                    await handleOperatorAssign(wo.id, operatorId, parentOrder?.quantity || 0, routing, workCenter, wo.operation);
                                   }
                                   // Refresh assignments after bulk assignment
                                   onAssignmentChange?.();

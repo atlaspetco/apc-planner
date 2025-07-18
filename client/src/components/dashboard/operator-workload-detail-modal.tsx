@@ -60,6 +60,28 @@ export function OperatorWorkloadDetailModal({
       return grouped;
     }
     
+    // Group assignments by MO number to get MO-level quantity
+    const assignmentsByMO = new Map<string, {
+      moNumber: string;
+      moQuantity: number;
+      workOrders: any[];
+    }>();
+    
+    operator.assignments.forEach(assignment => {
+      const moNumber = assignment.moNumber || 'Unknown';
+      if (!assignmentsByMO.has(moNumber)) {
+        // Use the first work order's quantity as the MO quantity
+        // (all work orders in same MO should have same quantity)
+        assignmentsByMO.set(moNumber, {
+          moNumber,
+          moQuantity: assignment.quantity || 0,
+          workOrders: []
+        });
+      }
+      assignmentsByMO.get(moNumber)!.workOrders.push(assignment);
+    });
+    
+    // Now process assignments with MO-level quantities
     operator.assignments.forEach(assignment => {
       console.log('Processing assignment:', assignment);
       const routing = assignment.productRouting || assignment.routing || 'Unknown';
@@ -67,9 +89,13 @@ export function OperatorWorkloadDetailModal({
         grouped.set(routing, []);
       }
       
+      // Get MO-level quantity
+      const moData = assignmentsByMO.get(assignment.moNumber || 'Unknown');
+      const moQuantity = moData?.moQuantity || assignment.quantity || 0;
+      
       // Calculate estimated hours based on UPH data if available
       let estimatedHours = 0; // No fallback
-      if (uphResults && assignment.quantity > 0) {
+      if (uphResults && moQuantity > 0) {
         const uphEntry = uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
@@ -77,7 +103,7 @@ export function OperatorWorkloadDetailModal({
         );
         
         if (uphEntry && uphEntry.uph > 0) {
-          estimatedHours = assignment.quantity / uphEntry.uph;
+          estimatedHours = moQuantity / uphEntry.uph;
           console.log(`Modal: Found UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH`);
         } else {
           console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}`);
@@ -87,7 +113,7 @@ export function OperatorWorkloadDetailModal({
       // Use enriched assignment data directly
       grouped.get(routing)!.push({
         moNumber: assignment.moNumber || 'Unknown',
-        quantity: assignment.quantity || 0,
+        quantity: moQuantity, // Use MO quantity instead of WO quantity
         estimatedHours: estimatedHours,
         workCenter: assignment.workCenter || 'Unknown',
         productRouting: routing,
@@ -102,8 +128,16 @@ export function OperatorWorkloadDetailModal({
   // Calculate total hours per routing
   const routingSummary = Array.from(assignmentsByRouting.entries()).map(([routing, workOrders]) => {
     const totalHours = workOrders.reduce((sum, wo) => sum + wo.estimatedHours, 0);
-    const totalQuantity = workOrders.reduce((sum, wo) => sum + wo.quantity, 0);
-    const moCount = new Set(workOrders.map(wo => wo.moNumber)).size;
+    
+    // For total quantity, deduplicate by MO number (since we already have MO quantities)
+    const uniqueMOs = new Map<string, number>();
+    workOrders.forEach(wo => {
+      if (!uniqueMOs.has(wo.moNumber)) {
+        uniqueMOs.set(wo.moNumber, wo.quantity);
+      }
+    });
+    const totalQuantity = Array.from(uniqueMOs.values()).reduce((sum, qty) => sum + qty, 0);
+    const moCount = uniqueMOs.size;
     
     return {
       routing,
