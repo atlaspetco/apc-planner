@@ -16,7 +16,7 @@ interface OperatorWorkload {
 }
 
 interface OperatorWorkloadSummaryProps {
-  assignments: Map<number, any>;
+  assignments: any[];
 }
 
 export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummaryProps) {
@@ -54,7 +54,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
     });
 
     // Process assignments to calculate workload using UPH data
-    Array.from(assignments.values()).forEach(assignment => {
+    assignments.forEach(assignment => {
       const operator = operatorMap.get(assignment.operatorId);
       if (operator) {
         operator.totalAssignments++;
