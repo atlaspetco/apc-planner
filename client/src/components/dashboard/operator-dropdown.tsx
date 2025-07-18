@@ -58,7 +58,7 @@ export function OperatorDropdown({
   
   // Check if all work orders are finished
   const allFinished = workOrderStates && workOrderStates.length > 0 && 
-    workOrderStates.every(state => state === 'finished');
+    workOrderStates.every(state => state === 'done');
   
   // Get unique finished operator names
   const uniqueFinishedOperators = finishedOperatorNames ? 
@@ -68,7 +68,7 @@ export function OperatorDropdown({
   const bulkAssignmentInfo = workOrderIds && assignments ? 
     workOrderIds.map((woId, index) => {
       const assignment = assignments.get(woId);
-      const isFinished = workOrderStates?.[index] === 'finished';
+      const isFinished = workOrderStates?.[index] === 'done';
       const finishedOperator = finishedOperatorNames?.[index];
       return { workOrderId: woId, assignment, isFinished, finishedOperator };
     }).filter(info => info.assignment || info.isFinished) : [];

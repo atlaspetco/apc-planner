@@ -200,6 +200,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
+        // Debug logging for all work order states
+        console.log(`Work order WO${wo.id} state:`, {
+          state: wo.state,
+          rec_name: wo.rec_name,
+          operator_name: wo['operator.name'],
+          operator_id: wo['operator.id'],
+          parsed_operator: operatorName
+        });
+        
         workOrdersByMO.get(moId).push({
           id: wo.id,
           workCenter: displayWorkCenter,
