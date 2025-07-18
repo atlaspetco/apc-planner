@@ -8,6 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 
 interface UphTableData {
   routings: Array<{
@@ -35,6 +36,12 @@ export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
+  const [selectedUphDetails, setSelectedUphDetails] = useState<{
+    operatorName: string;
+    workCenter: string;
+    routing: string;
+    uphValue: number;
+  } | null>(null);
 
   // Get UPH table data
   const { data: uphData, isLoading: uphLoading } = useQuery<UphTableData>({
@@ -375,7 +382,17 @@ export default function UphAnalytics() {
                                     <td key={wc} className="text-center py-2">
                                       <Badge
                                         variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
-                                        className="min-w-[60px]"
+                                        className={`min-w-[60px] ${operator.workCenterPerformance[wc] ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                                        onClick={() => {
+                                          if (operator.workCenterPerformance[wc]) {
+                                            setSelectedUphDetails({
+                                              operatorName: operator.operatorName,
+                                              workCenter: wc,
+                                              routing: routing.routingName,
+                                              uphValue: operator.workCenterPerformance[wc]
+                                            });
+                                          }
+                                        }}
                                       >
                                         {formatUph(operator.workCenterPerformance[wc])}
                                       </Badge>
@@ -439,6 +456,18 @@ export default function UphAnalytics() {
             </div>
           </CardContent>
         </Card>
+      )}
+      
+      {/* UPH Calculation Details Modal */}
+      {selectedUphDetails && (
+        <UphCalculationModal
+          isOpen={true}
+          onClose={() => setSelectedUphDetails(null)}
+          operatorName={selectedUphDetails.operatorName}
+          workCenter={selectedUphDetails.workCenter}
+          routing={selectedUphDetails.routing}
+          uphValue={selectedUphDetails.uphValue}
+        />
       )}
     </div>
   );

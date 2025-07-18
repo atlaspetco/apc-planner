@@ -3491,6 +3491,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get detailed work cycles for a specific UPH calculation
+  app.get("/api/uph/calculation-details", async (req, res) => {
+    try {
+      const { operatorName, workCenter, routing } = req.query;
+      
+      if (!operatorName || !workCenter || !routing) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+      }
+
+      // Get work cycles for this specific combination
+      const cycles = await db.select({
+        id: workCycles.id,
+        moNumber: workCycles.mo_number,
+        woNumber: workCycles.wo_number,
+        quantity: workCycles.quantity_done,
+        duration: workCycles.duration_seconds,
+        date: workCycles.create_date,
+        operation: workCycles.work_operation_rec_name
+      })
+      .from(workCycles)
+      .where(
+        and(
+          eq(workCycles.work_cycles_operator_rec_name, operatorName as string),
+          eq(workCycles.work_cycles_work_center_rec_name, workCenter as string),
+          eq(workCycles.work_production_routing_rec_name, routing as string)
+        )
+      )
+      .orderBy(workCycles.create_date);
+
+      // Format the cycles with calculated values
+      const formattedCycles = cycles.map(cycle => {
+        const durationHours = cycle.duration / 3600; // Convert seconds to hours
+        const uph = durationHours > 0 ? cycle.quantity / durationHours : 0;
+        
+        return {
+          id: cycle.id,
+          moNumber: cycle.moNumber || 'Unknown',
+          woNumber: cycle.woNumber || 'Unknown',
+          quantity: cycle.quantity,
+          duration: cycle.duration,
+          durationHours: durationHours,
+          uph: uph,
+          date: cycle.date,
+          operation: cycle.operation || 'Unknown'
+        };
+      });
+
+      res.json({ cycles: formattedCycles });
+    } catch (error) {
+      console.error('Error fetching UPH calculation details:', error);
+      res.status(500).json({ error: 'Failed to fetch calculation details' });
+    }
+  });
+
   // Import comprehensive Fulfil data
   app.post("/api/fulfil/import-comprehensive", async (req: Request, res: Response) => {
     try {
