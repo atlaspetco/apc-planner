@@ -17,20 +17,15 @@ interface OperatorWorkload {
 
 interface OperatorWorkloadSummaryProps {
   assignments: Map<number, any>;
+  assignmentsData?: any;
 }
 
-export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummaryProps) {
+export function OperatorWorkloadSummary({ assignments, assignmentsData }: OperatorWorkloadSummaryProps) {
   const [selectedOperator, setSelectedOperator] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   // Fetch operator data for workload calculations
   const { data: operatorsData, error: operatorsError } = useQuery({
     queryKey: ["/api/operators"],
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-
-  // Fetch assignments data for enriched information
-  const { data: assignmentsData } = useQuery({
-    queryKey: ["/api/assignments"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
