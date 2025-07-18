@@ -78,26 +78,33 @@ async function rebuildHistoricalUph() {
         operatorWcGroups.get(key)!.push(cycle);
       });
       
+      // First, find the MO quantity (should be the same across all cycles for this MO)
+      // Use the maximum quantity_done value as the MO quantity
+      let moQuantity = 0;
+      cycles.forEach(cycle => {
+        if (cycle.work_cycles_quantity_done) {
+          moQuantity = Math.max(moQuantity, cycle.work_cycles_quantity_done);
+        }
+      });
+      
       // Calculate UPH for each operator/work center combination in this MO
       operatorWcGroups.forEach((wcCycles, key) => {
         const [operatorName, workCenter] = key.split('|');
         
-        // Sum up quantities and durations
-        let totalQuantity = 0;
+        // Sum only durations (NOT quantities)
         let totalDurationSeconds = 0;
         let routing = '';
         
         wcCycles.forEach(cycle => {
-          if (cycle.work_cycles_quantity_done && cycle.work_cycles_duration > 0) {
-            totalQuantity += cycle.work_cycles_quantity_done;
+          if (cycle.work_cycles_duration > 0) {
             totalDurationSeconds += cycle.work_cycles_duration;
             routing = cycle.work_production_routing_rec_name || routing;
           }
         });
         
-        if (totalDurationSeconds > 0 && totalQuantity > 0 && routing) {
+        if (totalDurationSeconds > 0 && moQuantity > 0 && routing) {
           const totalHours = totalDurationSeconds / 3600;
-          const uph = totalQuantity / totalHours;
+          const uph = moQuantity / totalHours;
           
           // Store this MO's UPH calculation
           const moKey = `${moNumber}|${operatorName}|${workCenter}|${routing}`;
@@ -106,7 +113,7 @@ async function rebuildHistoricalUph() {
             routing,
             workCenter,
             uph,
-            totalQuantity,
+            totalQuantity: moQuantity,
             totalHours
           });
         }
