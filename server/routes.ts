@@ -573,22 +573,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
         .where(eq(workOrderAssignments.isActive, true));
       
-      // Get fresh production orders directly from Fulfil API to avoid circular dependency
+      // Get fresh production orders - directly call the same service
       let allProductionOrders = [];
       try {
-        // Directly call the Fulfil API logic instead of making an internal HTTP request
+        // Directly call the Fulfil service like production orders endpoint does
         const { FulfilCurrentService } = await import('./fulfil-current.js');
         const fulfilService = new FulfilCurrentService();
         
-        // Fetch manufacturing orders from Fulfil API
+        console.log('Fetching production orders from Fulfil service...');
         const manufacturingOrders = await fulfilService.getCurrentProductionOrders();
         
-        // Convert to production orders format
         allProductionOrders = manufacturingOrders;
+        console.log(`Got ${allProductionOrders.length} production orders from Fulfil service`);
       } catch (error) {
-        console.error('Failed to fetch from Fulfil API, using database:', error);
-        // Fallback to database if API fails
+        console.error('Failed to fetch production orders from Fulfil:', error);
+        // Fallback to database
         allProductionOrders = await db.select().from(productionOrders);
+        console.log(`Database fallback returned ${allProductionOrders.length} production orders`);
+        
+        // If database has data, fetch work orders too
+        if (allProductionOrders.length > 0) {
+          const { workOrders } = await import("../shared/schema.js");
+          for (const po of allProductionOrders) {
+            const poWorkOrders = await db
+              .select()
+              .from(workOrders)
+              .where(eq(workOrders.productionOrderId, po.id));
+            
+            po.workOrders = poWorkOrders.map(wo => ({
+              id: wo.id,
+              workCenter: wo.workCenter,
+              operation: wo.operation,
+              quantity: wo.quantity || 0,
+              state: wo.state
+            }));
+          }
+        }
       }
       
       // Create a map of work order ID to production order and work order details
@@ -596,13 +616,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       allProductionOrders.forEach(po => {
         if (po.workOrders && Array.isArray(po.workOrders)) {
           po.workOrders.forEach((wo: any) => {
-            workOrderMap.set(wo.id, {
+            // Ensure we're using numeric IDs for consistency
+            const woId = typeof wo.id === 'string' ? parseInt(wo.id, 10) : wo.id;
+            workOrderMap.set(woId, {
               workOrder: wo,
               productionOrder: po
             });
           });
         }
       });
+      
+      console.log(`WorkOrderMap populated with ${workOrderMap.size} entries`);
+      console.log(`Sample work order IDs: ${Array.from(workOrderMap.keys()).slice(0, 10).join(', ')}`);
       
       // Enrich assignments with production order data
       const enrichedAssignments = await Promise.all(assignments.map(async (assignment) => {
@@ -614,6 +639,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           let foundWorkOrder = null;
           let foundProductionOrder = null;
           
+          // Debug: Log what we're searching for
+          console.log(`Searching for work order ID: ${assignment.workOrderId} (type: ${typeof assignment.workOrderId})`);
+          console.log(`Available work order IDs in map: ${Array.from(workOrderMap.keys()).slice(0, 10).join(', ')}...`);
+          console.log(`Map size: ${workOrderMap.size}, First few entries:`, Array.from(workOrderMap.entries()).slice(0, 3));
+          
           for (const po of allProductionOrders) {
             if (po.workOrders && Array.isArray(po.workOrders)) {
               // Check both number and string comparisons
@@ -624,22 +654,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (wo) {
                 foundWorkOrder = wo;
                 foundProductionOrder = po;
+                console.log(`Found work order ${assignment.workOrderId} in PO ${po.moNumber}`);
                 break;
               }
             }
           }
           
           if (foundWorkOrder && foundProductionOrder) {
-            // Calculate proportional quantity for work orders
-            // Count work orders in the same work center for this production order
+            // Use the full production order quantity for each work order
+            // Each work order represents the full quantity going through that work center
             const workCenter = foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter || 'Unknown';
-            const workOrdersInSameCenter = foundProductionOrder.workOrders?.filter((wo: any) => 
-              (wo.workCenter || wo.originalWorkCenter) === workCenter
-            ).length || 1;
+            const workOrderQuantity = foundWorkOrder.quantity || foundProductionOrder.quantity || 0;
             
-            // Divide the production order quantity by the number of operations in this work center
-            const proportionalQuantity = foundWorkOrder.quantity || 
-              Math.ceil(foundProductionOrder.quantity / workOrdersInSameCenter) || 0;
+            console.log(`Work order ${assignment.workOrderId} quantity: ${workOrderQuantity} (from PO ${foundProductionOrder.moNumber} with qty: ${foundProductionOrder.quantity})`);
             
             return {
               ...assignment,
@@ -647,7 +674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               operation: foundWorkOrder.operation || 'Unknown',
               routing: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
               productRouting: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
-              quantity: proportionalQuantity,
+              quantity: workOrderQuantity,
               productionOrderId: foundProductionOrder.id,
               productName: foundProductionOrder.productName || 'Unknown',
               moNumber: foundProductionOrder.moNumber || 'Unknown'
