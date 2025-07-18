@@ -47,7 +47,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         body: JSON.stringify({
           filters: [
-            ["state", "in", ["waiting", "assigned", "running"]]  // Get waiting, assigned, and running orders that have work orders
+            ["state", "in", ["waiting", "assigned", "running", "finished"]]  // Get waiting, assigned, running, and finished orders that have work orders
           ],
           fields: [
             "id",
@@ -101,34 +101,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Collect all MO IDs to search for work orders
       const allMOIds = manufacturingOrdersData.map(mo => mo.id);
+      console.log(`Collected ${allMOIds.length} MO IDs for work order fetch`);
+      console.log('First 5 MO IDs:', allMOIds.slice(0, 5));
 
       // Fetch work orders by production (MO) ID in bulk
       let allWorkOrders = [];
       if (allMOIds.length > 0) {
         try {
           console.log(`Fetching work orders for ${allMOIds.length} manufacturing orders...`);
+          console.log('MO IDs to fetch work orders for:', allMOIds.slice(0, 5), '...');
+          
+          const workOrderRequestBody = {
+            filters: [
+              ["production", "in", allMOIds], // Get work orders by parent MO ID
+              ["state", "in", ["draft", "waiting", "assigned", "running", "done", "finished"]] // Include all relevant states including finished
+            ],
+            fields: [
+              "id",
+              "rec_name",
+              "work_center.rec_name",
+              "operation.rec_name", 
+              "state",
+              "production", // MO ID to match with
+              "operator.rec_name"
+            ]
+          };
+          
+          console.log('Work order request filters:', JSON.stringify(workOrderRequestBody.filters, null, 2));
+          
           const workOrderResponse = await fetch('https://apc.fulfil.io/api/v2/model/production.work/search_read', {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
               'X-API-KEY': process.env.FULFIL_ACCESS_TOKEN
             },
-            body: JSON.stringify({
-              filters: [
-                ["production", "in", allMOIds], // Get work orders by parent MO ID
-                ["state", "in", ["draft", "waiting", "assigned", "running", "done"]] // Include all relevant states
-              ],
-              fields: [
-                "id",
-                "rec_name",
-                "work_center.name",
-                "operation.name", 
-                "state",
-                "production", // MO ID to match with
-                "operator.name",
-                "operator.id"
-              ]
-            })
+            body: JSON.stringify(workOrderRequestBody)
           });
           
           if (workOrderResponse.ok) {
@@ -138,6 +145,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (allWorkOrders.length > 0) {
               console.log('Sample work order structure:', JSON.stringify(allWorkOrders[0], null, 2));
             }
+            // Check if any finished work orders were returned
+            const finishedWorkOrders = allWorkOrders.filter(wo => wo.state === 'finished');
+            console.log(`Found ${finishedWorkOrders.length} finished work orders`);
+            if (finishedWorkOrders.length > 0) {
+              console.log('Sample finished work order:', JSON.stringify(finishedWorkOrders[0], null, 2));
+            }
           } else {
             console.error('Work order fetch failed:', workOrderResponse.status);
             const errorText = await workOrderResponse.text();
@@ -146,6 +159,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (error) {
           console.error('Error fetching work orders:', error);
         }
+      } else {
+        console.log('WARNING: No MO IDs found, skipping work order fetch');
       }
 
       // Create a map of work orders by production (MO) ID
@@ -156,8 +171,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           workOrdersByMO.set(moId, []);
         }
         // Use operation name to determine work center category
-        const originalWorkCenter = cleanWorkCenter(wo['work_center.name'] || 'Unknown');
-        const operationName = (wo['operation.name'] || wo.rec_name || '').toLowerCase();
+        const originalWorkCenter = cleanWorkCenter(wo['work_center.rec_name'] || 'Unknown');
+        const operationName = (wo['operation.rec_name'] || wo.rec_name || '').toLowerCase();
         
         // Categorize by operation name: cutting ops → Cutting, packaging ops → Packaging, everything else → Assembly
         let displayWorkCenter: string;
@@ -176,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Parse rec_name to extract operator information
         let operatorName = null;
-        let parsedOperation = wo['operation.name'];
+        let parsedOperation = wo['operation.rec_name'];
         
         if (wo.rec_name) {
           // Try to extract operator name from rec_name patterns like:
@@ -204,8 +219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`Work order WO${wo.id} state:`, {
           state: wo.state,
           rec_name: wo.rec_name,
-          operator_name: wo['operator.name'],
-          operator_id: wo['operator.id'],
+          operator_name: wo['operator.rec_name'],
           parsed_operator: operatorName
         });
         
@@ -216,8 +230,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           operation: parsedOperation || wo.rec_name || `WO${wo.id}`,
           state: wo.state || 'unknown',
           quantity: 0, // Work orders inherit quantity from MO
-          employee_name: operatorName || wo['operator.name'] || null,
-          employee_id: wo['operator.id'] || null
+          employee_name: operatorName || wo['operator.rec_name'] || null,
+          employee_id: null // Removed operator.id as it wasn't in our field list
         });
       });
 
@@ -228,7 +242,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Save finished work order assignments to database
         for (const wo of workOrders) {
-          if (wo.state === 'finished' && wo.employee_name && wo.employee_id) {
+          if (wo.state === 'finished' && wo.employee_name) {
             try {
               // Find operator by name
               const operator = await db.select()

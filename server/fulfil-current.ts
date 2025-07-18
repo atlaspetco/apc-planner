@@ -35,8 +35,12 @@ export class FulfilCurrentService {
   }
 
   async getCurrentProductionOrders(): Promise<CurrentProductionOrder[]> {
+    console.log("=== getCurrentProductionOrders called ===");
     try {
-      if (!this.apiKey) return [];
+      if (!this.apiKey) {
+        console.log("No API key found, returning empty array");
+        return [];
+      }
 
       // Step 1: Get ALL production orders using pagination
       let allOrders: any[] = [];
@@ -93,13 +97,24 @@ export class FulfilCurrentService {
         const woEndpoint = `${this.baseUrl}/api/v2/model/production.work/search_read`;
         
         // Process ALL production orders now that individual calls work
-        console.log(`Fetching work orders for all ${orders.length} production orders: ${orders.map(o => o.rec_name).join(', ')}`);
+        console.log(`Fetching work orders for all ${orders.length} production orders`);
+        console.log('First 5 MO IDs:', orders.slice(0, 5).map(o => ({ id: o.id, rec_name: o.rec_name })));
+        
+        // Log MO195423 details if found
+        const mo195423 = orders.find(o => o.rec_name === 'MO195423');
+        if (mo195423) {
+          console.log('Found MO195423 in orders:', {
+            id: mo195423.id,
+            rec_name: mo195423.rec_name,
+            state: mo195423.state
+          });
+        }
         
         for (const order of orders) {
           try {
             // Add special logging for MO195423
-            if (order.rec_name === 'MO195423') {
-              console.log(`DEBUG: Fetching work orders for MO195423 (ID: ${order.id})`);
+            if (order.rec_name === 'MO195423' || order.id === 190554) {
+              console.log(`DEBUG: Fetching work orders for MO195423 (ID: ${order.id}, rec_name: ${order.rec_name})`);
             }
             
             const woResponse = await fetch(woEndpoint, {
@@ -130,8 +145,8 @@ export class FulfilCurrentService {
               const orderWorkOrders = await woResponse.json();
               
               // Special debug for MO195423
-              if (order.rec_name === 'MO195423') {
-                console.log(`DEBUG MO195423 work orders:`, orderWorkOrders.map(wo => ({
+              if (order.rec_name === 'MO195423' || order.id === 190554) {
+                console.log(`DEBUG MO195423 work orders (${orderWorkOrders.length} found):`, orderWorkOrders.map(wo => ({
                   id: wo.id,
                   state: wo.state,
                   rec_name: wo.rec_name,
@@ -157,7 +172,14 @@ export class FulfilCurrentService {
         console.log(`Successfully fetched ${allWorkOrders.length} work orders total from all production orders`);
         // Log sample work orders to verify
         if (allWorkOrders.length > 0) {
-          console.log("Sample work orders:", allWorkOrders.slice(0, 3).map(wo => `${wo.rec_name} for production ${wo.production}`));
+          console.log("Sample work orders:", allWorkOrders.slice(0, 3).map(wo => ({
+            id: wo.id,
+            state: wo.state,
+            rec_name: wo.rec_name,
+            production: wo.production
+          })));
+        } else {
+          console.log("WARNING: No work orders fetched from API!");
         }
       } catch (error) {
         console.log("Failed to fetch work orders:", error);
