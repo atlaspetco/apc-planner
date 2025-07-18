@@ -83,12 +83,22 @@ export function AutoAssignControls() {
       setCurrentProgress(0);
       setCurrentRouting('Analyzing work orders...');
       
-      // Simulate progress updates
+      // Simulate progress updates with more realistic timing
       const simulateProgress = () => {
         let progress = 0;
         const interval = setInterval(() => {
-          progress += Math.random() * 15;
-          if (progress > 90) progress = 90;
+          // Slower progress that better matches actual operation timing
+          if (progress < 30) {
+            progress += Math.random() * 10; // Faster initial progress
+          } else if (progress < 50) {
+            progress += Math.random() * 5; // Slower middle progress
+          } else if (progress < 70) {
+            progress += Math.random() * 3; // Even slower as we approach database ops
+          } else if (progress < 85) {
+            progress += Math.random() * 1; // Very slow progress during database saves
+          }
+          
+          if (progress > 85) progress = 85; // Cap at 85% until actual completion
           setCurrentProgress(progress);
           
           // Update routing messages
@@ -96,9 +106,9 @@ export function AutoAssignControls() {
             setCurrentRouting('Processing Lifetime Leash orders...');
           } else if (progress > 40 && progress < 60) {
             setCurrentRouting('Processing Lifetime Pouch orders...');
-          } else if (progress > 60 && progress < 80) {
+          } else if (progress > 60 && progress < 75) {
             setCurrentRouting('Processing collar orders...');
-          } else if (progress > 80) {
+          } else if (progress > 75) {
             setCurrentRouting('Saving assignments to database...');
           }
         }, 500);

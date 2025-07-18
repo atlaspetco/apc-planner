@@ -608,6 +608,9 @@ Return assignments as JSON:
     }
     
     // Insert assignments with better error handling
+    let savedCount = 0;
+    const actualSavedAssignments: number[] = [];
+    
     if (assignmentRecords.length > 0) {
       console.log(`Saving ${assignmentRecords.length} assignments to database...`);
       
@@ -628,13 +631,13 @@ Return assignments as JSON:
       
       // Insert in smaller batches to avoid database timeouts
       const batchSize = 20;
-      let savedCount = 0;
       
       for (let i = 0; i < assignmentRecords.length; i += batchSize) {
         const batch = assignmentRecords.slice(i, i + batchSize);
         try {
           await db.insert(workOrderAssignments).values(batch);
           savedCount += batch.length;
+          actualSavedAssignments.push(...batch.map(b => b.workOrderId));
           console.log(`Saved ${savedCount}/${assignmentRecords.length} assignments...`);
         } catch (batchError) {
           console.error(`Error inserting batch ${i/batchSize + 1}:`, batchError);
@@ -643,6 +646,7 @@ Return assignments as JSON:
             try {
               await db.insert(workOrderAssignments).values([record]);
               savedCount++;
+              actualSavedAssignments.push(record.workOrderId);
             } catch (individualError) {
               console.error(`Failed to save assignment for WO ${record.workOrderId}:`, individualError);
               failedAssignments.push(record.workOrderId);
@@ -686,8 +690,8 @@ Return assignments as JSON:
     const successfulRoutings = routingResults.filter(r => r.success);
     const failedRoutings = routingResults.filter(r => !r.success);
     
-    if (successfulRoutings.length > 0) {
-      summary += `Successfully assigned ${successfulAssignments.length} work orders across ${successfulRoutings.length} routings.`;
+    if (savedCount > 0) {
+      summary += `Successfully saved ${savedCount} work order assignments.`;
     }
     
     if (failedRoutings.length > 0) {
@@ -698,11 +702,14 @@ Return assignments as JSON:
       summary += ` ${unassignableWorkOrders.length} work orders couldn't be assigned (no operators with historical data).`;
     }
     
+    // Success is determined by actual saved assignments, not just AI planning
+    const isSuccess = savedCount > 0;
+    
     return {
-      success: successfulAssignments.length > 0,
-      assignments: successfulAssignments,
+      success: isSuccess,
+      assignments: successfulAssignments.filter(id => actualSavedAssignments.includes(id)),
       unassigned: [...actualFailures, ...unassignableWorkOrders],
-      summary: summary.trim(),
+      summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
       totalHoursOptimized,
       operatorUtilization,
       routingResults,
