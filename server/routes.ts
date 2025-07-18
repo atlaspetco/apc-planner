@@ -630,13 +630,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           if (foundWorkOrder && foundProductionOrder) {
+            // Calculate proportional quantity for work orders
+            // Count work orders in the same work center for this production order
+            const workCenter = foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter || 'Unknown';
+            const workOrdersInSameCenter = foundProductionOrder.workOrders?.filter((wo: any) => 
+              (wo.workCenter || wo.originalWorkCenter) === workCenter
+            ).length || 1;
+            
+            // Divide the production order quantity by the number of operations in this work center
+            const proportionalQuantity = foundWorkOrder.quantity || 
+              Math.ceil(foundProductionOrder.quantity / workOrdersInSameCenter) || 0;
+            
             return {
               ...assignment,
-              workCenter: foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter || 'Unknown',
+              workCenter: workCenter,
               operation: foundWorkOrder.operation || 'Unknown',
               routing: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
               productRouting: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
-              quantity: foundWorkOrder.quantity || foundProductionOrder.quantity || 0,
+              quantity: proportionalQuantity,
               productionOrderId: foundProductionOrder.id,
               productName: foundProductionOrder.productName || 'Unknown',
               moNumber: foundProductionOrder.moNumber || 'Unknown'
@@ -668,7 +679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 operation: wo.operation || 'Unknown',
                 routing: wo.routing || po?.routing || 'Unknown',
                 productRouting: wo.routing || po?.routing || 'Unknown',
-                quantity: wo.quantityRequired || po?.quantity || 0,
+                quantity: wo.quantityRequired || wo.quantity || po?.quantity || 0,
                 productionOrderId: po?.id || null,
                 productName: po?.productName || 'Unknown',
                 moNumber: po?.moNumber || `MO${assignment.workOrderId}`
@@ -694,13 +705,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const { workOrder, productionOrder } = workOrderData;
         
+        // Calculate proportional quantity for work orders
+        const workCenter = workOrder.workCenter || workOrder.originalWorkCenter || 'Unknown';
+        const workOrdersInSameCenter = productionOrder.workOrders?.filter((wo: any) => 
+          (wo.workCenter || wo.originalWorkCenter) === workCenter
+        ).length || 1;
+        
+        // Divide the production order quantity by the number of operations in this work center
+        const proportionalQuantity = workOrder.quantity || 
+          Math.ceil(productionOrder.quantity / workOrdersInSameCenter) || 0;
+        
         return {
           ...assignment,
-          workCenter: workOrder.workCenter || workOrder.originalWorkCenter || 'Unknown',
+          workCenter: workCenter,
           operation: workOrder.operation || 'Unknown',
           routing: productionOrder.routing || productionOrder.routingName || 'Unknown',
           productRouting: productionOrder.routing || productionOrder.routingName || 'Unknown',
-          quantity: workOrder.quantity || productionOrder.quantity || 0,
+          quantity: proportionalQuantity,
           productionOrderId: productionOrder.id,
           productName: productionOrder.productName || 'Unknown',
           moNumber: productionOrder.moNumber || 'Unknown'
