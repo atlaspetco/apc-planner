@@ -49,7 +49,8 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
         totalEstimatedHours: 0,
         availableHours: op.availableHours || 40, // Default 40h/week
         observations: op.observations || 0,
-        assignments: []
+        assignments: [],
+        productSummary: new Map() // Group by product routing
       });
     });
 
@@ -68,22 +69,42 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
           productionOrderId: assignment.productionOrderId || null
         });
         
+        // Aggregate by product routing
+        const routing = assignment.productRouting || assignment.routing || 'Unknown';
+        const workCenter = assignment.workCenter || 'Unknown';
+        const key = `${routing}|${workCenter}`;
+        
+        if (!operator.productSummary.has(key)) {
+          operator.productSummary.set(key, {
+            routing,
+            workCenter,
+            totalQuantity: 0,
+            estimatedHours: 0,
+            uph: 0
+          });
+        }
+        
+        const productData = operator.productSummary.get(key);
+        productData.totalQuantity += assignment.quantity || 0;
+        
         // Only include hours for non-finished work orders
         if (assignment.workOrderState !== 'finished') {
           // Calculate estimated hours based on UPH data if available
-          let estimatedHours = 1; // Default fallback
+          let estimatedHours = 0;
           if (uphData?.uphResults && assignment.quantity > 0) {
             const uphEntry = uphData.uphResults.find(entry => 
-              entry.operatorName === assignment.operatorName &&
-              entry.workCenter === assignment.workCenter &&
-              entry.productRouting === (assignment.productRouting || assignment.routing)
+              entry.operatorName === operator.operatorName &&
+              entry.workCenter === workCenter &&
+              entry.productRouting === routing
             );
             
             if (uphEntry && uphEntry.unitsPerHour > 0) {
               estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
+              productData.uph = uphEntry.unitsPerHour;
             }
           }
           
+          productData.estimatedHours += estimatedHours;
           operator.totalEstimatedHours += estimatedHours;
         }
       }
@@ -115,7 +136,8 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
           weekday: 'short', 
           month: 'short', 
           day: 'numeric' 
-        })
+        }),
+        productSummary: Array.from(operator.productSummary.values())
       };
     }).filter(operator => operator.totalAssignments > 0) // Only show operators with assignments
      .sort((a, b) => b.totalAssignments - a.totalAssignments); // Sort by workload
@@ -166,9 +188,9 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {workloadSummary.slice(0, 6).map((operator) => (
-          <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100 relative">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {workloadSummary.slice(0, 8).map((operator) => (
+          <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100 relative min-h-[220px]">
             {/* Expand button in top right */}
             <Button
               variant="ghost"
@@ -215,17 +237,34 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
               </div>
             </div>
 
-            {/* Assignment Details */}
-            <div className="flex items-center justify-between text-sm">
-              <div>
-                <div className="text-gray-600">Assigned MOs: {operator.totalAssignments}</div>
-                <div className="text-gray-500 text-xs">Est. Completion: {operator.estimatedCompletion}</div>
-              </div>
-              <div className="flex items-center space-x-1">
-                <Clock className="w-4 h-4 text-gray-400" />
-                <span className="text-xs text-gray-500">
-                  {operator.totalEstimatedHours > 0 ? `${operator.totalEstimatedHours.toFixed(1)}h` : '0h'}
-                </span>
+            {/* Product Summary */}
+            <div className="space-y-1">
+              {operator.productSummary && operator.productSummary.slice(0, 3).map((product, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-gray-700 font-medium">{product.routing}</span>
+                    <span className="text-gray-500">({product.workCenter})</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-gray-600">
+                    <span className="font-medium">{product.totalQuantity} units</span>
+                    {product.uph > 0 && (
+                      <>
+                        <span className="text-gray-400">•</span>
+                        <span>{product.uph.toFixed(0)} UPH</span>
+                        <span className="text-gray-400">•</span>
+                        <span>{product.estimatedHours.toFixed(1)}h</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {operator.productSummary && operator.productSummary.length > 3 && (
+                <div className="text-xs text-gray-500 text-center">
+                  +{operator.productSummary.length - 3} more products
+                </div>
+              )}
+              <div className="text-xs text-gray-500 pt-1 border-t border-gray-200">
+                Est. Completion: {operator.estimatedCompletion}
               </div>
             </div>
           </div>

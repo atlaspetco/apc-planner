@@ -573,41 +573,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
         .where(eq(workOrderAssignments.isActive, true));
       
-      // Get fresh production orders - directly call the same service
+      // Get fresh production orders - retry multiple times if needed
       let allProductionOrders = [];
-      try {
-        // Directly call the Fulfil service like production orders endpoint does
-        const { FulfilCurrentService } = await import('./fulfil-current.js');
-        const fulfilService = new FulfilCurrentService();
-        
-        console.log('Fetching production orders from Fulfil service...');
-        const manufacturingOrders = await fulfilService.getCurrentProductionOrders();
-        
-        allProductionOrders = manufacturingOrders;
-        console.log(`Got ${allProductionOrders.length} production orders from Fulfil service`);
-      } catch (error) {
-        console.error('Failed to fetch production orders from Fulfil:', error);
-        // Fallback to database
-        allProductionOrders = await db.select().from(productionOrders);
-        console.log(`Database fallback returned ${allProductionOrders.length} production orders`);
-        
-        // If database has data, fetch work orders too
-        if (allProductionOrders.length > 0) {
-          const { workOrders } = await import("../shared/schema.js");
-          for (const po of allProductionOrders) {
-            const poWorkOrders = await db
-              .select()
-              .from(workOrders)
-              .where(eq(workOrders.productionOrderId, po.id));
-            
-            po.workOrders = poWorkOrders.map(wo => ({
-              id: wo.id,
-              workCenter: wo.workCenter,
-              operation: wo.operation,
-              quantity: wo.quantity || 0,
-              state: wo.state
-            }));
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        try {
+          // Directly call the Fulfil service like production orders endpoint does
+          const { FulfilCurrentService } = await import('./fulfil-current.js');
+          const fulfilService = new FulfilCurrentService();
+          
+          console.log(`Fetching production orders from Fulfil service (attempt ${retryCount + 1}/${maxRetries})...`);
+          const manufacturingOrders = await fulfilService.getCurrentProductionOrders();
+          
+          if (manufacturingOrders && manufacturingOrders.length > 0) {
+            allProductionOrders = manufacturingOrders;
+            console.log(`Got ${allProductionOrders.length} production orders from Fulfil service`);
+            break; // Success, exit retry loop
+          } else {
+            console.log('Fulfil service returned empty data, retrying...');
+            retryCount++;
           }
+        } catch (error) {
+          console.error(`Failed to fetch production orders from Fulfil (attempt ${retryCount + 1}):`, error);
+          retryCount++;
+          
+          if (retryCount < maxRetries) {
+            // Wait a bit before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      }
+      
+      // If all retries failed, use direct HTTP request as last resort
+      if (allProductionOrders.length === 0) {
+        try {
+          console.log('All Fulfil attempts failed, trying direct HTTP request...');
+          const response = await fetch('http://localhost:5000/api/production-orders');
+          if (response.ok) {
+            allProductionOrders = await response.json();
+            console.log(`Direct HTTP request succeeded: ${allProductionOrders.length} production orders`);
+          }
+        } catch (httpError) {
+          console.error('Direct HTTP request also failed:', httpError);
+          // Final fallback to database
+          allProductionOrders = await db.select().from(productionOrders);
+          console.log(`Database fallback returned ${allProductionOrders.length} production orders`);
         }
       }
       
