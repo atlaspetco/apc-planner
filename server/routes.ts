@@ -114,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const workOrderRequestBody = {
             filters: [
               ["production", "in", allMOIds], // Get work orders by parent MO ID
-              ["state", "in", ["request", "draft", "waiting", "assigned", "running", "done", "finished"]] // Include all relevant states including request and finished
+              ["state", "in", ["request", "draft", "waiting", "assigned"]] // ACTIVE WORK ORDERS: request, draft, waiting, assigned (excludes running/done/finished)
             ],
             fields: [
               "id",
