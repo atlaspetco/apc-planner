@@ -52,7 +52,7 @@ export class FulfilCurrentService {
         headers: this.headers,
         body: JSON.stringify({
           "filters": [
-            ['state', 'in', ['assigned', 'running', 'done']]
+            ['state', 'in', ['assigned', 'running', 'done', 'finished']]
           ],
           "fields": [
             'id', 'rec_name', 'number', 'state', 'quantity', 'quantity_done', 'quantity_remaining',
@@ -97,6 +97,11 @@ export class FulfilCurrentService {
         
         for (const order of orders) {
           try {
+            // Add special logging for MO195423
+            if (order.rec_name === 'MO195423') {
+              console.log(`DEBUG: Fetching work orders for MO195423 (ID: ${order.id})`);
+            }
+            
             const woResponse = await fetch(woEndpoint, {
               method: 'PUT',
               headers: this.headers,
@@ -113,7 +118,9 @@ export class FulfilCurrentService {
                   'quantity_done',
                   'state',
                   'employee.rec_name',
-                  'employee.id'
+                  'employee.id',
+                  'operator.rec_name',
+                  'operator.id'
                 ]
               }),
               signal: AbortSignal.timeout(10000)
@@ -121,6 +128,18 @@ export class FulfilCurrentService {
 
             if (woResponse.status === 200) {
               const orderWorkOrders = await woResponse.json();
+              
+              // Special debug for MO195423
+              if (order.rec_name === 'MO195423') {
+                console.log(`DEBUG MO195423 work orders:`, orderWorkOrders.map(wo => ({
+                  id: wo.id,
+                  state: wo.state,
+                  rec_name: wo.rec_name,
+                  employee: wo['employee.rec_name'],
+                  operator: wo['operator.rec_name']
+                })));
+              }
+              
               allWorkOrders = allWorkOrders.concat(orderWorkOrders);
               console.log(`${order.rec_name}: Found ${orderWorkOrders.length} work orders`);
             } else {
