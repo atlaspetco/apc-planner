@@ -45,11 +45,11 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
       operatorMap.set(op.id, {
         operatorId: op.id,
         operatorName: op.name,
-        totalAssignments: 0,
         totalEstimatedHours: 0,
         availableHours: op.availableHours || 40, // Default 40h/week
         observations: op.observations || 0,
-        assignments: []
+        assignments: [],
+        moIds: new Set<number>()
       });
     });
 
@@ -57,7 +57,10 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
     Array.from(assignments.values()).forEach(assignment => {
       const operator = operatorMap.get(assignment.operatorId);
       if (operator) {
-        operator.totalAssignments++;
+        // Track unique MOs this operator is assigned to
+        if (assignment.productionOrderId) {
+          operator.moIds.add(assignment.productionOrderId);
+        }
         // Store complete assignment data for the modal
         operator.assignments.push({
           ...assignment,
@@ -88,6 +91,8 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
 
     // Convert to array and add calculated fields
     return Array.from(operatorMap.values()).map(operator => {
+      // Calculate total assignments based on unique MO IDs
+      const totalAssignments = operator.moIds.size;
       const capacityPercent = Math.round((operator.totalEstimatedHours / operator.availableHours) * 100);
       
       // Calculate total observations from UPH data
@@ -108,10 +113,11 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
         ...operator,
         observations: totalObservations,
         capacityPercent,
-        estimatedCompletion: completionDate.toLocaleDateString('en-US', { 
-          weekday: 'short', 
-          month: 'short', 
-          day: 'numeric' 
+        totalAssignments,
+        estimatedCompletion: completionDate.toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric'
         })
       };
     }).filter(operator => operator.totalAssignments > 0) // Only show operators with assignments
