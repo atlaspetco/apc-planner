@@ -142,7 +142,18 @@ Changelog:
 - July 01, 2025. Added sample data seeding functionality for testing dashboard features
 ```
 
+## Critical UPH Calculation Methodology
+
+**CRITICAL**: The system uses ONE unified UPH calculation methodology:
+- **Formula**: UPH = Production Order Quantity ÷ Total Duration (hours)
+- **Grouping**: By Operator + Work Center + Routing + Operation + MO
+- **Data Source**: 
+  - Production quantity from `work_production_quantity` field (single value per MO)
+  - Duration from summing all work cycles for that group
+- **NEVER**: Sum work_cycles_quantity_done values - this creates inflated UPH values
+
 ## Recent Changes (Latest First)  
+- **CRITICAL UPH Calculation Fix**: Corrected fundamental calculation flaw where work cycle quantities were being summed instead of using production order quantity. Added `work_production_quantity` field to work_cycles table. Updated unified calculator to use production quantity ÷ total duration hours. This fixes inflated UPH values (e.g., Belt Bag showing 1000+ UPH instead of realistic 2-500 UPH range).
 - **Fixed Smart Bulk Assignment Data Source Issue**: Resolved critical bug where smart-bulk assignment endpoint was fetching production orders from database storage instead of live Fulfil API. Updated endpoint to fetch from `/api/production-orders` which returns live data with embedded work orders. This ensures assignments work with current production data rather than outdated or empty database records.
 - **Product Routings Categorization in Operator Settings**: Organized Product Routings into logical categories in the Operator Settings page - Lifetime (Leash, Handle, Slip Collar, Harness), Lifetime Pro (Pro Collar, Pro Harness, LCP Handle), Lifetime Lite (Lite Collar, Lite Leash, LLA), Accessories (Pouch, Bowl, Loop, Belt Bag, Bandana), Cuts (Cutting-Fabric, Cutting-Webbing), and Packaging. Categories are visually separated with dividers but without category headers per user preference, providing cleaner organization of the 23+ routing options.
 - **Smart Bulk Assignment System Implemented**: Created intelligent bulk assignment endpoint that respects operator constraints by checking work center permissions and capacity limits before assignment. System now validates operators have required work centers enabled (including Assembly/Sewing/Rope equivalence) and ensures capacity doesn't exceed operator's available hours. Frontend updated to use `/api/assignments/smart-bulk` endpoint instead of individual work order assignments, providing immediate feedback on assignment success/failure with proper error messages when constraints are violated.

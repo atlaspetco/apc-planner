@@ -150,6 +150,9 @@ export const workCycles = pgTable("work_cycles", {
   work_production_id: integer("work_production_id"), // work/production/id
   work_production_number: text("work_production_number"), // work/production/number
   work_production_product_code: text("work_production_product_code"), // work/production/product/code
+  work_production_quantity: real("work_production_quantity"), // work/production/quantity - CRITICAL for correct UPH calculation
+  work_production_priority: text("work_production_priority"), // work/production/priority
+  work_production_create_date: timestamp("work_production_create_date"), // work/production/create_date
   work_production_routing_rec_name: text("work_production_routing_rec_name"), // work/production/routing/rec_name
   work_rec_name: text("work_rec_name"), // work/rec_name
   work_operation_rec_name: text("work_operation_rec_name"), // work/operation/rec_name

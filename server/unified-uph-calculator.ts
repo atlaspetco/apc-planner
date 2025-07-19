@@ -140,13 +140,11 @@ export async function calculateUnifiedUph(
       const moNumber = cycle.work_production_number;
       if (moNumber && moQuantityMap.has(moNumber)) {
         group.moQuantity = moQuantityMap.get(moNumber)!;
-      } else {
-        // Fallback: Use the max quantity from work cycles if production order quantity not available
-        // This is not ideal but necessary when production_orders table is empty
-        if ((cycle.work_cycles_quantity_done || 0) > group.moQuantity) {
-          group.moQuantity = cycle.work_cycles_quantity_done || 0;
-        }
+      } else if (cycle.work_production_quantity) {
+        // Use production quantity from work cycle if available
+        group.moQuantity = cycle.work_production_quantity;
       }
+      // NOTE: Never sum work_cycles_quantity_done - this is a critical error!
     });
 
     // Calculate UPH per MO and group by Operator + Work Center + Routing + Operation
