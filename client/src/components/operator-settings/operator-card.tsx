@@ -253,24 +253,93 @@ export default function OperatorCard({
             </Badge>
           </div>
           <div className="grid grid-cols-1 gap-2">
-            {availableRoutings.map((routing) => {
-              const isEnabled = localOperator.routings?.includes(routing) || false;
-              const hasData = operatorCapabilities.routings.includes(routing);
+            {(() => {
+              // Define routing categories
+              const routingCategories = [
+                {
+                  name: 'Lifetime',
+                  routings: ['Lifetime Leash', 'Lifetime Handle', 'Lifetime Slip Collar', 'Lifetime Harness']
+                },
+                {
+                  name: 'Lifetime Pro',
+                  routings: ['Lifetime Pro Collar', 'Lifetime Pro Harness', 'LCP Handle']
+                },
+                {
+                  name: 'Lifetime Lite',
+                  routings: ['Lifetime Lite Collar', 'Lifetime Lite Leash', 'LLA']
+                },
+                {
+                  name: 'Accessories',
+                  routings: ['Lifetime Pouch', 'Lifetime Bowl', 'Lifetime Loop', 'Belt Bag', 'Lifetime Bandana']
+                },
+                {
+                  name: 'Cuts',
+                  routings: ['Cutting - Fabric', 'Cutting - Webbing']
+                },
+                {
+                  name: 'Packaging',
+                  routings: ['Packaging']
+                }
+              ];
+
+              // Get all categorized routings
+              const categorizedRoutings = routingCategories.flatMap(cat => cat.routings);
               
-              return (
-                <div key={routing} className="flex items-center justify-between p-2 border rounded">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm">{routing}</span>
-                    {hasData && isEnabled && <Badge className="text-xs bg-purple-100 text-purple-800">Has Data</Badge>}
-                  </div>
-                  <Switch
-                    checked={isEnabled}
-                    onCheckedChange={(checked) => handleToggle('routings', checked, routing)}
-                    size="sm"
-                  />
-                </div>
+              // Find any uncategorized routings
+              const uncategorizedRoutings = availableRoutings.filter(
+                routing => !categorizedRoutings.includes(routing)
               );
-            })}
+
+              const renderRouting = (routing: string) => {
+                const isEnabled = localOperator.routings?.includes(routing) || false;
+                const hasData = operatorCapabilities.routings.includes(routing);
+                
+                return (
+                  <div key={routing} className="flex items-center justify-between p-2 border rounded">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm">{routing}</span>
+                      {hasData && isEnabled && <Badge className="text-xs bg-purple-100 text-purple-800">Has Data</Badge>}
+                    </div>
+                    <Switch
+                      checked={isEnabled}
+                      onCheckedChange={(checked) => handleToggle('routings', checked, routing)}
+                      size="sm"
+                    />
+                  </div>
+                );
+              };
+
+              // First, filter categories that have available routings
+              const categoriesWithRoutings = routingCategories
+                .map(category => ({
+                  ...category,
+                  routings: category.routings.filter(r => availableRoutings.includes(r))
+                }))
+                .filter(category => category.routings.length > 0);
+
+              return (
+                <>
+                  {categoriesWithRoutings.map((category, index) => (
+                    <div key={category.name}>
+                      {category.routings.map(renderRouting)}
+                      {/* Add separator between categories, but not after the last one */}
+                      {index < categoriesWithRoutings.length - 1 && (
+                        <div className="my-3 border-b border-gray-200" />
+                      )}
+                    </div>
+                  ))}
+                  {/* Render any uncategorized routings at the end */}
+                  {uncategorizedRoutings.length > 0 && (
+                    <>
+                      {categoriesWithRoutings.length > 0 && (
+                        <div className="my-3 border-b border-gray-200" />
+                      )}
+                      {uncategorizedRoutings.map(renderRouting)}
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
 
