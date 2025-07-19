@@ -2756,6 +2756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: Date.now()
       });
 
+      const { importMultipleBatches } = await import("./fetch-newer-work-cycles.js");
       const results = await importMultipleBatches(maxBatches, batchSize, 1000);
 
       // Clear importing status
@@ -4992,6 +4993,219 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
       });
+    }
+  });
+
+  // Smart bulk assignment for routing/work center combination
+  app.post("/api/assignments/smart-bulk", async (req, res) => {
+    try {
+      const { routing, workCenter, operatorId } = req.body;
+      
+      if (!routing || !workCenter) {
+        return res.status(400).json({ error: "Routing and work center are required" });
+      }
+
+      // Get operator details
+      const operator = operatorId > 0 ? await storage.getOperator(operatorId) : null;
+      
+      // Check if operator has this work center enabled
+      if (operator) {
+        const operatorWorkCenters = operator.workCenters || [];
+        let hasWorkCenter = false;
+        
+        if (workCenter === 'Assembly') {
+          // Assembly includes Sewing and Rope
+          hasWorkCenter = operatorWorkCenters.includes('Assembly') || 
+                         operatorWorkCenters.includes('Sewing') || 
+                         operatorWorkCenters.includes('Rope');
+        } else {
+          hasWorkCenter = operatorWorkCenters.includes(workCenter);
+        }
+        
+        if (!hasWorkCenter) {
+          return res.status(400).json({ 
+            error: `${operator.name} is not enabled for ${workCenter} work center` 
+          });
+        }
+      }
+
+      // Get all production orders for this routing
+      const allProductionOrders = await storage.getAllProductionOrders();
+      const routingOrders = allProductionOrders.filter(po => po.routing === routing);
+      
+      // Get all work orders for this routing and work center
+      const workOrdersToAssign = [];
+      for (const po of routingOrders) {
+        if (po.workOrders) {
+          const relevantWOs = po.workOrders.filter(wo => 
+            wo.workCenter === workCenter && wo.state !== 'done' && wo.state !== 'finished'
+          );
+          for (const wo of relevantWOs) {
+            workOrdersToAssign.push({
+              workOrderId: wo.id,
+              productionOrder: po,
+              workOrder: wo
+            });
+          }
+        }
+      }
+
+      if (workOrdersToAssign.length === 0) {
+        return res.json({ 
+          success: true, 
+          message: "No work orders to assign",
+          assigned: 0 
+        });
+      }
+
+      // If unassigning (operatorId = 0), remove all assignments
+      if (operatorId === 0) {
+        for (const { workOrderId } of workOrdersToAssign) {
+          await storage.unassignWorkOrder(workOrderId);
+        }
+        return res.json({ 
+          success: true, 
+          message: `Unassigned ${workOrdersToAssign.length} work orders`,
+          unassigned: workOrdersToAssign.length 
+        });
+      }
+
+      // Calculate operator's current workload
+      const assignments = await storage.getAssignments();
+      const operatorAssignments = assignments.filter(a => a.operatorId === operatorId);
+      
+      let currentWorkloadHours = 0;
+      for (const assignment of operatorAssignments) {
+        // Find the production order for this assignment
+        const po = allProductionOrders.find(p => 
+          p.workOrders?.some(wo => wo.id === assignment.workOrderId)
+        );
+        if (!po) continue;
+        
+        const wo = po.workOrders?.find(w => w.id === assignment.workOrderId);
+        if (!wo) continue;
+
+        // Get UPH data
+        const uphData = await db
+          .select()
+          .from(historicalUph)
+          .where(and(
+            eq(historicalUph.operatorId, operatorId),
+            eq(historicalUph.workCenter, wo.workCenter),
+            eq(historicalUph.routing, po.routing)
+          ))
+          .limit(1);
+
+        if (uphData.length > 0 && uphData[0].unitsPerHour > 0) {
+          currentWorkloadHours += po.quantity / uphData[0].unitsPerHour;
+        }
+      }
+
+      // Check operator capacity
+      const operatorCapacity = operator?.availableHours || 40;
+      const remainingCapacity = operatorCapacity - currentWorkloadHours;
+
+      if (remainingCapacity <= 0) {
+        return res.status(400).json({ 
+          error: `${operator.name} is at full capacity (${currentWorkloadHours.toFixed(1)}/${operatorCapacity} hours)` 
+        });
+      }
+
+      // Calculate hours needed for new assignments
+      let totalNewHours = 0;
+      const assignmentDetails = [];
+
+      for (const { workOrderId, productionOrder, workOrder } of workOrdersToAssign) {
+        // Get UPH data for this combination
+        const uphData = await db
+          .select()
+          .from(historicalUph)
+          .where(and(
+            eq(historicalUph.operatorId, operatorId),
+            eq(historicalUph.workCenter, workCenter),
+            eq(historicalUph.routing, routing)
+          ))
+          .limit(1);
+
+        if (uphData.length === 0 || uphData[0].unitsPerHour === 0) {
+          assignmentDetails.push({
+            workOrderId,
+            quantity: productionOrder.quantity,
+            estimatedHours: 0,
+            uph: 0,
+            skip: true,
+            reason: "No UPH data"
+          });
+          continue;
+        }
+
+        const estimatedHours = productionOrder.quantity / uphData[0].unitsPerHour;
+        totalNewHours += estimatedHours;
+        
+        assignmentDetails.push({
+          workOrderId,
+          quantity: productionOrder.quantity,
+          estimatedHours,
+          uph: uphData[0].unitsPerHour,
+          skip: false
+        });
+      }
+
+      // Filter out work orders without UPH data
+      const validAssignments = assignmentDetails.filter(a => !a.skip);
+      const skippedCount = assignmentDetails.filter(a => a.skip).length;
+
+      if (validAssignments.length === 0) {
+        return res.status(400).json({ 
+          error: `${operator.name} has no UPH data for ${workCenter}/${routing}` 
+        });
+      }
+
+      // Check if total hours exceed capacity
+      if (totalNewHours > remainingCapacity) {
+        // Sort by efficiency (highest UPH first) and assign what fits
+        validAssignments.sort((a, b) => b.uph - a.uph);
+        
+        let assignedHours = 0;
+        let assignedCount = 0;
+        
+        for (const assignment of validAssignments) {
+          if (assignedHours + assignment.estimatedHours <= remainingCapacity) {
+            await storage.assignWorkOrder(assignment.workOrderId, operatorId);
+            assignedHours += assignment.estimatedHours;
+            assignedCount++;
+          }
+        }
+        
+        return res.json({ 
+          success: true, 
+          message: `Assigned ${assignedCount} of ${workOrdersToAssign.length} work orders (capacity limit)`,
+          assigned: assignedCount,
+          skipped: workOrdersToAssign.length - assignedCount,
+          capacityUsed: assignedHours.toFixed(1),
+          capacityRemaining: (remainingCapacity - assignedHours).toFixed(1)
+        });
+      }
+
+      // Assign all valid work orders
+      let assignedCount = 0;
+      for (const assignment of validAssignments) {
+        await storage.assignWorkOrder(assignment.workOrderId, operatorId);
+        assignedCount++;
+      }
+
+      return res.json({ 
+        success: true, 
+        message: `Assigned ${assignedCount} work orders to ${operator.name}`,
+        assigned: assignedCount,
+        skipped: skippedCount,
+        totalHours: totalNewHours.toFixed(1),
+        capacityRemaining: (remainingCapacity - totalNewHours).toFixed(1)
+      });
+
+    } catch (error) {
+      console.error("Smart bulk assignment error:", error);
+      return res.status(500).json({ error: "Failed to perform smart bulk assignment" });
     }
   });
 

@@ -1,6 +1,6 @@
 import { db } from "./db.js";
-import { workCycles, operators } from "../shared/schema.js";
-import { eq, and, sql } from "drizzle-orm";
+import { workCycles, operators, productionOrders } from "../shared/schema.js";
+import { eq, and, sql, or } from "drizzle-orm";
 
 export interface UphCalculationResult {
   operatorName: string;
@@ -73,6 +73,27 @@ export async function calculateUnifiedUph(
     // Fetch all cycles without date filter for now (to avoid SQL syntax error)
     const cycles = await query;
 
+    // Get all unique MO numbers from cycles
+    const uniqueMONumbers = [...new Set(cycles.map(c => c.work_production_number).filter(Boolean))];
+    
+    // Fetch MO quantities from production_orders table
+    const moQuantityMap = new Map<string, number>();
+    
+    if (uniqueMONumbers.length > 0) {
+      const moData = await db.select({
+        moNumber: productionOrders.moNumber,
+        quantity: productionOrders.quantity
+      })
+      .from(productionOrders)
+      .where(sql`mo_number IN (${sql.join(uniqueMONumbers.map(mo => sql`${mo}`), sql`, `)})`);
+      
+      moData.forEach(mo => {
+        if (mo.quantity) {
+          moQuantityMap.set(mo.moNumber, mo.quantity);
+        }
+      });
+    }
+
     // Group cycles by Operator + Work Center + Routing + MO
     const groupedData = new Map<string, {
       cycles: typeof cycles;
@@ -115,10 +136,16 @@ export async function calculateUnifiedUph(
       group.cycles.push(cycle);
       group.totalDurationSeconds += cycle.work_cycles_duration || 0;
       
-      // Use the quantity from the work cycle (should be consistent within an MO)
-      // Take the max to ensure we get the actual MO quantity
-      if ((cycle.quantity_done || 0) > group.moQuantity) {
-        group.moQuantity = cycle.quantity_done || 0;
+      // Get MO quantity from production orders table if available
+      const moNumber = cycle.work_production_number;
+      if (moNumber && moQuantityMap.has(moNumber)) {
+        group.moQuantity = moQuantityMap.get(moNumber)!;
+      } else {
+        // Fallback: Use the max quantity from work cycles if production order quantity not available
+        // This is not ideal but necessary when production_orders table is empty
+        if ((cycle.work_cycles_quantity_done || 0) > group.moQuantity) {
+          group.moQuantity = cycle.work_cycles_quantity_done || 0;
+        }
       }
     });
 
@@ -253,12 +280,12 @@ export async function getUphCalculationDetails(
     ];
 
     if (workCenter === 'Assembly') {
-      conditions.push(sql`(
-        ${workCycles.work_cycles_work_center_rec_name} = 'Sewing' OR 
-        ${workCycles.work_cycles_work_center_rec_name} = 'Rope' OR 
-        ${workCycles.work_cycles_work_center_rec_name} = 'Sewing / Assembly' OR 
-        ${workCycles.work_cycles_work_center_rec_name} = 'Rope / Assembly'
-      )`);
+      conditions.push(or(
+        eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
+        eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
+        eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
+        eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
+      ));
     } else {
       conditions.push(eq(workCycles.work_cycles_work_center_rec_name, workCenter));
     }

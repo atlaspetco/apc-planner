@@ -34,6 +34,17 @@ async function rebuildHistoricalUph() {
       const totalQuantity = calc.moDetails.reduce((sum, mo) => sum + mo.quantity, 0);
       const totalHours = calc.moDetails.reduce((sum, mo) => sum + mo.durationHours, 0);
       
+      // Debug logging for first few entries
+      if (inserted < 3) {
+        console.log(`Inserting: ${calc.operatorName}, UPH: ${calc.averageUph}, Qty: ${totalQuantity}, Hours: ${totalHours}`);
+      }
+      
+      // Skip if UPH is null or undefined
+      if (calc.averageUph == null || isNaN(calc.averageUph)) {
+        console.warn(`Skipping ${calc.operatorName} - ${calc.routing} - ${calc.operation}: UPH is ${calc.averageUph}`);
+        continue;
+      }
+      
       await db.insert(historicalUph).values({
         operatorId,
         routing: calc.routing,
@@ -42,7 +53,7 @@ async function rebuildHistoricalUph() {
         workCenter: calc.workCenter,
         totalQuantity,
         totalHours,
-        unitsPerHour: calc.averageUph,
+        unitsPerHour: calc.averageUph, // Fixed: using camelCase to match schema
         observations: calc.observationCount,
         dataSource: 'unified-calculator-2025-07-19',
         lastCalculated: new Date()

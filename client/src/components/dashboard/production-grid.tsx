@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ProductionOrder } from "@shared/schema";
 import { OperatorDropdown } from "./operator-dropdown";
+import { useToast } from "@/hooks/use-toast";
 
 interface ProductionGridProps {
   productionOrders: ProductionOrder[];
@@ -34,6 +35,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
+  const { toast } = useToast();
   
   const toggleRouting = (routing: string) => {
     const newExpanded = new Set(expandedRoutings);
@@ -43,35 +45,6 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
       newExpanded.add(routing);
     }
     setExpandedRoutings(newExpanded);
-  };
-
-  // Handle operator assignment
-  const handleOperatorAssign = async (workOrderId: number, operatorId: number, quantity: number, routing: string, workCenter: string, operation: string) => {
-    try {
-      const response = await fetch('/api/work-orders/assign-operator', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workOrderId: workOrderId.toString(),
-          operatorId: operatorId === 0 ? null : operatorId.toString(),
-          quantity,
-          routing,
-          workCenter,
-          operation
-        })
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        console.log('Assignment successful:', result.message);
-        // Optionally refresh data or update local state
-      } else {
-        console.error('Assignment failed:', result.error);
-      }
-    } catch (error) {
-      console.error('Assignment error:', error);
-    }
   };
   
   if (isLoading) {
@@ -198,14 +171,46 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
                                 assignments={assignments}
                                 onAssign={async (operatorId) => {
-                                  // Bulk assign to all work orders in this work center for this routing
-                                  for (const wo of workOrdersInCenter) {
-                                    // Get the MO for this work order to find the correct quantity
-                                    const parentOrder = orders.find(o => o.workOrders?.some(workOrder => workOrder.id === wo.id));
-                                    await handleOperatorAssign(wo.id, operatorId, parentOrder?.quantity || 0, routing, workCenter, wo.operation);
+                                  try {
+                                    // Use smart bulk assignment endpoint
+                                    const response = await fetch('/api/assignments/smart-bulk', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        routing,
+                                        workCenter,
+                                        operatorId
+                                      })
+                                    });
+                                    
+                                    const result = await response.json();
+                                    
+                                    if (!response.ok) {
+                                      toast({
+                                        title: "Assignment Failed",
+                                        description: result.error || "Failed to assign operator",
+                                        variant: "destructive"
+                                      });
+                                      return;
+                                    }
+                                    
+                                    // Show success message
+                                    toast({
+                                      title: "Assignments Updated",
+                                      description: result.message,
+                                      variant: "default"
+                                    });
+                                    
+                                    // Refresh assignments after bulk assignment
+                                    onAssignmentChange?.();
+                                  } catch (error) {
+                                    console.error("Smart bulk assignment error:", error);
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to perform bulk assignment",
+                                      variant: "destructive"
+                                    });
                                   }
-                                  // Refresh assignments after bulk assignment
-                                  onAssignmentChange?.();
                                 }}
                                 className="w-full"
                               />
