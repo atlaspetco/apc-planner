@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 import { workCycles, operators, productionOrders } from "../shared/schema.js";
-import { eq, and, sql, or } from "drizzle-orm";
+import { eq, and, sql, or, desc } from "drizzle-orm";
 
 export interface UphCalculationResult {
   operatorName: string;
@@ -274,37 +274,48 @@ export async function getUphCalculationDetails(
     const result = results[0]; // Should only be one result for specific combination
     
     // Fetch the actual work cycles for display
-    const conditions = [
-      eq(workCycles.work_cycles_operator_rec_name, operatorName),
-      eq(workCycles.work_production_routing_rec_name, routing)
-    ];
-
+    let cycles;
+    
     if (workCenter === 'Assembly') {
-      conditions.push(or(
-        eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
-        eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
-        eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
-        eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
-      ));
+      cycles = await db
+        .select()
+        .from(workCycles)
+        .where(
+          and(
+            eq(workCycles.work_cycles_operator_rec_name, operatorName),
+            eq(workCycles.work_production_routing_rec_name, routing),
+            or(
+              eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
+              eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
+              eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
+              eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
+            )
+          )
+        )
+        .orderBy(desc(workCycles.createdAt));
     } else {
-      conditions.push(eq(workCycles.work_cycles_work_center_rec_name, workCenter));
+      cycles = await db
+        .select()
+        .from(workCycles)
+        .where(
+          and(
+            eq(workCycles.work_cycles_operator_rec_name, operatorName),
+            eq(workCycles.work_production_routing_rec_name, routing),
+            eq(workCycles.work_cycles_work_center_rec_name, workCenter)
+          )
+        )
+        .orderBy(desc(workCycles.createdAt));
     }
-
-    const cycles = await db
-      .select()
-      .from(workCycles)
-      .where(and(...conditions))
-      .orderBy(workCycles.created_at);
 
     // Format cycles for display
     const formattedCycles = cycles.map(cycle => ({
       id: cycle.id,
       moNumber: cycle.work_production_number,
       workCenter: cycle.work_cycles_work_center_rec_name,
-      quantity: cycle.quantity_done,
+      quantity: cycle.work_cycles_quantity_done,
       durationSeconds: cycle.work_cycles_duration,
       durationHours: (cycle.work_cycles_duration || 0) / 3600,
-      createdAt: cycle.created_at
+      createdAt: cycle.createdAt
     }));
 
     // Calculate total cycles across all MOs
