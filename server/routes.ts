@@ -2798,14 +2798,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating UPH using authentic Fulfil API field mapping',
+        currentOperation: 'Calculating UPH using unified methodology',
         startTime: Date.now()
       });
 
-      const { calculateUphFromFulfilFields } = await import("./fulfil-uph-calculation.js");
+      // Use unified calculator and rebuild historical table
+      const { rebuildHistoricalUph } = await import("./rebuild-historical-uph.js");
+      await rebuildHistoricalUph();
       
-      console.log("Starting UPH calculation using authentic Fulfil field mapping...");
-      const results = await calculateUphFromFulfilFields();
+      // Get the results for response
+      const { calculateUnifiedUph } = await import("./unified-uph-calculator.js");
+      const calculations = await calculateUnifiedUph();
       
       // Clear calculating status
       (global as any).updateImportStatus({
@@ -2814,26 +2817,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: null
       });
       
-      if (results.success) {
-        res.json({
-          success: true,
-          message: results.message,
-          calculations: results.calculations,
-          summary: results.summary,
-          totalCalculations: results.calculations,
-          workCenters: results.workCenters,
-          method: "Authentic Fulfil API field mapping with work center aggregation",
-          note: "Uses exact production.work/cycles endpoint field paths with Assembly consolidation"
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: "Failed to calculate UPH using Fulfil field mapping",
-          error: results.error
-        });
-      }
+      res.json({
+        success: true,
+        message: `Successfully calculated ${calculations.length} UPH values using unified methodology`,
+        calculations: calculations.length,
+        method: "Unified UPH calculation from database work cycles",
+        note: "Groups by Operator+WorkCenter+Routing+MO, averages across MOs"
+      });
     } catch (error) {
-      console.error("Error calculating UPH from Fulfil fields:", error);
+      console.error("Error calculating UPH from unified calculator:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
@@ -2845,7 +2837,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate UPH using Fulfil field mapping",
+        message: "Failed to calculate UPH using unified methodology",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
@@ -3278,13 +3270,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Calculate UPH directly from work cycles to ensure consistency with transparency modal
-      const { calculateUphFromWorkCycles } = await import("./work-cycles-import.js");
-      const calculationResult = await calculateUphFromWorkCycles();
+      // Use unified UPH calculator for consistency
+      const { calculateUnifiedUph } = await import("./unified-uph-calculator.js");
+      const calculationResults = await calculateUnifiedUph();
       
       const allOperators = await db.select().from(operators);
       
-      if (!calculationResult.calculations || calculationResult.calculations.length === 0) {
+      if (calculationResults.length === 0) {
         return res.json({
           routings: [],
           summary: {
@@ -3301,39 +3293,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create operator name mapping
       const operatorMap = new Map(allOperators.map(op => [op.id, op.name]));
       
-      // Helper function to consolidate work centers for display
-      const consolidateWorkCenter = (workCenter: string): string => {
-        if (!workCenter) return 'Unknown';
-        
-        const wcLower = workCenter.toLowerCase();
-        // Check for Sewing or Rope
-        if (wcLower.includes('sewing') || wcLower.includes('rope')) {
-          return 'Assembly';
-        }
-        // Check for common work centers
-        if (wcLower.includes('cutting')) return 'Cutting';
-        if (wcLower.includes('packaging')) return 'Packaging';
-        if (wcLower.includes('assembly')) return 'Assembly';
-        
-        // Clean up compound names
-        if (workCenter.includes(' / ')) {
-          const parts = workCenter.split(' / ');
-          return consolidateWorkCenter(parts[0].trim());
-        }
-        
-        return workCenter;
-      };
-      
       // Transform calculated results to match expected format
-      const cleanedUphResults = calculationResult.calculations.map(calc => {
+      const cleanedUphResults = calculationResults.map(calc => {
         // Find operator ID by name
         const operator = allOperators.find(op => op.name === calc.operatorName);
         return {
           operatorId: operator?.id || 0,
           operatorName: calc.operatorName,
-          workCenter: consolidateWorkCenter(calc.workCenter),
+          workCenter: calc.workCenter, // Already consolidated in unified calculator
           routing: calc.routing,
-          unitsPerHour: calc.uph,
+          operation: calc.operation, // Include operation from unified calculator
+          unitsPerHour: calc.averageUph,
           calculationPeriod: calc.observationCount
         };
       });
@@ -3525,95 +3495,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('UPH calculation details request:', { operatorName, workCenter, routing });
 
-      // Handle Assembly aggregation - Assembly includes both Sewing and Rope work centers
-      let whereConditions = [];
-      if (workCenter === 'Assembly') {
-        whereConditions.push(
-          eq(workCycles.work_cycles_operator_rec_name, operatorName as string),
-          or(
-            eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
-            eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
-            eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
-            eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
-          ),
-          eq(workCycles.work_production_routing_rec_name, routing as string)
-        );
-      } else {
-        whereConditions.push(
-          eq(workCycles.work_cycles_operator_rec_name, operatorName as string),
-          eq(workCycles.work_cycles_work_center_rec_name, workCenter as string),
-          eq(workCycles.work_production_routing_rec_name, routing as string)
-        );
-      }
+      // Use unified calculator for calculation details
+      const { getUphCalculationDetails } = await import("./unified-uph-calculator.js");
+      const result = await getUphCalculationDetails(
+        operatorName as string,
+        workCenter as string,
+        routing as string
+      );
 
-      // Get work cycles for this specific combination
-      let cycles;
-      try {
-        if (workCenter === 'Assembly') {
-          // For Assembly, we need to look for Sewing and Rope work centers using raw SQL
-          cycles = await db.execute(sql`
-            SELECT * FROM work_cycles 
-            WHERE work_cycles_operator_rec_name = ${operatorName}
-            AND work_cycles_work_center_rec_name IN ('Sewing', 'Rope', 'Sewing / Assembly', 'Rope / Assembly')
-            AND work_production_routing_rec_name = ${routing}
-            ORDER BY created_at
-          `);
-        } else {
-          cycles = await db.execute(sql`
-            SELECT * FROM work_cycles 
-            WHERE work_cycles_operator_rec_name = ${operatorName}
-            AND work_cycles_work_center_rec_name = ${workCenter}
-            AND work_production_routing_rec_name = ${routing}
-            ORDER BY created_at
-          `);
-        }
-      } catch (sqlError) {
-        console.error('SQL error in UPH calculation details:', sqlError);
-        throw sqlError;
-      }
-      
-      // Extract rows from the query result
-      const cycleRows = cycles.rows || [];
-      console.log(`Found ${cycleRows.length} cycles for ${operatorName}/${workCenter}/${routing}`);
+      // Transform the response to match existing modal expectations
+      const transformedCycles = result.cycles.map(cycle => ({
+        id: cycle.id,
+        moNumber: cycle.moNumber,
+        workCenter: cycle.workCenter,
+        quantity: cycle.quantity,
+        durationSeconds: cycle.durationSeconds,
+        durationHours: cycle.durationHours,
+        uphThisCycle: cycle.quantity && cycle.durationHours > 0 ? 
+          cycle.quantity / cycle.durationHours : 0
+      }));
 
-      // Format the cycles with calculated values
-      const formattedCycles = cycleRows.map(cycle => {
-        const durationSeconds = cycle.work_cycles_duration || 0;
-        const durationHours = durationSeconds / 3600; // Convert seconds to hours
-        const quantityDone = cycle.work_cycles_quantity_done || 0;
-        const uph = durationHours > 0 ? quantityDone / durationHours : 0;
-        
-        // Extract MO/WO numbers from work_rec_name if available
-        let moNumber = 'Unknown';
-        let woNumber = 'Unknown';
-        
-        if (cycle.work_rec_name) {
-          const parts = cycle.work_rec_name.split('|').map(p => p.trim());
-          if (parts[0]?.startsWith('WO')) {
-            woNumber = parts[0];
-          }
-          if (parts[2]?.startsWith('MO')) {
-            moNumber = parts[2];
-          }
-        } else if (cycle.work_production_number) {
-          // Fallback to production number
-          moNumber = cycle.work_production_number;
-        }
-        
-        return {
-          id: cycle.id,
-          moNumber,
-          woNumber,
-          quantity: quantityDone,
-          durationHours: durationHours > 0 ? durationHours : null,
-          uph: Math.round(uph * 100) / 100, // Round to 2 decimal places
-          operation: cycle.work_operation_rec_name || 'Unknown',
-          workCenter: cycle.work_cycles_work_center_rec_name || 'Unknown',
-          date: cycle.created_at || null
-        };
+      // Send the unified response
+      res.json({
+        cycles: transformedCycles,
+        summary: result.summary
       });
-
-      res.json({ cycles: formattedCycles });
     } catch (error) {
       console.error('Error fetching UPH calculation details:', error);
       res.status(500).json({ error: 'Failed to fetch calculation details' });
