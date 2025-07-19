@@ -172,9 +172,18 @@ export function UphCalculationModal({
             <div className="mt-4 text-sm text-muted-foreground">
               <p><strong>Total Observations:</strong> {cyclesData.cycles.length}</p>
               <p><strong>Date Range:</strong> {
-                format(new Date(Math.min(...cyclesData.cycles.map((c: WorkCycleDetail) => new Date(c.date).getTime()))), 'MMM d, yyyy')
-              } - {
-                format(new Date(Math.max(...cyclesData.cycles.map((c: WorkCycleDetail) => new Date(c.date).getTime()))), 'MMM d, yyyy')
+                (() => {
+                  const validDates = cyclesData.cycles
+                    .map((c: WorkCycleDetail) => c.date ? new Date(c.date).getTime() : null)
+                    .filter(d => d !== null && !isNaN(d)) as number[];
+                  
+                  if (validDates.length === 0) return 'No valid dates';
+                  
+                  const minDate = new Date(Math.min(...validDates));
+                  const maxDate = new Date(Math.max(...validDates));
+                  
+                  return `${format(minDate, 'MMM d, yyyy')} - ${format(maxDate, 'MMM d, yyyy')}`;
+                })()
               }</p>
             </div>
           )}
