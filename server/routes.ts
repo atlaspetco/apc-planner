@@ -3364,8 +3364,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allRoutings = Array.from(new Set(cleanedUphResults.map(row => row.routing))).sort();
       
       // Group UPH data by routing, then by operator
-      // Change: Instead of collecting arrays of values, we'll store the direct value from unified calculator
-      const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
+      // Store arrays to handle multiple operations per work center
+      const routingData = new Map<string, Map<number, Record<string, { uphValues: { uph: number; observations: number }[] }>>>();
       
       cleanedUphResults.forEach(row => {
         // Skip rows with null operator ID
@@ -3384,11 +3384,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const operatorData = routingOperators.get(row.operatorId)!;
         
-        // Store the exact UPH value from unified calculator (no additional averaging)
-        operatorData[row.workCenter] = {
+        // Initialize array if not exists
+        if (!operatorData[row.workCenter]) {
+          operatorData[row.workCenter] = { uphValues: [] };
+        }
+        
+        // Add this operation's UPH data to the array
+        operatorData[row.workCenter].uphValues.push({
           uph: row.unitsPerHour,
           observations: row.calculationPeriod
-        };
+        });
       });
       
       // Transform to response format
@@ -3404,10 +3409,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           allWorkCenters.forEach(workCenter => {
             const uphData = workCenterData[workCenter];
-            if (uphData) {
-              // Use the exact UPH value from unified calculator (no additional averaging)
-              workCenterPerformance[workCenter] = Math.round(uphData.uph * 100) / 100;
-              totalObservations += uphData.observations || 0;
+            if (uphData && uphData.uphValues && uphData.uphValues.length > 0) {
+              // Calculate weighted average UPH when multiple operations exist
+              let totalWeightedUph = 0;
+              let totalWeight = 0;
+              
+              uphData.uphValues.forEach(({ uph, observations }) => {
+                totalWeightedUph += uph * observations;
+                totalWeight += observations;
+              });
+              
+              const weightedAverageUph = totalWeight > 0 ? totalWeightedUph / totalWeight : 0;
+              workCenterPerformance[workCenter] = Math.round(weightedAverageUph * 100) / 100;
+              totalObservations += totalWeight;
             } else {
               workCenterPerformance[workCenter] = null;
             }

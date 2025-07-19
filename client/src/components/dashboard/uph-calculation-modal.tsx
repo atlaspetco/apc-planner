@@ -111,7 +111,8 @@ export function UphCalculationModal({
             </p>
             {calculatedUph && uphValue && Math.abs(calculatedUph - uphValue) > 0.01 && (
               <p className="text-sm text-amber-600 mt-2">
-                Note: Displayed UPH ({uphValue?.toFixed(2) || '0.00'}) may differ slightly due to rounding.
+                Note: Table displays weighted average UPH ({uphValue?.toFixed(2) || '0.00'}) when multiple operations exist.
+                This shows combined performance across all operations.
               </p>
             )}
           </div>
