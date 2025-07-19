@@ -3278,11 +3278,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Direct database query to get stored UPH data from historical_uph table
-      const uphResults = await db.select().from(historicalUph);
+      // Calculate UPH directly from work cycles to ensure consistency with transparency modal
+      const { calculateUphFromWorkCycles } = await import("./work-cycles-import.js");
+      const calculationResult = await calculateUphFromWorkCycles();
+      
       const allOperators = await db.select().from(operators);
       
-      if (uphResults.length === 0) {
+      if (!calculationResult.calculations || calculationResult.calculations.length === 0) {
         return res.json({
           routings: [],
           summary: {
@@ -3322,13 +3324,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return workCenter;
       };
       
-      // Clean and consolidate work center names
-      const cleanedUphResults = uphResults.map(row => ({
-        ...row,
-        workCenter: consolidateWorkCenter(row.workCenter),
-        unitsPerHour: row.unitsPerHour, // historicalUph uses unitsPerHour field
-        calculationPeriod: row.observations // historicalUph uses observations field
-      }));
+      // Transform calculated results to match expected format
+      const cleanedUphResults = calculationResult.calculations.map(calc => {
+        // Find operator ID by name
+        const operator = allOperators.find(op => op.name === calc.operatorName);
+        return {
+          operatorId: operator?.id || 0,
+          operatorName: calc.operatorName,
+          workCenter: consolidateWorkCenter(calc.workCenter),
+          routing: calc.routing,
+          unitsPerHour: calc.uph,
+          calculationPeriod: calc.observationCount
+        };
+      });
       
       // Get unique work centers and routings after cleaning
       const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
