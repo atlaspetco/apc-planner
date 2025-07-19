@@ -307,16 +307,39 @@ export async function getUphCalculationDetails(
         .orderBy(desc(workCycles.createdAt));
     }
 
-    // Format cycles for display
-    const formattedCycles = cycles.map(cycle => ({
-      id: cycle.id,
-      moNumber: cycle.work_production_number,
-      workCenter: cycle.work_cycles_work_center_rec_name,
-      quantity: cycle.work_cycles_quantity_done,
-      durationSeconds: cycle.work_cycles_duration,
-      durationHours: (cycle.work_cycles_duration || 0) / 3600,
-      createdAt: cycle.createdAt
-    }));
+    // Format cycles for display with proper field mapping
+    const formattedCycles = cycles.map(cycle => {
+      // Extract operation from work_operation_rec_name (format: "Operation Name | Operator | Work Center")
+      let operation = 'N/A';
+      if (cycle.work_operation_rec_name) {
+        const operationParts = cycle.work_operation_rec_name.split(' | ');
+        if (operationParts.length > 0) {
+          operation = operationParts[0];
+        }
+      }
+
+      // Extract WO number from work_rec_name if available
+      let woNumber = null;
+      if (cycle.work_rec_name) {
+        const woParts = cycle.work_rec_name.split(' | ');
+        if (woParts.length > 0 && woParts[0].startsWith('WO')) {
+          woNumber = woParts[0];
+        }
+      }
+
+      return {
+        id: cycle.id,
+        moNumber: cycle.work_production_number || 'N/A',
+        woNumber: woNumber || `WO${cycle.work_id || cycle.id}`,
+        workCenter: cycle.work_cycles_work_center_rec_name || 'N/A',
+        operation,
+        quantity: cycle.work_cycles_quantity_done || 0,
+        durationSeconds: cycle.work_cycles_duration || 0,
+        durationHours: (cycle.work_cycles_duration || 0) / 3600,
+        effectiveDate: cycle.work_cycles_operator_write_date,
+        createdAt: cycle.createdAt
+      };
+    });
 
     // Calculate total cycles across all MOs
     const totalCycles = formattedCycles.length;

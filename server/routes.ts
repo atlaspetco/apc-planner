@@ -2793,6 +2793,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk import all work cycles from Fulfil API
+  app.post("/api/fulfil/bulk-import-work-cycles", async (req: Request, res: Response) => {
+    try {
+      console.log("Starting bulk work cycles import...");
+      
+      // Set importing status
+      global.updateImportStatus?.({
+        isImporting: true,
+        currentOperation: 'Bulk importing all work cycles from Fulfil',
+        progress: 0,
+        startTime: Date.now()
+      });
+
+      const { bulkImportAllWorkCycles } = await import("./bulk-work-cycles-import.js");
+      const results = await bulkImportAllWorkCycles();
+
+      // Clear importing status
+      global.updateImportStatus?.({
+        isImporting: false,
+        currentOperation: 'Bulk import completed',
+        progress: 100,
+        startTime: null
+      });
+
+      res.json({
+        success: true,
+        message: `Bulk import complete: ${results.totalImported} cycles imported`,
+        totalImported: results.totalImported,
+        totalSkipped: results.totalSkipped,
+        highestId: results.highestId,
+        newOperatorsCreated: results.newOperatorsCreated,
+        uniqueOperatorsCount: results.uniqueOperatorsCount
+      });
+
+    } catch (error) {
+      console.error("Bulk import error:", error);
+      
+      global.updateImportStatus?.({
+        isImporting: false,
+        lastError: error instanceof Error ? error.message : "Unknown error"
+      });
+
+      res.status(500).json({
+        success: false,
+        message: "Bulk work cycles import failed",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Single UPH calculation from work cycles
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
@@ -3314,7 +3364,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allRoutings = Array.from(new Set(cleanedUphResults.map(row => row.routing))).sort();
       
       // Group UPH data by routing, then by operator
-      const routingData = new Map<string, Map<number, Record<string, number[]>>>();
+      // Change: Instead of collecting arrays of values, we'll store the direct value from unified calculator
+      const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
       
       cleanedUphResults.forEach(row => {
         // Skip rows with null operator ID
@@ -3333,10 +3384,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const operatorData = routingOperators.get(row.operatorId)!;
         
-        if (!operatorData[row.workCenter]) {
-          operatorData[row.workCenter] = [];
-        }
-        operatorData[row.workCenter].push(row.unitsPerHour);
+        // Store the exact UPH value from unified calculator (no additional averaging)
+        operatorData[row.workCenter] = {
+          uph: row.unitsPerHour,
+          observations: row.calculationPeriod
+        };
       });
       
       // Transform to response format
@@ -3351,20 +3403,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           let totalObservations = 0;
           
           allWorkCenters.forEach(workCenter => {
-            const uphValues = workCenterData[workCenter];
-            if (uphValues && uphValues.length > 0) {
-              const avgUph = uphValues.reduce((sum, val) => sum + val, 0) / uphValues.length;
-              workCenterPerformance[workCenter] = Math.round(avgUph * 100) / 100;
-              
-              // Sum up observations for this work center using cleaned data
-              const operatorWorkCenterRecords = cleanedUphResults.filter(r => 
-                r.operatorId === operatorId && 
-                r.routing === routingName && 
-                r.workCenter === workCenter
-              );
-              totalObservations += operatorWorkCenterRecords.reduce((sum, record) => 
-                sum + (record.calculationPeriod || 0), 0
-              );
+            const uphData = workCenterData[workCenter];
+            if (uphData) {
+              // Use the exact UPH value from unified calculator (no additional averaging)
+              workCenterPerformance[workCenter] = Math.round(uphData.uph * 100) / 100;
+              totalObservations += uphData.observations || 0;
             } else {
               workCenterPerformance[workCenter] = null;
             }
@@ -3508,12 +3551,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transformedCycles = result.cycles.map(cycle => ({
         id: cycle.id,
         moNumber: cycle.moNumber,
+        woNumber: cycle.woNumber || `WO${cycle.id}`, // Fallback if no WO number
         workCenter: cycle.workCenter,
+        operation: cycle.operation || 'N/A',
         quantity: cycle.quantity,
         durationSeconds: cycle.durationSeconds,
         durationHours: cycle.durationHours,
-        uphThisCycle: cycle.quantity && cycle.durationHours > 0 ? 
-          cycle.quantity / cycle.durationHours : 0
+        uph: cycle.quantity && cycle.durationHours > 0 ? 
+          cycle.quantity / cycle.durationHours : 0,
+        date: cycle.createdAt || cycle.effectiveDate || null
       }));
 
       // Send the unified response
