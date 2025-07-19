@@ -449,7 +449,7 @@ export default function UphAnalytics() {
               {Object.entries(uphData.summary.avgUphByCeter).map(([workCenter, avgUph]) => (
                 <div key={workCenter} className="text-center p-4 border rounded-lg">
                   <h3 className="font-medium text-sm text-muted-foreground mb-1">{workCenter}</h3>
-                  <p className="text-2xl font-bold">{avgUph.toFixed(1)}</p>
+                  <p className="text-2xl font-bold">{avgUph?.toFixed(1) || '0.0'}</p>
                   <p className="text-xs text-muted-foreground">units/hour</p>
                 </div>
               ))}

@@ -78,7 +78,7 @@ export function UphCalculationModal({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-blue-600 font-medium">Total Quantity</p>
-                  <p className="text-2xl font-bold text-blue-900">{totalQuantity.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-blue-900">{totalQuantity?.toLocaleString() || '0'}</p>
                 </div>
                 <Package className="w-8 h-8 text-blue-300" />
               </div>
@@ -87,7 +87,7 @@ export function UphCalculationModal({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-green-600 font-medium">Total Hours</p>
-                  <p className="text-2xl font-bold text-green-900">{totalHours.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-green-900">{totalHours?.toFixed(2) || '0.00'}</p>
                 </div>
                 <Clock className="w-8 h-8 text-green-300" />
               </div>
@@ -96,7 +96,7 @@ export function UphCalculationModal({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-purple-600 font-medium">Calculated UPH</p>
-                  <p className="text-2xl font-bold text-purple-900">{calculatedUph.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-purple-900">{calculatedUph?.toFixed(2) || '0.00'}</p>
                 </div>
                 <Calculator className="w-8 h-8 text-purple-300" />
               </div>
@@ -107,11 +107,11 @@ export function UphCalculationModal({
           <div className="bg-gray-50 p-4 rounded-lg mb-6">
             <p className="text-sm font-medium text-gray-700 mb-2">Calculation Formula:</p>
             <p className="font-mono text-lg">
-              UPH = Total Quantity ÷ Total Hours = {totalQuantity.toLocaleString()} ÷ {totalHours.toFixed(2)} = <strong>{calculatedUph.toFixed(2)}</strong>
+              UPH = Total Quantity ÷ Total Hours = {totalQuantity?.toLocaleString() || '0'} ÷ {totalHours?.toFixed(2) || '0.00'} = <strong>{calculatedUph?.toFixed(2) || '0.00'}</strong>
             </p>
-            {Math.abs(calculatedUph - uphValue) > 0.01 && (
+            {calculatedUph && uphValue && Math.abs(calculatedUph - uphValue) > 0.01 && (
               <p className="text-sm text-amber-600 mt-2">
-                Note: Displayed UPH ({uphValue.toFixed(2)}) may differ slightly due to rounding.
+                Note: Displayed UPH ({uphValue?.toFixed(2) || '0.00'}) may differ slightly due to rounding.
               </p>
             )}
           </div>
@@ -152,10 +152,10 @@ export function UphCalculationModal({
                         <TableCell className="font-mono text-sm">{cycle.woNumber}</TableCell>
                         <TableCell className="text-sm">{cycle.workCenter}</TableCell>
                         <TableCell className="text-sm">{cycle.operation}</TableCell>
-                        <TableCell className="text-right">{cycle.quantity.toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{cycle.durationHours.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">{cycle.quantity?.toLocaleString() || '0'}</TableCell>
+                        <TableCell className="text-right">{cycle.durationHours?.toFixed(2) || '0.00'}</TableCell>
                         <TableCell className="text-right">
-                          <Badge variant="outline">{cycle.uph.toFixed(1)}</Badge>
+                          <Badge variant="outline">{cycle.uph?.toFixed(1) || '0.0'}</Badge>
                         </TableCell>
                       </TableRow>
                     ))}
