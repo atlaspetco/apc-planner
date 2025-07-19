@@ -5046,6 +5046,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/assignments/smart-bulk", async (req, res) => {
     try {
       const { routing, workCenter, operatorId } = req.body;
+      const { workOrderAssignments, historicalUph } = await import("../shared/schema.js");
       
       if (!routing || !workCenter) {
         return res.status(400).json({ error: "Routing and work center are required" });
@@ -5147,8 +5148,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Calculate operator's current workload
-      const assignments = await storage.getAssignments();
-      const operatorAssignments = assignments.filter(a => a.operatorId === operatorId);
+      const assignments = await db.select()
+        .from(workOrderAssignments)
+        .where(and(
+          eq(workOrderAssignments.operatorId, operatorId),
+          eq(workOrderAssignments.isActive, true)
+        ));
+      const operatorAssignments = assignments;
       
       let currentWorkloadHours = 0;
       for (const assignment of operatorAssignments) {
