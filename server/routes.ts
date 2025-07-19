@@ -3321,145 +3321,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Fetch all work cycles directly to avoid Drizzle query issues
-      const allCycles = await db.select().from(workCycles);
-      const allProductionOrders = await db.select().from(productionOrders);
+      // Use the core UPH calculator for consistency
+      const { calculateCoreUph } = await import("./uph-core-calculator.js");
+      const calculationResults = await calculateCoreUph();
+      
       const allOperators = await db.select().from(operators);
-      
-      // Create MO quantity map
-      const moQuantityMap = new Map<string, number>();
-      allProductionOrders.forEach(po => {
-        if (po.moNumber && po.quantity) {
-          moQuantityMap.set(po.moNumber, po.quantity);
-        }
-      });
-      
-      // Create routing map
-      const routingMap = new Map<string, string>();
-      allProductionOrders.forEach(po => {
-        if (po.moNumber && po.routing) {
-          routingMap.set(po.moNumber, po.routing);
-        }
-      });
-      
-      // Consolidate work centers function
-      const consolidateWorkCenter = (wc: string | null): string | null => {
-        if (!wc) return null;
-        const wcLower = wc.toLowerCase();
-        if (wcLower.includes('sewing') || wcLower.includes('rope')) {
-          return 'Assembly';
-        } else if (wcLower.includes('cutting')) {
-          return 'Cutting';
-        } else if (wcLower.includes('packaging')) {
-          return 'Packaging';
-        }
-        return wc;
-      };
-      
-      // Group work cycles by Operator + Work Center + Routing + MO
-      const moGroupedData = new Map<string, {
-        operatorName: string;
-        workCenter: string;
-        routing: string;
-        moNumber: string;
-        totalDurationSeconds: number;
-        moQuantity: number;
-        cycleCount: number;
-      }>();
-      
-      allCycles.forEach(cycle => {
-        if (!cycle.work_cycles_operator_rec_name || 
-            !cycle.work_cycles_work_center_rec_name || 
-            !cycle.work_production_number ||
-            !cycle.work_cycles_duration ||
-            cycle.work_cycles_duration <= 0) {
-          return;
-        }
-        
-        const consolidatedWC = consolidateWorkCenter(cycle.work_cycles_work_center_rec_name);
-        if (!consolidatedWC) return;
-        
-        const routing = routingMap.get(cycle.work_production_number) || 
-                       cycle.work_production_routing_rec_name || 
-                       'Unknown';
-                       
-        const groupKey = `${cycle.work_cycles_operator_rec_name}|${consolidatedWC}|${routing}|${cycle.work_production_number}`;
-        
-        if (!moGroupedData.has(groupKey)) {
-          moGroupedData.set(groupKey, {
-            operatorName: cycle.work_cycles_operator_rec_name,
-            workCenter: consolidatedWC,
-            routing,
-            moNumber: cycle.work_production_number,
-            totalDurationSeconds: 0,
-            moQuantity: 0,
-            cycleCount: 0
-          });
-        }
-        
-        const group = moGroupedData.get(groupKey)!;
-        group.totalDurationSeconds += cycle.work_cycles_duration;
-        group.cycleCount++;
-        
-        // Get MO quantity
-        const moQuantity = moQuantityMap.get(cycle.work_production_number) || 
-                          cycle.work_production_quantity || 
-                          0;
-        if (moQuantity > 0) {
-          group.moQuantity = moQuantity;
-        }
-      });
-      
-      // Calculate UPH per MO then average by operator/workCenter/routing
-      const operatorGroupedData = new Map<string, {
-        operatorName: string;
-        workCenter: string;
-        routing: string;
-        moUphValues: number[];
-        totalObservations: number;
-      }>();
-      
-      moGroupedData.forEach(moData => {
-        // Skip if no quantity or duration
-        if (moData.moQuantity <= 0 || moData.totalDurationSeconds <= 0) return;
-        
-        const durationHours = moData.totalDurationSeconds / 3600;
-        
-        // Apply realistic filters
-        if (durationHours < (2 / 60)) return; // Less than 2 minutes
-        
-        const uphPerMo = moData.moQuantity / durationHours;
-        
-        // Apply UPH upper limit
-        if (uphPerMo > 500) return;
-        
-        const operatorKey = `${moData.operatorName}|${moData.workCenter}|${moData.routing}`;
-        
-        if (!operatorGroupedData.has(operatorKey)) {
-          operatorGroupedData.set(operatorKey, {
-            operatorName: moData.operatorName,
-            workCenter: moData.workCenter,
-            routing: moData.routing,
-            moUphValues: [],
-            totalObservations: 0
-          });
-        }
-        
-        const operatorGroup = operatorGroupedData.get(operatorKey)!;
-        operatorGroup.moUphValues.push(uphPerMo);
-        operatorGroup.totalObservations++;
-      });
-      
-      // Calculate average UPH for each operator/workCenter/routing
-      const calculationResults = Array.from(operatorGroupedData.values()).map(group => ({
-        operatorName: group.operatorName,
-        workCenter: group.workCenter,
-        routing: group.routing,
-        unitsPerHour: group.moUphValues.length > 0 
-          ? group.moUphValues.reduce((sum, uph) => sum + uph, 0) / group.moUphValues.length 
-          : 0,
-        observations: group.totalObservations
-      }));
       
       if (calculationResults.length === 0) {
         return res.json({
@@ -3676,33 +3542,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('UPH calculation details request:', { operatorName, workCenter, routing });
 
-      // Use unified calculator for calculation details
-      const { getUphCalculationDetails } = await import("./unified-uph-calculator.js");
-      const result = await getUphCalculationDetails(
+      // Use core calculator for consistency
+      const { getCoreUphDetails } = await import("./uph-core-calculator.js");
+      const result = await getCoreUphDetails(
         operatorName as string,
         workCenter as string,
         routing as string
       );
 
-      // Transform the response to match existing modal expectations
-      const transformedCycles = result.cycles.map(cycle => ({
-        id: cycle.id,
-        moNumber: cycle.moNumber,
-        woNumber: cycle.woNumber || `WO${cycle.id}`, // Fallback if no WO number
-        workCenter: cycle.workCenter,
-        operation: cycle.operation || 'N/A',
-        quantity: cycle.quantity,
-        durationSeconds: cycle.durationSeconds,
-        durationHours: cycle.durationHours,
-        uph: cycle.quantity && cycle.durationHours > 0 ? 
-          cycle.quantity / cycle.durationHours : 0,
-        date: cycle.createdAt || cycle.effectiveDate || null
+      // Transform the grouped MO data to match existing modal expectations
+      const transformedCycles = result.moGroupedData.map((moData, index) => ({
+        id: index,
+        moNumber: moData.moNumber,
+        woNumber: `WO${moData.moNumber}`, // Using MO number as fallback
+        workCenter: moData.workCenter,
+        operation: 'Combined Operations', // Since we group all operations
+        quantity: moData.moQuantity,
+        durationSeconds: moData.totalDurationSeconds,
+        durationHours: moData.totalDurationSeconds / 3600,
+        uph: moData.moQuantity && moData.totalDurationSeconds > 0 ? 
+          moData.moQuantity / (moData.totalDurationSeconds / 3600) : 0,
+        date: null, // Date not available in grouped data
+        cycleCount: moData.cycleCount
       }));
 
-      // Send the unified response
+      // Calculate summary statistics
+      const totalQuantity = result.moGroupedData.reduce((sum, mo) => sum + mo.moQuantity, 0);
+      const totalDurationHours = result.moGroupedData.reduce((sum, mo) => sum + (mo.totalDurationSeconds / 3600), 0);
+      const totalCycles = result.moGroupedData.reduce((sum, mo) => sum + mo.cycleCount, 0);
+
+      // Send the response with calculated average UPH
       res.json({
         cycles: transformedCycles,
-        summary: result.summary
+        summary: {
+          averageUph: result.averageUph,
+          totalQuantity,
+          totalDurationHours,
+          totalCycles,
+          moCount: result.moGroupedData.length,
+          operatorName,
+          workCenter,
+          routing
+        }
       });
     } catch (error) {
       console.error('Error fetching UPH calculation details:', error);

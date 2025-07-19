@@ -34,9 +34,30 @@ export async function calculateUnifiedUph(
   daysBack: number = 30
 ): Promise<UphCalculationResult[]> {
   try {
-    // Calculate date filter
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysBack);
+    // Use core calculator for consistency
+    const { calculateCoreUph } = await import("./uph-core-calculator.js");
+    const coreResults = await calculateCoreUph({ operatorFilter, workCenterFilter, routingFilter });
+    
+    // Transform core results to match this interface's expected output
+    return coreResults.map(result => ({
+      operatorName: result.operatorName,
+      workCenter: result.workCenter,
+      routing: result.routing,
+      operation: 'Combined Operations', // Core calculator groups all operations
+      averageUph: result.unitsPerHour,
+      observationCount: result.observations,
+      moDetails: result.moUphValues.map((uph, index) => ({
+        moNumber: `MO-${index}`, // MO details not preserved in core calculator
+        uph,
+        quantity: 0, // Not available in aggregated data
+        durationHours: 0 // Not available in aggregated data
+      }))
+    }));
+  } catch (error) {
+    console.error("Error in calculateUnifiedUph:", error);
+    throw error;
+  }
+}
 
     // Build query with explicit columns
     const whereConditions = [];
@@ -250,59 +271,12 @@ export async function getUphCalculationDetails(
   };
 }> {
   try {
-    // Calculate UPH for this specific combination
-    const results = await calculateUnifiedUph(operatorName, workCenter, routing);
+    // Use core calculator for consistency
+    const { getCoreUphDetails } = await import("./uph-core-calculator.js");
+    const result = await getCoreUphDetails(operatorName, workCenter, routing);
     
-    if (results.length === 0) {
-      return {
-        cycles: [],
-        summary: {
-          totalCycles: 0,
-          totalMOs: 0,
-          averageUph: 0,
-          moBreakdown: []
-        }
-      };
-    }
-
-    const result = results[0]; // Should only be one result for specific combination
-    
-    // Fetch the actual work cycles for display
-    let cycles;
-    
-    if (workCenter === 'Assembly') {
-      cycles = await db
-        .select()
-        .from(workCycles)
-        .where(
-          and(
-            eq(workCycles.work_cycles_operator_rec_name, operatorName),
-            eq(workCycles.work_production_routing_rec_name, routing),
-            or(
-              eq(workCycles.work_cycles_work_center_rec_name, 'Sewing'),
-              eq(workCycles.work_cycles_work_center_rec_name, 'Rope'),
-              eq(workCycles.work_cycles_work_center_rec_name, 'Sewing / Assembly'),
-              eq(workCycles.work_cycles_work_center_rec_name, 'Rope / Assembly')
-            )
-          )
-        )
-        .orderBy(desc(workCycles.createdAt));
-    } else {
-      cycles = await db
-        .select()
-        .from(workCycles)
-        .where(
-          and(
-            eq(workCycles.work_cycles_operator_rec_name, operatorName),
-            eq(workCycles.work_production_routing_rec_name, routing),
-            eq(workCycles.work_cycles_work_center_rec_name, workCenter)
-          )
-        )
-        .orderBy(desc(workCycles.createdAt));
-    }
-
-    // Format cycles for display with proper field mapping
-    const formattedCycles = cycles.map(cycle => {
+    // Format the cycles from core calculator
+    const formattedCycles = result.cycles.map(cycle => {
       // Extract operation from work_operation_rec_name (format: "Operation Name | Operator | Work Center")
       let operation = 'N/A';
       if (cycle.work_operation_rec_name) {
@@ -327,7 +301,7 @@ export async function getUphCalculationDetails(
         woNumber: woNumber || `WO${cycle.work_id || cycle.id}`,
         workCenter: cycle.work_cycles_work_center_rec_name || 'N/A',
         operation,
-        quantity: cycle.work_cycles_quantity_done || 0,
+        quantity: cycle.work_production_quantity || cycle.work_cycles_quantity_done || 0,
         durationSeconds: cycle.work_cycles_duration || 0,
         durationHours: (cycle.work_cycles_duration || 0) / 3600,
         effectiveDate: cycle.work_cycles_operator_write_date,
@@ -335,25 +309,24 @@ export async function getUphCalculationDetails(
       };
     });
 
-    // Calculate total cycles across all MOs
-    const totalCycles = formattedCycles.length;
+    // Calculate MO breakdown from grouped data
+    const moBreakdown = result.moGroupedData.map(moData => ({
+      moNumber: moData.moNumber,
+      quantity: moData.moQuantity,
+      totalDurationHours: moData.totalDurationSeconds / 3600,
+      uph: moData.moQuantity && moData.totalDurationSeconds > 0 
+        ? moData.moQuantity / (moData.totalDurationSeconds / 3600) 
+        : 0,
+      cycleCount: moData.cycleCount
+    }));
 
     return {
       cycles: formattedCycles,
       summary: {
-        totalCycles,
-        totalMOs: result.moDetails.length,
+        totalCycles: formattedCycles.length,
+        totalMOs: moBreakdown.length,
         averageUph: result.averageUph,
-        moBreakdown: result.moDetails.map(mo => {
-          const moCycles = formattedCycles.filter(c => c.moNumber === mo.moNumber);
-          return {
-            moNumber: mo.moNumber,
-            quantity: mo.quantity,
-            totalDurationHours: mo.durationHours,
-            uph: mo.uph,
-            cycleCount: moCycles.length
-          };
-        })
+        moBreakdown
       }
     };
 
