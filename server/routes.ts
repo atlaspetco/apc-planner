@@ -5075,17 +5075,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Get all production orders for this routing
-      const allProductionOrders = await storage.getProductionOrders();
-      const routingOrders = allProductionOrders.filter(po => po.routing === routing);
+      // Get all production orders from live API data
+      const productionOrdersUrl = `${req.protocol}://${req.get('host')}/api/production-orders`;
+      const fulfilResponse = await fetch(productionOrdersUrl);
+      
+      if (!fulfilResponse.ok) {
+        console.error("Failed to fetch production orders for smart bulk assignment");
+        return res.status(500).json({ error: "Failed to fetch production orders" });
+      }
+      
+      const allProductionOrders = await fulfilResponse.json();
+      console.log(`Smart bulk assignment: Found ${allProductionOrders.length} total production orders`);
+      
+      const routingOrders = allProductionOrders.filter((po: any) => po.routing === routing || po.routingName === routing);
+      console.log(`Smart bulk assignment: Found ${routingOrders.length} orders for routing ${routing}`);
       
       // Get all work orders for this routing and work center
       const workOrdersToAssign = [];
       for (const po of routingOrders) {
         if (po.workOrders) {
-          const relevantWOs = po.workOrders.filter(wo => 
-            wo.workCenter === workCenter && wo.state !== 'done' && wo.state !== 'finished'
-          );
+          // Handle Assembly work center which includes Sewing and Rope
+          const relevantWOs = po.workOrders.filter((wo: any) => {
+            const woWorkCenter = wo.workCenter || wo.originalWorkCenter;
+            let matchesWorkCenter = false;
+            
+            if (workCenter === 'Assembly') {
+              matchesWorkCenter = woWorkCenter === 'Assembly' || woWorkCenter === 'Sewing' || woWorkCenter === 'Rope';
+            } else {
+              matchesWorkCenter = woWorkCenter === workCenter;
+            }
+            
+            const notCompleted = wo.state !== 'done' && wo.state !== 'finished';
+            
+            console.log(`Work order ${wo.id}: workCenter=${woWorkCenter}, matchesWorkCenter=${matchesWorkCenter}, state=${wo.state}, notCompleted=${notCompleted}`);
+            
+            return matchesWorkCenter && notCompleted;
+          });
+          
           for (const wo of relevantWOs) {
             workOrdersToAssign.push({
               workOrderId: wo.id,
@@ -5095,6 +5121,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
+      
+      console.log(`Smart bulk assignment: Found ${workOrdersToAssign.length} work orders to assign for ${workCenter}/${routing}`);
 
       if (workOrdersToAssign.length === 0) {
         return res.json({ 
