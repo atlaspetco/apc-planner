@@ -5030,7 +5030,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get all production orders for this routing
-      const allProductionOrders = await storage.getAllProductionOrders();
+      const allProductionOrders = await storage.getProductionOrders();
       const routingOrders = allProductionOrders.filter(po => po.routing === routing);
       
       // Get all work orders for this routing and work center
@@ -5061,7 +5061,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If unassigning (operatorId = 0), remove all assignments
       if (operatorId === 0) {
         for (const { workOrderId } of workOrdersToAssign) {
-          await storage.unassignWorkOrder(workOrderId);
+          // Delete existing assignments for this work order
+          await db.delete(workOrderAssignments)
+            .where(eq(workOrderAssignments.workOrderId, workOrderId));
         }
         return res.json({ 
           success: true, 
@@ -5171,7 +5173,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         for (const assignment of validAssignments) {
           if (assignedHours + assignment.estimatedHours <= remainingCapacity) {
-            await storage.assignWorkOrder(assignment.workOrderId, operatorId);
+            // Delete any existing assignments for this work order
+            await db.delete(workOrderAssignments)
+              .where(eq(workOrderAssignments.workOrderId, assignment.workOrderId));
+            
+            // Create new assignment
+            await db.insert(workOrderAssignments).values({
+              workOrderId: assignment.workOrderId,
+              operatorId: operatorId,
+              assignedBy: "smart-bulk",
+              isActive: true
+            });
+            
             assignedHours += assignment.estimatedHours;
             assignedCount++;
           }
@@ -5190,7 +5203,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Assign all valid work orders
       let assignedCount = 0;
       for (const assignment of validAssignments) {
-        await storage.assignWorkOrder(assignment.workOrderId, operatorId);
+        // Delete any existing assignments for this work order
+        await db.delete(workOrderAssignments)
+          .where(eq(workOrderAssignments.workOrderId, assignment.workOrderId));
+        
+        // Create new assignment
+        await db.insert(workOrderAssignments).values({
+          workOrderId: assignment.workOrderId,
+          operatorId: operatorId,
+          assignedBy: "smart-bulk",
+          isActive: true
+        });
         assignedCount++;
       }
 
@@ -5205,7 +5228,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       console.error("Smart bulk assignment error:", error);
-      return res.status(500).json({ error: "Failed to perform smart bulk assignment" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error("Error details:", errorMessage);
+      console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace");
+      return res.status(500).json({ 
+        error: "Failed to perform smart bulk assignment",
+        details: errorMessage 
+      });
     }
   });
 
