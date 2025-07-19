@@ -38,40 +38,36 @@ export async function calculateUnifiedUph(
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysBack);
 
-    // Build query with base conditions
-    let query = db.select().from(workCycles);
+    // Build query with explicit columns
+    const whereConditions = [];
     
     // Apply filters
-    if (operatorFilter || workCenterFilter || routingFilter) {
-      const whereConditions = [];
-      
-      if (operatorFilter) {
-        whereConditions.push(eq(workCycles.work_cycles_operator_rec_name, operatorFilter));
-      }
-      
-      if (workCenterFilter) {
-        if (workCenterFilter === 'Assembly') {
-          // Assembly includes Sewing and Rope work centers
-          whereConditions.push(sql`(
-            ${workCycles.work_cycles_work_center_rec_name} = 'Sewing' OR 
-            ${workCycles.work_cycles_work_center_rec_name} = 'Rope' OR 
-            ${workCycles.work_cycles_work_center_rec_name} = 'Sewing / Assembly' OR 
-            ${workCycles.work_cycles_work_center_rec_name} = 'Rope / Assembly'
-          )`);
-        } else {
-          whereConditions.push(eq(workCycles.work_cycles_work_center_rec_name, workCenterFilter));
-        }
-      }
-      
-      if (routingFilter) {
-        whereConditions.push(eq(workCycles.work_production_routing_rec_name, routingFilter));
-      }
-      
-      query = query.where(and(...whereConditions));
+    if (operatorFilter) {
+      whereConditions.push(eq(workCycles.work_cycles_operator_rec_name, operatorFilter));
     }
     
-    // Fetch all cycles without date filter for now (to avoid SQL syntax error)
-    const cycles = await query;
+    if (workCenterFilter) {
+      if (workCenterFilter === 'Assembly') {
+        // Assembly includes Sewing and Rope work centers
+        whereConditions.push(sql`(
+          ${workCycles.work_cycles_work_center_rec_name} = 'Sewing' OR 
+          ${workCycles.work_cycles_work_center_rec_name} = 'Rope' OR 
+          ${workCycles.work_cycles_work_center_rec_name} = 'Sewing / Assembly' OR 
+          ${workCycles.work_cycles_work_center_rec_name} = 'Rope / Assembly'
+        )`);
+      } else {
+        whereConditions.push(eq(workCycles.work_cycles_work_center_rec_name, workCenterFilter));
+      }
+    }
+    
+    if (routingFilter) {
+      whereConditions.push(eq(workCycles.work_production_routing_rec_name, routingFilter));
+    }
+    
+    // Fetch all cycles with explicit columns
+    const cycles = whereConditions.length > 0
+      ? await db.select().from(workCycles).where(and(...whereConditions))
+      : await db.select().from(workCycles);
 
     // Get all unique MO numbers from cycles
     const uniqueMONumbers = [...new Set(cycles.map(c => c.work_production_number).filter(Boolean))];
