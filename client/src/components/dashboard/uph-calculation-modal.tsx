@@ -52,9 +52,10 @@ export function UphCalculationModal({
     enabled: isOpen
   });
 
-  const totalQuantity = cyclesData?.cycles?.reduce((sum: number, cycle: WorkCycleDetail) => sum + cycle.quantity, 0) || 0;
-  const totalHours = cyclesData?.cycles?.reduce((sum: number, cycle: WorkCycleDetail) => sum + cycle.durationHours, 0) || 0;
-  const calculatedUph = totalHours > 0 ? totalQuantity / totalHours : 0;
+  // Use the correctly calculated values from the API summary instead of recalculating
+  const totalQuantity = cyclesData?.summary?.totalQuantity || 0;
+  const totalHours = cyclesData?.summary?.totalDurationHours || 0;
+  const calculatedUph = cyclesData?.summary?.averageUph || 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={() => onClose()}>
