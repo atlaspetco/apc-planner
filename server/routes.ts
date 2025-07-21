@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { FulfilAPIService } from "./fulfil-api";
 import { db } from "./db.js";
-import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph, workOrderAssignments } from "../shared/schema.js";
+import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph, workOrderAssignments, activeWorkOrders } from "../shared/schema.js";
 import { sql, eq, desc, and } from "drizzle-orm";
 // Removed unused imports for deleted files
 // import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
@@ -4207,9 +4207,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               fulfilId: wo.id,
               productionOrderId: productionOrder[0].id,
               workCenter: wo.work_center,
-              workCenterName: wo['work_center.name'],
+              workCenterName: wo.work_center_name,
               operation: wo.operation,
-              operationName: wo['operation.name'],
+              operationName: wo.operation_name,
               routing: wo.routing || 'Standard',
               status: wo.state || 'assigned',
               plannedDate: wo.planned_date ? new Date(typeof wo.planned_date === 'string' ? wo.planned_date : wo.planned_date.iso_string) : null,
@@ -4292,27 +4292,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sync each work order to the active_work_orders table
       for (const wo of result.workOrders) {
         try {
-          // Extract required fields from the work order
-          const activeWorkOrder: InsertActiveWorkOrder = {
+          // Extract required fields from the work order - matching activeWorkOrders schema
+          const activeWorkOrder = {
             id: wo.id,
-            productionOrderId: wo.production?.id || 0,
-            workCenter: wo.work_center?.name || wo['work_center.name'] || 'Unknown',
-            operation: wo.operation?.name || wo['operation.name'] || 'Unknown',
+            productionOrderId: wo.production || 0,
+            moNumber: `MO${wo.production || wo.id}`,
+            productName: 'Product Name', // Need to get this from production order
+            productCode: null,
+            workCenter: wo.work_center_name || 'Unknown',
+            originalWorkCenter: wo.work_center_name,
+            operation: wo.operation_name || 'Unknown',
             routing: wo.routing || 'Standard',
             state: wo.state || 'waiting',
-            rec_name: wo.rec_name || '',
-            planned_date: wo.planned_date || null,
-            quantity_done: wo.quantity_done || 0,
-            quantity_pending: wo.quantity_pending || wo.quantity || 0,
-            employee_id: wo.employee?.id || wo['employee.id'] || null,
-            employee_name: wo.employee?.name || wo['employee.name'] || null,
-            production_routing: wo.production?.routing?.name || null,
-            production_number: wo.production?.number || null,
-            production_state: wo.production?.state || null,
-            notes: wo.notes || null,
-            sequence: wo.sequence || 0,
-            product_code: wo.production?.product?.code || null,
-            product_name: wo.production?.product?.name || null
+            quantity: wo.quantity_done || 1,
+            plannedDate: wo.planned_date ? new Date(typeof wo.planned_date === 'string' ? wo.planned_date : wo.planned_date.iso_string) : null,
+            rec_name: wo.rec_name || ''
           };
 
           await storage.upsertActiveWorkOrder(activeWorkOrder);

@@ -34,9 +34,10 @@ interface FulfilWorkOrder {
   priority?: string;
   type?: string;
   cost?: { decimal: string };
-  'work_center.name'?: string;
-  'operation.name'?: string;
-  'operator.name'?: string;
+  work_center_name?: string;
+  operation_name?: string;
+  operator_name?: string;
+  routing?: string;
 }
 
 interface FulfilWorkCycle {
@@ -327,9 +328,9 @@ export class FulfilAPIService {
                   rec_name: wo.rec_name,
                   state: wo.state || 'assigned',
                   work_center: workCenter,
-                  'work_center.name': workCenter,
+                  work_center_name: workCenter,
                   operation: operation,
-                  'operation.name': operation,
+                  operation_name: operation,
                   planned_date: wo.planned_date,
                   quantity_done: wo.quantity_done || 0,
                   routing: operation
