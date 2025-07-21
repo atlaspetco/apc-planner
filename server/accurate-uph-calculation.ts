@@ -269,6 +269,149 @@ export async function calculateAccurateUPH() {
   }
 }
 
+/**
+ * Get MO-level details for a specific operator/workCenter/routing combination
+ * This shows each MO as a single row with aggregated data, not individual work cycles
+ */
+export async function getAccurateMoDetails(
+  operatorName: string,
+  workCenter: string,
+  routing: string
+): Promise<{
+  moLevelData: any[];
+  averageUph: number;
+  totalQuantity: number;
+  totalDurationHours: number;
+  totalCycles: number;
+  moCount: number;
+}> {
+  console.log(`📊 Getting MO-level details for ${operatorName} | ${workCenter} | ${routing}`);
+
+  try {
+    // Fetch work cycles for this specific combination
+    const cyclesResult = await db.execute(sql`
+      SELECT DISTINCT
+        work_cycles_operator_rec_name as operator_name,
+        work_cycles_work_center_rec_name as work_center_name,
+        work_production_routing_rec_name as routing_name,
+        work_production_number as mo_number,
+        work_production_quantity as mo_quantity,
+        work_cycles_duration as duration_seconds,
+        work_operation_rec_name as operation_name,
+        work_production_create_date as mo_date,
+        work_cycles_id as cycle_id
+      FROM work_cycles 
+      WHERE state = 'done'
+        AND work_cycles_operator_rec_name = ${operatorName}
+        AND work_production_routing_rec_name = ${routing}
+        AND work_cycles_duration > 0
+        AND work_production_quantity > 0
+      ORDER BY work_production_number, work_cycles_id
+    `);
+    
+    const cycles = cyclesResult.rows;
+    console.log(`Found ${cycles.length} work cycles`);
+
+    // Group by MO and aggregate data
+    const moGroups = new Map<string, {
+      moNumber: string;
+      moQuantity: number;
+      totalDurationSeconds: number;
+      operations: Set<string>;
+      cycleCount: number;
+      moDate: Date | null;
+    }>();
+
+    for (const cycle of cycles) {
+      const cycleWorkCenter = transformWorkCenter(cycle.work_center_name?.toString() || '');
+      
+      // Skip if work center doesn't match (after transformation)
+      if (cycleWorkCenter !== workCenter) continue;
+
+      const moNumber = cycle.mo_number?.toString() || '';
+      const moQuantity = parseFloat(cycle.mo_quantity?.toString() || '0');
+      const durationSeconds = parseFloat(cycle.duration_seconds?.toString() || '0');
+      const operation = cycle.operation_name?.toString() || '';
+      const moDate = cycle.mo_date ? new Date(cycle.mo_date as string) : null;
+      
+      if (!moNumber || moQuantity <= 0) continue;
+      
+      if (!moGroups.has(moNumber)) {
+        moGroups.set(moNumber, {
+          moNumber,
+          moQuantity,
+          totalDurationSeconds: 0,
+          operations: new Set(),
+          cycleCount: 0,
+          moDate
+        });
+      }
+      
+      const group = moGroups.get(moNumber)!;
+      group.totalDurationSeconds += durationSeconds;
+      group.cycleCount++;
+      if (operation) group.operations.add(operation);
+    }
+
+    // Convert to MO-level data array
+    const moLevelData = [];
+    let totalQuantity = 0;
+    let totalDurationHours = 0;
+    let totalCycles = 0;
+    const uphValues: number[] = [];
+
+    for (const [moNumber, moData] of moGroups) {
+      const durationHours = moData.totalDurationSeconds / 3600;
+      
+      // Skip very short durations
+      if (durationHours < (2 / 60)) continue;
+      
+      const moUph = moData.moQuantity / durationHours;
+      
+      // Skip unrealistic UPH values
+      if (moUph > 500) continue;
+      
+      uphValues.push(moUph);
+      totalQuantity += moData.moQuantity;
+      totalDurationHours += durationHours;
+      totalCycles += moData.cycleCount;
+
+      moLevelData.push({
+        id: moNumber,
+        moNumber: moNumber,
+        woNumber: `Combined (${moData.cycleCount} cycles)`,
+        workCenter: workCenter,
+        operation: Array.from(moData.operations).join(', ') || 'Combined Operations',
+        quantity: moData.moQuantity,
+        durationHours: Math.round(durationHours * 100) / 100,
+        uph: Math.round(moUph * 100) / 100,
+        date: moData.moDate,
+        cycleCount: moData.cycleCount
+      });
+    }
+
+    // Calculate average UPH
+    const averageUph = uphValues.length > 0
+      ? uphValues.reduce((sum, uph) => sum + uph, 0) / uphValues.length
+      : 0;
+
+    console.log(`✅ Processed ${moLevelData.length} MOs with average UPH: ${averageUph.toFixed(2)}`);
+
+    return {
+      moLevelData,
+      averageUph: Math.round(averageUph * 100) / 100,
+      totalQuantity,
+      totalDurationHours: Math.round(totalDurationHours * 100) / 100,
+      totalCycles,
+      moCount: moLevelData.length
+    };
+
+  } catch (error) {
+    console.error("❌ Error getting MO details:", error);
+    throw error;
+  }
+}
+
 // Execute if running directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   calculateAccurateUPH()

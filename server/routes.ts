@@ -3529,44 +3529,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('UPH calculation details request:', { operatorName, workCenter, routing });
 
-      // Use core calculator for consistency
-      const { getCoreUphDetails } = await import("./uph-core-calculator.js");
-      const result = await getCoreUphDetails(
+      // Import the accurate calculation module that shows MO-level data
+      const { getAccurateMoDetails } = await import("./accurate-uph-calculation.js");
+      
+      // Get MO-level aggregated data using the accurate calculation method
+      const result = await getAccurateMoDetails(
         operatorName as string,
         workCenter as string,
         routing as string
       );
 
-      // Transform the grouped MO data to match existing modal expectations
-      const transformedCycles = result.moGroupedData.map((moData, index) => ({
-        id: index,
-        moNumber: moData.moNumber,
-        woNumber: `WO${moData.moNumber}`, // Using MO number as fallback
-        workCenter: moData.workCenter,
-        operation: 'Combined Operations', // Since we group all operations
-        quantity: moData.moQuantity,
-        durationSeconds: moData.totalDurationSeconds,
-        durationHours: moData.totalDurationSeconds / 3600,
-        uph: moData.moQuantity && moData.totalDurationSeconds > 0 ? 
-          moData.moQuantity / (moData.totalDurationSeconds / 3600) : 0,
-        date: null, // Date not available in grouped data
-        cycleCount: moData.cycleCount
-      }));
-
-      // Calculate summary statistics
-      const totalQuantity = result.moGroupedData.reduce((sum, mo) => sum + mo.moQuantity, 0);
-      const totalDurationHours = result.moGroupedData.reduce((sum, mo) => sum + (mo.totalDurationSeconds / 3600), 0);
-      const totalCycles = result.moGroupedData.reduce((sum, mo) => sum + mo.cycleCount, 0);
-
-      // Send the response with calculated average UPH
+      // Send the response with MO-level data
       res.json({
-        cycles: transformedCycles,
+        cycles: result.moLevelData,
         summary: {
           averageUph: result.averageUph,
-          totalQuantity,
-          totalDurationHours,
-          totalCycles,
-          moCount: result.moGroupedData.length,
+          totalQuantity: result.totalQuantity,
+          totalDurationHours: result.totalDurationHours,
+          totalCycles: result.totalCycles,
+          moCount: result.moCount,
           operatorName,
           workCenter,
           routing
