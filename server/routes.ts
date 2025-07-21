@@ -2843,40 +2843,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Single UPH calculation from work cycles
+  // Single UPH calculation from work cycles - ACCURATE VERSION
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating UPH using unified methodology',
+        currentOperation: 'Calculating accurate UPH using MO quantities',
         startTime: Date.now()
       });
 
-      // Use unified calculator and rebuild historical table
-      const { rebuildHistoricalUph } = await import("./rebuild-historical-uph.js");
-      await rebuildHistoricalUph();
-      
-      // Get the results for response
-      const { calculateUnifiedUph } = await import("./unified-uph-calculator.js");
-      const calculations = await calculateUnifiedUph();
+      // Use accurate UPH calculator that uses MO quantities properly
+      const { calculateAccurateUPH } = await import("./accurate-uph-calculation.js");
+      const result = await calculateAccurateUPH();
       
       // Clear calculating status
       (global as any).updateImportStatus({
         isCalculating: false,
-        currentOperation: 'UPH calculation completed',
+        currentOperation: 'Accurate UPH calculation completed',
         startTime: null
       });
       
       res.json({
-        success: true,
-        message: `Successfully calculated ${calculations.length} UPH values using unified methodology`,
-        calculations: calculations.length,
-        method: "Unified UPH calculation from database work cycles",
-        note: "Groups by Operator+WorkCenter+Routing+MO, averages across MOs"
+        success: result.success,
+        message: `Successfully calculated ${result.inserted} accurate UPH values`,
+        calculations: result.calculations.length,
+        details: {
+          totalCycles: result.totalCycles,
+          moGroups: result.moGroups,
+          operatorGroups: result.operatorGroups,
+          inserted: result.inserted
+        },
+        method: "Accurate UPH calculation using MO quantities",
+        note: "UPH per MO = MO Quantity / Total Duration, then averaged across MOs"
       });
     } catch (error) {
-      console.error("Error calculating UPH from unified calculator:", error);
+      console.error("Error calculating accurate UPH:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
@@ -2888,7 +2890,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate UPH using unified methodology",
+        message: "Failed to calculate accurate UPH",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
@@ -3321,13 +3323,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Use the core UPH calculator for consistency
-      const { calculateCoreUph } = await import("./uph-core-calculator.js");
-      const calculationResults = await calculateCoreUph();
+      // Use historical UPH data from the accurate calculation
+      const uphResults = await db.select().from(historicalUph).orderBy(historicalUph.routing);
       
       const allOperators = await db.select().from(operators);
       
-      if (calculationResults.length === 0) {
+      if (uphResults.length === 0) {
         return res.json({
           routings: [],
           summary: {
@@ -3344,30 +3345,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create operator name mapping
       const operatorMap = new Map(allOperators.map(op => [op.id, op.name]));
       
-      // Transform calculated results to match expected format
-      const cleanedUphResults = calculationResults.map(calc => {
-        // Find operator ID by name
-        const operator = allOperators.find(op => op.name === calc.operatorName);
-        return {
-          operatorId: operator?.id || 0,
-          operatorName: calc.operatorName,
-          workCenter: calc.workCenter, // Already consolidated in unified calculator
-          routing: calc.routing,
-          unitsPerHour: calc.unitsPerHour,
-          calculationPeriod: calc.observations
-        };
-      });
-      
-      // Get unique work centers and routings after cleaning
+      // Get unique work centers and routings
       const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
-      const allRoutings = Array.from(new Set(cleanedUphResults.map(row => row.routing))).sort();
+      const allRoutings = Array.from(new Set(uphResults.map(row => row.routing))).sort();
       
       // Group UPH data by routing, then by operator
       const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
       
-      // Build the routing data structure directly from unified calculator results
-      cleanedUphResults.forEach(row => {
-        // Skip rows with null operator ID
+      // Build the routing data structure from historical UPH data
+      uphResults.forEach(row => {
+        // Skip rows without proper data
         if (!row.operatorId || !row.routing || !row.workCenter) {
           console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
           return;
@@ -3383,19 +3370,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const operatorData = routingOperators.get(row.operatorId)!;
         
-        // Use the unified calculator's UPH directly (it already handles operation grouping correctly)
+        // Use the historical UPH data directly 
         operatorData[row.workCenter] = {
           uph: row.unitsPerHour,
-          observations: row.calculationPeriod
+          observations: row.observations
         };
       });
       
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          // Use operator name directly from historicalUph data
-          const operatorRecord = cleanedUphResults.find(r => r.operatorId === operatorId);
-          const operatorName = operatorRecord?.operatorName || operatorMap.get(operatorId) || `Operator ${operatorId}`;
+          // Get operator name from map or historical data
+          const operatorRecord = uphResults.find(r => r.operatorId === operatorId && r.routing === routingName);
+          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
@@ -3459,7 +3446,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const workCenterUph = new Map<string, number[]>();
       const uniqueOperators = new Set<number>();
       
-      cleanedUphResults.forEach(row => {
+      uphResults.forEach(row => {
         if (row.operatorId) {
           uniqueOperators.add(row.operatorId);
         }
@@ -3479,7 +3466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routings: routings.sort((a, b) => a.routingName.localeCompare(b.routingName)),
         summary: {
           totalOperators: uniqueOperators.size,
-          totalCombinations: cleanedUphResults.length,
+          totalCombinations: uphResults.length,
           totalRoutings: allRoutings.length,
           avgUphByCeter: avgUphByCenter
         },
