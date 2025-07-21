@@ -302,7 +302,7 @@ export async function getAccurateMoDetails(
         work_production_create_date as mo_date,
         work_cycles_id as cycle_id
       FROM work_cycles 
-      WHERE state = 'done'
+      WHERE (state = 'done' OR state IS NULL)  -- Include completed cycles and cycles without state
         AND work_cycles_operator_rec_name = ${operatorName}
         AND work_production_routing_rec_name = ${routing}
         AND work_cycles_duration > 0
