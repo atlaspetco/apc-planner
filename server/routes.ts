@@ -1024,66 +1024,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all active operators
       const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
       
-      // Get comprehensive UPH data using the same calculation method as UPH Analytics page
-      // This ensures we include all work centers including Rope operations
-      const workCyclesData = await db.select().from(workCycles);
+      // Get UPH data from the historical_uph table - this is the source of truth!
+      // This matches what the UPH analytics page uses
+      const historicalUphData = await db.select().from(historicalUph);
       
-      // Build comprehensive UPH map using work cycles data (same as UPH Analytics)
+      // Build UPH map from historical data
       const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
       
-      // Group work cycles by operator, work center, and routing for UPH calculations
-      const groupedData = new Map<string, { 
-        totalQuantity: number; 
-        totalDuration: number; 
-        cycles: number; 
-        operator: string;
-      }>();
-      
-      workCyclesData.forEach(cycle => {
-        // Use correct field names from work_cycles table
-        const operatorName = cycle.work_cycles_operator_rec_name;
-        const workCenter = cycle.work_cycles_work_center_rec_name;
-        const routing = cycle.work_production_routing_rec_name;
-        
-        if (!operatorName || !workCenter || !routing) return;
-        
-        // Find operator ID by name for key consistency
-        const operator = allOperators.find(op => op.name === operatorName);
+      historicalUphData.forEach(record => {
+        // Find operator ID by name
+        const operator = allOperators.find(op => op.name === record.operator);
         if (!operator) return;
         
-        const key = `${operator.id}-${workCenter}-${routing}`;
+        const key = `${operator.id}-${record.workCenter}-${record.routing}`;
         
-        if (!groupedData.has(key)) {
-          groupedData.set(key, { 
-            totalQuantity: 0, 
-            totalDuration: 0, 
-            cycles: 0, 
-            operator: operatorName 
-          });
-        }
-        
-        const group = groupedData.get(key)!;
-        group.totalQuantity += cycle.work_cycles_quantity_done || 0;
-        group.totalDuration += cycle.work_cycles_duration || 0;
-        group.cycles += 1;
-      });
-      
-      // Calculate UPH from grouped data
-      groupedData.forEach((data, key) => {
-        if (data.totalDuration > 0 && data.totalQuantity > 0) {
-          const durationHours = data.totalDuration / 3600; // Convert seconds to hours
-          const uph = data.totalQuantity / durationHours;
-          
-          // Include ALL UPH values - no filtering on UPH performance
-          // Only filter based on work order duration (over 7 hours) not UPH values
-          if (uph > 0) {
-            uphMap.set(key, {
-              uph: uph,
-              observations: data.cycles,
-              operator: data.operator
-            });
-          }
-        }
+        uphMap.set(key, {
+          uph: record.unitsPerHour,
+          observations: record.observations,
+          operator: record.operator
+        });
       });
 
       // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
@@ -1124,33 +1083,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Only include operators who have actual performance data for this combination
           if (!hasUphData) return false;
           
-          // Additional constraint checks (if operator has constraints defined, respect them)
-          const allowedWorkCenters = op.workCenters || [];
-          
-          // If operator has work center constraints, check them
-          if (allowedWorkCenters.length > 0) {
-            const isQualifiedForWorkCenter = allowedWorkCenters.includes(workCenter as string) ||
-              (workCenter === 'Assembly' && (allowedWorkCenters.includes('Rope') || allowedWorkCenters.includes('Sewing')));
-            
-            if (!isQualifiedForWorkCenter) return false;
-          }
-
-          // Check routing permission if specified and operator has routing constraints
-          if (routing) {
-            const allowedRoutings = op.productRoutings || [];
-            if (allowedRoutings.length > 0 && !allowedRoutings.includes(routing as string)) {
-              return false;
-            }
-          }
-
-          // Check operation permission if specified and operator has operation constraints
-          if (operation) {
-            const allowedOperations = op.operations || [];
-            if (allowedOperations.length > 0 && !allowedOperations.includes(operation as string)) {
-              return false;
-            }
-          }
-
+          // If operator has historical UPH data, they are qualified regardless of settings
+          // This ensures operators who have performed work are shown even if settings haven't been updated
           return true;
         })
         .map(op => {

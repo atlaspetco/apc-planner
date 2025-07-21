@@ -230,7 +230,7 @@ export default function OperatorCard({
                 <div key={workCenter} className="flex items-center justify-between p-2 border rounded">
                   <div className="flex items-center space-x-2">
                     <span className="text-sm">{workCenter}</span>
-                    {hasData && isEnabled && <Badge variant="outline" className="text-xs bg-green-50">Has Data</Badge>}
+                    {hasData && <Badge variant="outline" className="text-xs bg-green-50">Has Data</Badge>}
                   </div>
                   <Switch
                     checked={isEnabled}
@@ -260,7 +260,7 @@ export default function OperatorCard({
                 <div key={operation} className="flex items-center justify-between p-2 border rounded">
                   <div className="flex items-center space-x-2">
                     <span className="text-sm">{operation}</span>
-                    {hasData && isEnabled && <Badge variant="outline" className="text-xs bg-blue-50">Has Data</Badge>}
+                    {hasData && <Badge variant="outline" className="text-xs bg-blue-50">Has Data</Badge>}
                   </div>
                   <Switch
                     checked={isEnabled}
@@ -327,7 +327,7 @@ export default function OperatorCard({
                   <div key={routing} className="flex items-center justify-between p-2 border rounded">
                     <div className="flex items-center space-x-2">
                       <span className="text-sm">{routing}</span>
-                      {hasData && isEnabled && <Badge className="text-xs bg-purple-100 text-purple-800">Has Data</Badge>}
+                      {hasData && <Badge className="text-xs bg-purple-100 text-purple-800">Has Data</Badge>}
                     </div>
                     <Switch
                       checked={isEnabled}

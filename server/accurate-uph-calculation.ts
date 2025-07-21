@@ -39,7 +39,7 @@ function transformWorkCenter(workCenter: string): string {
   if (wcLower.includes('sewing') || wcLower.includes('assembly')) {
     return 'Assembly';
   } else if (wcLower.includes('rope')) {
-    return 'Rope';
+    return 'Assembly'; // Rope also maps to Assembly
   } else if (wcLower.includes('cutting')) {
     return 'Cutting';
   } else if (wcLower.includes('packaging') || wcLower.includes('packing')) {
@@ -289,6 +289,7 @@ export async function getAccurateMoDetails(
 
   try {
     // Fetch work cycles for this specific combination
+    // Don't filter by work center in SQL - we'll transform and filter in code
     const cyclesResult = await db.execute(sql`
       SELECT DISTINCT
         work_cycles_operator_rec_name as operator_name,
@@ -323,10 +324,14 @@ export async function getAccurateMoDetails(
     }>();
 
     for (const cycle of cycles) {
-      const cycleWorkCenter = transformWorkCenter(cycle.work_center_name?.toString() || '');
+      const originalWorkCenter = cycle.work_center_name?.toString() || '';
+      const cycleWorkCenter = transformWorkCenter(originalWorkCenter);
       
       // Skip if work center doesn't match (after transformation)
-      if (cycleWorkCenter !== workCenter) continue;
+      if (cycleWorkCenter !== workCenter) {
+        console.log(`  Skipping cycle with work center "${originalWorkCenter}" (transformed to "${cycleWorkCenter}") - looking for "${workCenter}"`);
+        continue;
+      }
 
       const moNumber = cycle.mo_number?.toString() || '';
       const moQuantity = parseFloat(cycle.mo_quantity?.toString() || '0');

@@ -177,7 +177,7 @@ export function UphCalculationModal({
                 (() => {
                   const validDates = cyclesData.cycles
                     .map((c: WorkCycleDetail) => c.date ? new Date(c.date).getTime() : null)
-                    .filter(d => d !== null && !isNaN(d)) as number[];
+                    .filter((d: number | null): d is number => d !== null && !isNaN(d));
                   
                   if (validDates.length === 0) return 'No valid dates';
                   
