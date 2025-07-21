@@ -20,6 +20,7 @@ export const productionOrders = pgTable("production_orders", {
   priority: text("priority").default("Normal"), // High, Normal, Low
   fulfilId: integer("fulfil_id"), // Reference to Fulfil.io production order ID
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
   // Fulfil API compatible fields
   rec_name: text("rec_name"), // Fulfil display name (e.g., "MO5471")
   state: text("state"), // Fulfil state: draft, waiting, assigned, running, done
@@ -59,6 +60,8 @@ export const workOrders = pgTable("work_orders", {
   workCenterName: text("work_center_name"), // Denormalized work center name
   operationName: text("operation_name"), // Denormalized operation name
   operatorName: text("operator_name"), // Denormalized operator name
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
 // Active Work Orders table - stores current work orders from Fulfil for planning
