@@ -97,14 +97,14 @@ export function OperatorWorkloadDetailModal({
       let estimatedHours = 0; // No fallback
       if (uphResults && moQuantity > 0) {
         const uphEntry = uphResults.find((entry: any) => 
-          entry.operatorName === operator.operatorName &&
+          entry.operator === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
-          entry.productRouting === routing
+          entry.routing === routing
         );
         
-        if (uphEntry && uphEntry.uph > 0) {
-          estimatedHours = moQuantity / uphEntry.uph;
-          console.log(`Modal: Found UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH`);
+        if (uphEntry && uphEntry.unitsPerHour > 0) {
+          estimatedHours = moQuantity / uphEntry.unitsPerHour;
+          console.log(`Modal: Found UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.unitsPerHour} UPH`);
         } else {
           console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}`);
         }
