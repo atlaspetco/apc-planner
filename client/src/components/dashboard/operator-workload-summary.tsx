@@ -147,7 +147,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
       };
     }).filter(operator => operator.totalAssignments > 0) // Only show operators with assignments
      .sort((a, b) => b.totalAssignments - a.totalAssignments); // Sort by workload
-  }, [assignmentsData, operatorsData, uphResults]);
+  }, [assignmentsData, operatorsData, uphData]);
 
 
 
