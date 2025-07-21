@@ -8,6 +8,12 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "",
 });
 
+// Check if OpenAI API key is available
+const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY);
+if (!hasOpenAIKey) {
+  console.warn("OPENAI_API_KEY is not set. Auto-assign functionality will be limited.");
+}
+
 // Helper function to group work orders by routing
 function groupWorkOrdersByRouting(workOrdersData: any[]) {
   const routingGroups = new Map<string, any[]>();
@@ -243,10 +249,35 @@ Return a JSON array of reassignments:
 
 export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
   try {
+    // Check if required environment variables are available
+    if (!hasOpenAIKey) {
+      return {
+        success: false,
+        assignments: [],
+        unassigned: [],
+        summary: "❌ Auto-assign unavailable: OpenAI API key not configured. Please add OPENAI_API_KEY to your Replit Secrets or environment variables. See AUTO_ASSIGN_SETUP.md for detailed instructions.",
+        totalHoursOptimized: 0,
+        operatorUtilization: new Map()
+      };
+    }
     // Step 1: Get all production orders with embedded work orders
     const response = await fetch('http://localhost:5000/api/production-orders');
     
     if (!response.ok) {
+      // Check if this is a database connection error
+      if (response.status === 500) {
+        const errorText = await response.text().catch(() => '');
+        if (errorText.includes('database') || errorText.includes('connect')) {
+          return {
+            success: false,
+            assignments: [],
+            unassigned: [],
+            summary: "❌ Auto-assign failed: Database connection error. Please check your DATABASE_URL configuration. See AUTO_ASSIGN_SETUP.md for setup instructions.",
+            totalHoursOptimized: 0,
+            operatorUtilization: new Map()
+          };
+        }
+      }
       throw new Error(`Failed to fetch production orders: ${response.status} ${response.statusText}`);
     }
     
