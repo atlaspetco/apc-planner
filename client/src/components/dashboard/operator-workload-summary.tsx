@@ -23,13 +23,13 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
   const [selectedOperator, setSelectedOperator] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   // Fetch operator data for workload calculations
-  const { data: operatorsData, error: operatorsError } = useQuery({
+  const { data: operatorsData, error: operatorsError } = useQuery<any>({
     queryKey: ["/api/operators"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Fetch UPH data for more accurate time calculations
-  const { data: uphData } = useQuery({
+  const { data: uphData } = useQuery<any>({
     queryKey: ["/api/uph-analytics/table-data"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -41,7 +41,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
     if (!assignments || !operators.length) return [];
 
     const operatorMap = new Map();
-    operators.forEach(op => {
+    operators.forEach((op: any) => {
       operatorMap.set(op.id, {
         operatorId: op.id,
         operatorName: op.name,
@@ -73,7 +73,7 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
           // Calculate estimated hours based on UPH data if available
           let estimatedHours = 1; // Default fallback
           if (uphData?.uphResults && assignment.quantity > 0) {
-            const uphEntry = uphData.uphResults.find(entry => 
+            const uphEntry = uphData.uphResults.find((entry: any) => 
               entry.operatorName === assignment.operatorName &&
               entry.workCenter === assignment.workCenter &&
               entry.productRouting === (assignment.productRouting || assignment.routing)
@@ -96,14 +96,14 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
       // Calculate total observations from UPH data
       let totalObservations = 0;
       if (uphData?.uphResults) {
-        const operatorUphEntries = uphData.uphResults.filter(entry => 
+        const operatorUphEntries = uphData.uphResults.filter((entry: any) => 
           entry.operatorName === operator.operatorName
         );
-        totalObservations = operatorUphEntries.reduce((sum, entry) => sum + (entry.observations || 0), 0);
+        totalObservations = operatorUphEntries.reduce((sum: any, entry: any) => sum + (entry.observations || 0), 0);
       }
       
       // Estimate completion date based on workload
-      const daysToComplete = Math.ceil(operator.totalEstimatedHours / 8); // 8 hours per day
+      const daysToComplete = Math.ceil((operator.totalEstimatedHours as number) / 8); // 8 hours per day
       const completionDate = new Date();
       completionDate.setDate(completionDate.getDate() + daysToComplete);
       

@@ -5,8 +5,19 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ProductionOrder } from "@shared/schema";
 import { OperatorDropdown } from "./operator-dropdown";
 
+// Extended type for production orders with embedded work orders from API
+interface ProductionOrderWithWorkOrders extends ProductionOrder {
+  workOrders?: Array<{
+    id: number;
+    workCenter: string;
+    state: string;
+    employee_name?: string;
+    [key: string]: any;
+  }>;
+}
+
 interface ProductionGridProps {
-  productionOrders: ProductionOrder[];
+  productionOrders: ProductionOrderWithWorkOrders[];
   isLoading: boolean;
   workCenters?: string[];
   assignments?: Map<number, any>;
@@ -17,7 +28,7 @@ interface ProductionGridProps {
 const DEFAULT_WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
 
 // Group orders by routing
-const groupOrdersByRouting = (orders: ProductionOrder[]) => {
+const groupOrdersByRouting = (orders: ProductionOrderWithWorkOrders[]) => {
   const grouped = orders.reduce((acc, order) => {
     const routing = order.routing || 'Unknown Routing';
     if (!acc[routing]) {
@@ -25,7 +36,7 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
     }
     acc[routing].push(order);
     return acc;
-  }, {} as Record<string, ProductionOrder[]>);
+  }, {} as Record<string, ProductionOrderWithWorkOrders[]>);
   
   return grouped;
 };
