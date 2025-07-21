@@ -152,6 +152,11 @@ Changelog:
   - Duration from summing all work cycles for that group
 - **NEVER**: Sum work_cycles_quantity_done values - this creates inflated UPH values
 
+### UPH Display Values
+- **UPH Analytics Table**: Shows **average UPH** across all MOs for each operator/work center/routing combination
+- **UPH Details Modal**: Shows individual MO calculations that contribute to the average
+- **Example**: Courtney Banh + Assembly + Lifetime Pouch shows 23.18 UPH (average of 88 MOs), while individual MOs range from 0.83 to 128.76 UPH
+
 ## Recent Changes (Latest First)  
 - **Fixed Critical UPH Calculator Syntax Error**: Resolved Transform failed error in unified-uph-calculator.ts caused by orphaned code outside function blocks. Removed incomplete code fragments between calculateUnifiedUph and getUphCalculationDetails functions. System now successfully calculates 216 UPH values without errors.
 - **Implemented Timestamped Weighted Average UPH Calculations**: Added configurable time window feature (30/60/90/180 days) to operator settings for UPH calculations. Each operator can now have their own calculation window that filters historical work cycles by date before calculating UPH. The core calculator applies date filtering based on work_production_create_date, ensuring only recent performance data within the specified window is used for planning. UI updated with dropdown selector in operator settings to configure individual time windows.

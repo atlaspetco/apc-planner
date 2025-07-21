@@ -3614,6 +3614,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test UPH calculation endpoint
+  app.get("/api/test/uph-calculation", async (req: Request, res: Response) => {
+    try {
+      const { getCoreUphDetails } = await import("./uph-core-calculator.js");
+      
+      // Test the specific case
+      const result = await getCoreUphDetails(
+        "Courtney Banh",
+        "Assembly", 
+        "Lifetime Pouch"
+      );
+      
+      // Find MOs with 40 units
+      const fortyUnitMos = result.moGroupedData.filter(mo => mo.moQuantity === 40);
+      
+      res.json({
+        averageUph: result.averageUph,
+        totalMos: result.moGroupedData.length,
+        fortyUnitMos: fortyUnitMos.map(mo => ({
+          moNumber: mo.moNumber,
+          quantity: mo.moQuantity,
+          durationHours: (mo.totalDurationSeconds / 3600).toFixed(2),
+          calculatedUph: (mo.moQuantity / (mo.totalDurationSeconds / 3600)).toFixed(2)
+        })),
+        message: `Average UPH ${result.averageUph.toFixed(2)} is calculated from ${result.moGroupedData.length} MOs`
+      });
+    } catch (error) {
+      console.error("Test UPH calculation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Import recent 500 work orders for testing calculation logic
   app.post("/api/fulfil/import-recent", async (req: Request, res: Response) => {
     try {

@@ -204,6 +204,13 @@ export async function calculateCoreUph(
     
     const uphPerMo = moData.moQuantity / durationHours;
     
+    // Debug logging for specific case
+    if (moData.operatorName === 'Courtney Banh' && 
+        moData.workCenter === 'Assembly' && 
+        moData.routing === 'Lifetime Pouch') {
+      console.log(`🔍 MO ${moData.moNumber}: Quantity=${moData.moQuantity}, Duration=${durationHours.toFixed(2)}hrs, UPH=${uphPerMo.toFixed(2)}`);
+    }
+    
     // Apply UPH upper limit
     if (uphPerMo > 500) return;
     
@@ -334,6 +341,7 @@ export async function getCoreUphDetails(
   
   // Calculate average UPH
   const validUphValues: number[] = [];
+  let debugInfo: string[] = [];
   
   moGroupedData.forEach(moData => {
     if (moData.moQuantity <= 0 || moData.totalDurationSeconds <= 0) return;
@@ -345,11 +353,24 @@ export async function getCoreUphDetails(
     if (uphPerMo > 500) return;
     
     validUphValues.push(uphPerMo);
+    
+    // Debug logging for specific case
+    if (operatorName === 'Courtney Banh' && workCenter === 'Assembly' && routing === 'Lifetime Pouch') {
+      debugInfo.push(`MO ${moData.moNumber}: ${moData.moQuantity} units / ${durationHours.toFixed(2)} hrs = ${uphPerMo.toFixed(2)} UPH`);
+    }
   });
   
   const averageUph = validUphValues.length > 0
     ? validUphValues.reduce((sum, uph) => sum + uph, 0) / validUphValues.length
     : 0;
+    
+  // Log debug info for specific case
+  if (debugInfo.length > 0) {
+    console.log(`\n🔍 DEBUG getCoreUphDetails for ${operatorName} - ${workCenter} - ${routing}:`);
+    debugInfo.forEach(info => console.log(`  - ${info}`));
+    console.log(`  Average UPH: ${averageUph.toFixed(2)} from ${validUphValues.length} MOs`);
+    console.log(`  Individual UPH values: [${validUphValues.map(v => v.toFixed(2)).join(', ')}]`);
+  }
   
   return {
     cycles: filteredCycles,
