@@ -15,6 +15,20 @@ interface OperatorWorkload {
   estimatedCompletion: string;
 }
 
+interface OperatorData {
+  id: number;
+  name: string;
+  availableHours: number;
+  observations?: number;
+}
+
+interface UphEntry {
+  operatorName: string;
+  workCenter: string;
+  productRouting: string;
+  uph: number;
+}
+
 interface OperatorWorkloadSummaryProps {
   assignments: Map<number, any>;
   assignmentsData?: any;
@@ -24,34 +38,36 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
   const [selectedOperator, setSelectedOperator] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   // Fetch operator data for workload calculations
-  const { data: operatorsData, error: operatorsError } = useQuery({
+  const { data: operatorsData } = useQuery<OperatorData[] | { operators: OperatorData[] }>({
     queryKey: ["/api/operators"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Fetch UPH data for more accurate time calculations
-  const { data: uphResults } = useQuery({
-    queryKey: ["/api/uph-data"],
+  const { data: uphResults } = useQuery<UphEntry[] | undefined>({
+    queryKey: ["/api/historical-uph"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Calculate workload summary from assignments
   const workloadSummary = React.useMemo(() => {
     // Handle both direct array and wrapped operators response
-    const operators = operatorsData?.operators || operatorsData || [];
+    const operators = Array.isArray(operatorsData) 
+      ? operatorsData 
+      : (operatorsData?.operators || []);
     if (!assignmentsData?.assignments || !operators.length) return [];
 
     console.log('Processing assignments:', assignmentsData.assignments.length);
     console.log('UPH data available:', uphResults?.length || 0);
     
     // Debug log some sample UPH data
-    if (uphResults?.length > 0) {
+    if (uphResults && uphResults.length > 0) {
       const sampleUph = uphResults.slice(0, 3);
       console.log('Sample UPH data:', sampleUph);
     }
 
-    const operatorMap = new Map();
-    operators.forEach(op => {
+    const operatorMap = new Map<number, any>();
+    operators.forEach((op: OperatorData) => {
       operatorMap.set(op.id, {
         operatorId: op.id,
         operatorName: op.name,
@@ -65,7 +81,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
     });
 
     // Process assignments to calculate workload using UPH data
-    assignmentsData.assignments.forEach(assignment => {
+    assignmentsData.assignments.forEach((assignment: any) => {
       const operator = operatorMap.get(assignment.operatorId);
       if (operator) {
         operator.totalAssignments++;
@@ -101,8 +117,8 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         if (assignment.workOrderState !== 'finished') {
           // Calculate estimated hours based on UPH data if available
           let estimatedHours = 0;
-          if (uphResults && assignment.quantity > 0) {
-            const uphEntry = uphResults.find(entry => 
+          if (uphResults && uphResults.length > 0 && assignment.quantity > 0) {
+            const uphEntry = uphResults.find((entry: UphEntry) => 
               entry.operatorName === operator.operatorName &&
               entry.workCenter === workCenter &&
               entry.productRouting === routing
@@ -129,11 +145,11 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
       
       // Calculate total observations from UPH data
       let totalObservations = 0;
-      if (uphResults) {
-        const operatorUphEntries = uphResults.filter(entry => 
+      if (uphResults && uphResults.length > 0) {
+        const operatorUphEntries = uphResults.filter((entry: any) => 
           entry.operatorName === operator.operatorName
         );
-        totalObservations = operatorUphEntries.reduce((sum, entry) => sum + (entry.observationCount || 0), 0);
+        totalObservations = operatorUphEntries.reduce((sum: number, entry: any) => sum + (entry.observationCount || 0), 0);
       }
       
       // Estimate completion date based on workload
@@ -202,7 +218,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {workloadSummary.slice(0, 8).map((operator) => (
+        {workloadSummary.slice(0, 8).map((operator: any) => (
           <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100 relative min-h-[220px]">
             {/* Expand button in top right */}
             <Button
@@ -220,7 +236,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
             {/* Operator Header */}
             <div className="flex items-center space-x-3 mb-3">
               <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                {operator.operatorName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                {operator.operatorName.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
               </div>
               <div>
                 <div className="font-medium text-gray-900">{operator.operatorName}</div>
@@ -252,7 +268,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
 
             {/* Product Summary */}
             <div className="space-y-1">
-              {operator.productSummary && operator.productSummary.slice(0, 3).map((product, idx) => (
+              {operator.productSummary && operator.productSummary.slice(0, 3).map((product: any, idx: number) => (
                 <div key={idx} className="flex items-center justify-between text-xs">
                   <div className="flex items-center space-x-2">
                     <span className="text-gray-700 font-medium">{product.routing}</span>
