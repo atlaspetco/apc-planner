@@ -2843,40 +2843,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Single UPH calculation from work cycles
+  // Single UPH calculation from work cycles - ACCURATE VERSION
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating UPH using unified methodology',
+        currentOperation: 'Calculating accurate UPH using MO quantities',
         startTime: Date.now()
       });
 
-      // Use unified calculator and rebuild historical table
-      const { rebuildHistoricalUph } = await import("./rebuild-historical-uph.js");
-      await rebuildHistoricalUph();
-      
-      // Get the results for response
-      const { calculateUnifiedUph } = await import("./unified-uph-calculator.js");
-      const calculations = await calculateUnifiedUph();
+      // Use accurate UPH calculator that uses MO quantities properly
+      const { calculateAccurateUPH } = await import("./accurate-uph-calculation.js");
+      const result = await calculateAccurateUPH();
       
       // Clear calculating status
       (global as any).updateImportStatus({
         isCalculating: false,
-        currentOperation: 'UPH calculation completed',
+        currentOperation: 'Accurate UPH calculation completed',
         startTime: null
       });
       
       res.json({
-        success: true,
-        message: `Successfully calculated ${calculations.length} UPH values using unified methodology`,
-        calculations: calculations.length,
-        method: "Unified UPH calculation from database work cycles",
-        note: "Groups by Operator+WorkCenter+Routing+MO, averages across MOs"
+        success: result.success,
+        message: `Successfully calculated ${result.inserted} accurate UPH values`,
+        calculations: result.calculations.length,
+        details: {
+          totalCycles: result.totalCycles,
+          moGroups: result.moGroups,
+          operatorGroups: result.operatorGroups,
+          inserted: result.inserted
+        },
+        method: "Accurate UPH calculation using MO quantities",
+        note: "UPH per MO = MO Quantity / Total Duration, then averaged across MOs"
       });
     } catch (error) {
-      console.error("Error calculating UPH from unified calculator:", error);
+      console.error("Error calculating accurate UPH:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
@@ -2888,7 +2890,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate UPH using unified methodology",
+        message: "Failed to calculate accurate UPH",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
