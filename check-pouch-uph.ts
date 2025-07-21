@@ -3,59 +3,75 @@ import { workCycles, productionOrders } from './shared/schema.js';
 import { eq, and, sql, like } from 'drizzle-orm';
 
 async function checkPouchUPH() {
-  // First find all Lifetime Pouch MOs
-  const pouchMOs = await db.select().from(productionOrders)
-    .where(eq(productionOrders.routing, 'Lifetime Pouch'))
-    .limit(10);
-    
-  console.log('Found', pouchMOs.length, 'Lifetime Pouch MOs:', pouchMOs.map(mo => mo.moNumber));
+  // Check specific MO20881 that user mentioned
+  console.log('=== Checking MO20881 Work Cycles ===\n');
   
-  // Check work cycles for Courtney Banh on Lifetime Pouch
-  const cycles = await db.select({
+  const mo20881Cycles = await db.select({
     moNumber: workCycles.work_production_number,
+    woNumber: workCycles.work_id,
     operation: workCycles.work_operation_rec_name,
     workCenter: workCycles.work_cycles_work_center_rec_name,
+    operator: workCycles.work_cycles_operator_rec_name,
     duration: workCycles.work_cycles_duration,
     quantity: workCycles.work_production_quantity,
     routing: workCycles.work_production_routing_rec_name
   }).from(workCycles)
-    .where(and(
-      eq(workCycles.work_cycles_operator_rec_name, 'Courtney Banh'),
-      like(workCycles.work_production_routing_rec_name, '%Pouch%')
-    ))
-    .limit(20);
+    .where(eq(workCycles.work_production_number, 'MO20881'));
 
-  console.log('\nCourtney Banh work cycles on Pouch routing:');
+  console.log(`Found ${mo20881Cycles.length} work cycles for MO20881\n`);
   
-  // Group by MO
-  const moGroups = cycles.reduce((acc, cycle) => {
-    if (!acc[cycle.moNumber || '']) {
-      acc[cycle.moNumber || ''] = [];
+  // Group by work center
+  const workCenterGroups = mo20881Cycles.reduce((acc, cycle) => {
+    const wc = cycle.workCenter || 'Unknown';
+    if (!acc[wc]) {
+      acc[wc] = {
+        cycles: [],
+        totalDuration: 0,
+        operators: new Set<string>()
+      };
     }
-    acc[cycle.moNumber || ''].push(cycle);
+    acc[wc].cycles.push(cycle);
+    acc[wc].totalDuration += cycle.duration || 0;
+    if (cycle.operator) acc[wc].operators.add(cycle.operator);
     return acc;
-  }, {} as Record<string, typeof cycles>);
+  }, {} as Record<string, { cycles: typeof mo20881Cycles, totalDuration: number, operators: Set<string> }>);
   
-  Object.entries(moGroups).forEach(([moNumber, moCycles]) => {
-    console.log(`\nMO: ${moNumber}`);
-    console.log('Routing:', moCycles[0]?.routing);
+  // Get production order quantity
+  const mo = await db.select().from(productionOrders)
+    .where(eq(productionOrders.moNumber, 'MO20881'))
+    .limit(1);
+  
+  const productionQty = mo[0]?.quantity || mo20881Cycles[0]?.quantity || 0;
+  
+  console.log(`Production Order Quantity: ${productionQty} units`);
+  console.log(`Routing: ${mo[0]?.routing || mo20881Cycles[0]?.routing || 'Unknown'}\n`);
+  
+  // Display by work center
+  Object.entries(workCenterGroups).forEach(([workCenter, data]) => {
+    console.log(`\n${workCenter.toUpperCase()} Work Center:`);
+    console.log('------------------------');
     
-    // Find production order quantity
-    const mo = pouchMOs.find(m => m.moNumber === moNumber);
-    const prodQty = mo?.quantity || moCycles[0]?.quantity || 0;
-    console.log('Production Order Quantity:', prodQty);
-    
-    let totalDuration = 0;
-    moCycles.forEach(c => {
-      console.log(`  - ${c.operation} | ${c.workCenter} | ${c.duration}s`);
-      totalDuration += c.duration || 0;
+    data.cycles.forEach(c => {
+      console.log(`  WO${c.woNumber}: ${c.operation} - ${c.duration}s (${c.operator})`);
     });
     
-    const hours = totalDuration / 3600;
-    const uph = prodQty / hours;
-    console.log(`Total Duration: ${totalDuration}s = ${hours.toFixed(2)}h`);
-    console.log(`UPH: ${prodQty} / ${hours.toFixed(2)} = ${uph.toFixed(2)}`);
+    const totalHours = data.totalDuration / 3600;
+    const uph = productionQty / totalHours;
+    
+    console.log(`\n  Total Duration: ${data.totalDuration}s = ${totalHours.toFixed(2)} hours`);
+    console.log(`  Operators: ${Array.from(data.operators).join(', ')}`);
+    console.log(`  UPH for ${workCenter}: ${productionQty} / ${totalHours.toFixed(2)} = ${uph.toFixed(2)} UPH`);
   });
+  
+  // Show combined calculation (incorrect approach)
+  console.log('\n\n❌ INCORRECT Combined Calculation (mixing work centers):');
+  const totalDurationAllWC = Object.values(workCenterGroups).reduce((sum, wc) => sum + wc.totalDuration, 0);
+  const totalHoursAllWC = totalDurationAllWC / 3600;
+  const incorrectUPH = productionQty / totalHoursAllWC;
+  console.log(`Total Duration (ALL work centers): ${totalDurationAllWC}s = ${totalHoursAllWC.toFixed(2)} hours`);
+  console.log(`Incorrect UPH: ${productionQty} / ${totalHoursAllWC.toFixed(2)} = ${incorrectUPH.toFixed(2)} UPH`);
+  
+  console.log('\n✅ CORRECT Approach: Calculate UPH separately per work center!');
 
   process.exit(0);
 }
