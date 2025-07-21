@@ -1135,6 +1135,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             isActive: op.isActive,
             averageUph: performanceData.uph,
             observations: performanceData.observations,
+            workCenters: op.workCenters || [],
+            routings: op.productRoutings || [],
+            operations: op.operations || [],
             estimatedHoursFor: (quantity: number) => {
               if (performanceData.uph && performanceData.uph > 0) {
                 return Number((quantity / performanceData.uph).toFixed(2));

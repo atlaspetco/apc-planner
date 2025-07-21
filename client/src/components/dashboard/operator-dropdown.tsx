@@ -114,25 +114,28 @@ export function OperatorDropdown({
             // Must have meaningful UPH data for this combination
             const hasValidUphData = op.averageUph > 0 && op.observations > 0;
             
-            // Must have work center enabled in settings
-            const hasWorkCenterEnabled = op.workCenters?.includes(workCenter) || 
-              (workCenter === 'Assembly' && (op.workCenters?.includes('Sewing') || op.workCenters?.includes('Rope') || op.workCenters?.includes('Assembly')));
-            
-            // Must have routing enabled (if routing constraints exist)
-            const hasRoutingEnabled = !op.routings?.length || op.routings.includes(routing);
-            
-            // Log filtering decision for debugging
-            if (!hasValidUphData) {
-              console.log(`❌ ${op.name}: No UPH data (UPH: ${op.averageUph}, Obs: ${op.observations}) for ${routing}/${workCenter}`);
-            } else if (!hasWorkCenterEnabled) {
-              console.log(`❌ ${op.name}: Work center not enabled for ${workCenter} (has: ${op.workCenters?.join(', ')})`);
-            } else if (!hasRoutingEnabled) {
-              console.log(`❌ ${op.name}: Routing not enabled for ${routing} (has: ${op.routings?.join(', ')})`);
-            } else {
+            // If operator has UPH data, they're qualified regardless of settings
+            // Settings are optional constraints, not requirements
+            if (hasValidUphData) {
+              // Check if settings would exclude them (for logging purposes)
+              const hasWorkCenterEnabled = !op.workCenters?.length || op.workCenters.includes(workCenter) || 
+                (workCenter === 'Assembly' && (op.workCenters.includes('Sewing') || op.workCenters.includes('Rope') || op.workCenters.includes('Assembly')));
+              
+              const hasRoutingEnabled = !op.routings?.length || op.routings.includes(routing);
+              
+              if (!hasWorkCenterEnabled) {
+                console.log(`⚠️ ${op.name}: Has UPH data but work center not in settings for ${workCenter} (settings: ${op.workCenters?.join(', ') || 'none'})`);
+              }
+              if (!hasRoutingEnabled) {
+                console.log(`⚠️ ${op.name}: Has UPH data but routing not in settings for ${routing} (settings: ${op.routings?.join(', ') || 'none'})`);
+              }
+              
               console.log(`✅ ${op.name}: Qualified for ${routing}/${workCenter} (${op.averageUph.toFixed(1)} UPH, ${op.observations} obs)`);
+              return true;
             }
             
-            return hasValidUphData && hasWorkCenterEnabled && hasRoutingEnabled;
+            console.log(`❌ ${op.name}: No UPH data (UPH: ${op.averageUph}, Obs: ${op.observations}) for ${routing}/${workCenter}`);
+            return false;
           });
           
           console.log(`Filtered ${data.operators.length} operators to ${strictlyQualifiedOperators.length} with UPH data for ${routing}/${workCenter}`);
