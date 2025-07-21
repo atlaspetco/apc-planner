@@ -20,6 +20,7 @@ interface Operator {
   routings: string[];
   lastActiveDate?: string;
   availableHours?: number;
+  schedulePercentage?: number;
 }
 
 interface OperatorCardProps {
@@ -108,6 +109,8 @@ export default function OperatorCard({
       operations: localOperator.operations,
       routings: localOperator.routings, // Using correct database field name
       slackUserId: localOperator.slackUserId,
+      availableHours: localOperator.availableHours,
+      schedulePercentage: localOperator.schedulePercentage,
     };
     
     updateOperatorMutation.mutate(updates);
@@ -180,6 +183,38 @@ export default function OperatorCard({
             />
             <p className="text-xs text-gray-500">
               Find this in Slack profile → More → Copy member ID
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`available-hours-${operator.id}`}>Available Hours per Week</Label>
+            <Input
+              id={`available-hours-${operator.id}`}
+              type="number"
+              min="1"
+              max="168"
+              value={localOperator.availableHours || 40}
+              onChange={(e) => setLocalOperator(prev => ({ ...prev, availableHours: parseInt(e.target.value) || 40 }))}
+              className="text-sm"
+            />
+            <p className="text-xs text-gray-500">
+              Maximum weekly hours this operator can work (default: 40h)
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`schedule-percentage-${operator.id}`}>Scheduling Percentage</Label>
+            <Input
+              id={`schedule-percentage-${operator.id}`}
+              type="number"
+              min="1"
+              max="100"
+              value={localOperator.schedulePercentage || 90}
+              onChange={(e) => setLocalOperator(prev => ({ ...prev, schedulePercentage: parseInt(e.target.value) || 90 }))}
+              className="text-sm"
+            />
+            <p className="text-xs text-gray-500">
+              Percentage of available hours to schedule (e.g., 90% of 40h = 36h scheduled)
             </p>
           </div>
         </div>
