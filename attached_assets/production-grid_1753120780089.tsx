@@ -1,0 +1,476 @@
+import React, { useState } from 'react';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ChevronDown, ChevronRight, RefreshCw, Trash2, Sparkles, Loader2 } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import type { ProductionOrder } from "@shared/schema";
+import { OperatorDropdown } from "./operator-dropdown";
+
+interface ProductionGridProps {
+  productionOrders: ProductionOrder[];
+  isLoading: boolean;
+  workCenters?: string[];
+  assignments?: Map<number, any>;
+  onAssignmentChange?: () => void;
+}
+
+// Work centers will be loaded dynamically from API
+const DEFAULT_WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
+
+// Group orders by routing
+const groupOrdersByRouting = (orders: ProductionOrder[]) => {
+  const grouped = orders.reduce((acc, order) => {
+    const routing = order.routing || 'Unknown Routing';
+    if (!acc[routing]) {
+      acc[routing] = [];
+    }
+    acc[routing].push(order);
+    return acc;
+  }, {} as Record<string, ProductionOrder[]>);
+  
+  return grouped;
+};
+
+export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS, assignments = new Map(), onAssignmentChange }: ProductionGridProps) {
+  console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
+  
+  const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
+  const { toast } = useToast();
+
+  // Clear assignments by routing
+  const clearRoutingMutation = useMutation({
+    mutationFn: async (routing: string) => {
+      const response = await apiRequest('POST', '/api/auto-assign/clear-filtered', { routing });
+      return response.json();
+    },
+    onSuccess: (data, routing) => {
+      onAssignmentChange?.();
+      toast({
+        title: "Assignments Cleared",
+        description: `Cleared ${data.cleared} assignments for ${routing}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Clear Failed",
+        description: "Failed to clear routing assignments",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Clear assignments by work center
+  const clearWorkCenterMutation = useMutation({
+    mutationFn: async (workCenter: string) => {
+      const response = await apiRequest('POST', '/api/auto-assign/clear-filtered', { workCenter });
+      return response.json();
+    },
+    onSuccess: (data, workCenter) => {
+      onAssignmentChange?.();
+      toast({
+        title: "Assignments Cleared",
+        description: `Cleared ${data.cleared} assignments for ${workCenter}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Clear Failed",
+        description: "Failed to clear work center assignments",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Auto-assign by routing
+  const autoAssignRoutingMutation = useMutation({
+    mutationFn: async (routing: string) => {
+      const response = await apiRequest('POST', '/api/auto-assign', { routing });
+      return response.json();
+    },
+    onSuccess: (data, routing) => {
+      onAssignmentChange?.();
+      toast({
+        title: "Auto-Assign Complete",
+        description: `Assigned ${data.assignments?.length || 0} work orders for ${routing}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Auto-Assign Failed",
+        description: "Failed to auto-assign routing",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const isAnyMutationLoading = clearRoutingMutation.isPending || 
+    clearWorkCenterMutation.isPending || 
+    autoAssignRoutingMutation.isPending;
+  
+  const toggleRouting = (routing: string) => {
+    const newExpanded = new Set(expandedRoutings);
+    if (newExpanded.has(routing)) {
+      newExpanded.delete(routing);
+    } else {
+      newExpanded.add(routing);
+    }
+    setExpandedRoutings(newExpanded);
+  };
+
+  // Handle operator assignment
+  const handleOperatorAssign = async (workOrderId: number, operatorId: number, quantity: number, routing: string, workCenter: string, operation: string) => {
+    try {
+      const response = await fetch('/api/work-orders/assign-operator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workOrderId: workOrderId.toString(),
+          operatorId: operatorId === 0 ? null : operatorId.toString(),
+          quantity,
+          routing,
+          workCenter,
+          operation
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('Assignment successful:', result.message);
+        // Optionally refresh data or update local state
+      } else {
+        console.error('Assignment failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Assignment error:', error);
+    }
+  };
+  
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-lg shadow">
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading production orders...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!productionOrders || productionOrders.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow">
+        <div className="text-center py-8">
+          <p className="text-gray-600">No active production orders found</p>
+          <p className="text-sm text-gray-500 mt-2">System is ready for new production orders</p>
+        </div>
+      </div>
+    );
+  }
+
+  const groupedOrders = groupOrdersByRouting(productionOrders);
+
+  return (
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          {/* Header */}
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="text-left p-4 font-medium text-gray-900">Routing / Production Order</th>
+              <th className="text-center p-4 font-medium text-gray-900">Qty</th>
+              {workCenters.map(workCenter => (
+                <th key={workCenter} className="text-center p-4 font-medium text-gray-900 min-w-[150px]">
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>{workCenter}</span>
+                    <div className="flex items-center space-x-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => autoAssignRoutingMutation.mutate(workCenter)}
+                        disabled={isAnyMutationLoading}
+                        className="h-6 w-6 p-0"
+                        title={`Auto-assign ${workCenter} work orders`}
+                      >
+                        {autoAssignRoutingMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3 w-3" />
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => clearWorkCenterMutation.mutate(workCenter)}
+                        disabled={isAnyMutationLoading}
+                        className="h-6 w-6 p-0 text-red-600 hover:text-red-700"
+                        title={`Clear all ${workCenter} assignments`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          {/* Body */}
+          <tbody>
+            {Object.entries(groupedOrders).map(([routing, orders]) => {
+              const isExpanded = expandedRoutings.has(routing);
+              const totalQty = orders.reduce((sum, order) => sum + order.quantity, 0);
+              const statusCounts = orders.reduce((acc, order) => {
+                acc[order.status] = (acc[order.status] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
+              
+              // Get all work orders for this routing grouped by work center
+              const allWorkOrdersByCenter = workCenters.reduce((acc, workCenter) => {
+                acc[workCenter] = orders.flatMap(order => 
+                  order.workOrders?.filter(wo => wo.workCenter === workCenter) || []
+                );
+                return acc;
+              }, {} as Record<string, any[]>);
+
+              return (
+                <React.Fragment key={routing}>
+                  {/* Routing header row */}
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <td className="p-4">
+                      <div className="flex items-center justify-between w-full">
+                        <button 
+                          onClick={() => toggleRouting(routing)}
+                          className="flex items-center space-x-2 font-medium text-gray-900 hover:text-gray-700"
+                        >
+                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          <div className="flex flex-col items-start">
+                            <div className="flex items-center space-x-2">
+                              <span>{routing}</span>
+                              <span className="text-sm text-blue-600">({orders.length} MOs)</span>
+                            </div>
+                            <div className="flex space-x-1 mt-1">
+                              {Object.entries(statusCounts).map(([status, count]) => (
+                                <Badge key={status} className={`text-xs rounded-sm ${
+                                  status === 'assigned' ? 'bg-blue-500 text-white' :
+                                  status === 'waiting' ? 'bg-yellow-500 text-white' :
+                                  status === 'running' ? 'bg-green-500 text-white' :
+                                  status === 'done' ? 'bg-gray-500 text-white' :
+                                  'bg-gray-400 text-white'
+                                }`}>
+                                  {count} {status}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        </button>
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              autoAssignRoutingMutation.mutate(routing);
+                            }}
+                            disabled={isAnyMutationLoading}
+                            className="h-7 px-2"
+                            title={`Auto-assign ${routing} orders`}
+                          >
+                            {autoAssignRoutingMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <Sparkles className="h-3 w-3 mr-1" />
+                            )}
+                            Auto-Assign
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearRoutingMutation.mutate(routing);
+                            }}
+                            disabled={isAnyMutationLoading}
+                            className="h-7 px-2 text-red-600 hover:text-red-700"
+                            title={`Clear all ${routing} assignments`}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Clear All
+                          </Button>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4 text-center">
+                      <span className="font-medium text-gray-900">{totalQty}</span>
+                    </td>
+                    {workCenters.map(workCenter => {
+                      const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
+                      // Use manufacturing order quantities instead of work order quantities (which are often 0)
+                      const totalQuantity = orders
+                        .filter(order => (order.workOrders || []).some(wo => wo.workCenter === workCenter))
+                        .reduce((sum, order) => sum + (order.quantity || 0), 0);
+                      
+                      return (
+                        <td key={workCenter} className="p-4 text-center">
+                          {workOrdersInCenter.length > 0 ? (
+                                                          <div className="space-y-2">
+                                <div className="text-xs text-gray-500">
+                                  {workOrdersInCenter.length} operation{workOrdersInCenter.length > 1 ? 's' : ''}
+                                </div>
+                                <OperatorDropdown
+                                  workCenter={workCenter}
+                                  routing={routing}
+                                  operation=""
+                                  quantity={totalQuantity}
+                                  workOrderIds={workOrdersInCenter.map(wo => wo.id)}
+                                  workOrderStates={workOrdersInCenter.map(wo => wo.state)}
+                                  finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
+                                  assignments={assignments}
+                                  onAssign={async (operatorId) => {
+                                    // Bulk assign to all work orders in this work center for this routing
+                                    for (const wo of workOrdersInCenter) {
+                                      await handleOperatorAssign(wo.id, operatorId, wo.quantity || totalQuantity, routing, workCenter, wo.operation);
+                                    }
+                                    // Refresh assignments after bulk assignment
+                                    onAssignmentChange?.();
+                                  }}
+                                  className="w-full"
+                                />
+                                {/* Display total estimated hours for this routing/work center */}
+                                {(() => {
+                                  const assignedWorkOrders = workOrdersInCenter.filter(wo => assignments.has(wo.id));
+                                  if (assignedWorkOrders.length > 0) {
+                                    const totalHours = assignedWorkOrders.reduce((sum, wo) => {
+                                      const assignment = assignments.get(wo.id);
+                                      return sum + (assignment?.estimatedHours || 0);
+                                    }, 0);
+                                    
+                                    if (totalHours > 0) {
+                                      return (
+                                        <div className="text-xs text-blue-600 font-medium bg-blue-50 rounded px-2 py-1">
+                                          📋 {totalHours.toFixed(1)}h estimated
+                                        </div>
+                                      );
+                                    }
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Individual MO rows (when expanded) */}
+                  {isExpanded && orders.map((order) => (
+                    <tr key={order.id} className="border-b hover:bg-gray-50">
+                      <td className="p-4 pl-12">
+                        <div className="font-medium text-gray-900">{order.productName || order.moNumber}</div>
+                        <div className="flex items-center space-x-2 text-sm text-gray-500">
+                          <span>{order.moNumber}</span>
+                          <div className="flex items-center space-x-1">
+                            <Badge className={`text-xs rounded-sm ${
+                              order.status === 'assigned' ? 'bg-blue-500 text-white' :
+                              order.status === 'waiting' ? 'bg-yellow-500 text-white' :
+                              order.status === 'running' ? 'bg-green-500 text-white' :
+                              order.status === 'done' ? 'bg-gray-500 text-white' :
+                              'bg-gray-400 text-white'
+                            }`}>
+                              {order.status}
+                            </Badge>
+                            {/* Assignment status indicator */}
+                            {(() => {
+                              const workOrdersForMO = order.workOrders || [];
+                              const assignedCount = workOrdersForMO.filter(wo => assignments.has(wo.id)).length;
+                              const totalCount = workOrdersForMO.length;
+                              
+                              if (assignedCount === 0) {
+                                return <Badge variant="outline" className="text-xs bg-red-50 text-red-600 border-red-200">Unassigned</Badge>;
+                              } else if (assignedCount === totalCount) {
+                                return <Badge variant="outline" className="text-xs bg-green-50 text-green-600 border-green-200">Fully Assigned</Badge>;
+                              } else {
+                                return <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-600 border-yellow-200">{assignedCount}/{totalCount} Assigned</Badge>;
+                              }
+                            })()}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className="font-medium text-gray-900">{order.quantity}</span>
+                      </td>
+                      {workCenters.map(workCenter => {
+                        const workOrdersInCenter = order.workOrders?.filter(wo => wo.workCenter === workCenter) || [];
+                        console.log(`WorkCenter ${workCenter} filtering:`, {
+                          allWorkOrders: order.workOrders,
+                          filteredWorkOrders: workOrdersInCenter,
+                          workCenterMatch: workCenter
+                        });
+                        return (
+                          <td key={workCenter} className="p-4 text-center">
+                            {workOrdersInCenter.length > 0 ? (
+                              <div className="space-y-2">
+                                <div className="text-xs text-gray-500">
+                                  {workOrdersInCenter.length} operation{workOrdersInCenter.length > 1 ? 's' : ''}
+                                </div>
+                                <OperatorDropdown
+                                  workCenter={workCenter}
+                                  routing={order.routing || ''}
+                                  operation=""
+                                  quantity={order.quantity}
+                                  workOrderIds={workOrdersInCenter.map(wo => wo.id)}
+                                  workOrderStates={workOrdersInCenter.map(wo => wo.state)}
+                                  finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
+                                  assignments={assignments}
+                                  onAssign={async (operatorId) => {
+                                    // Bulk assign to all work orders in this work center for this MO
+                                    for (const wo of workOrdersInCenter) {
+                                      await handleOperatorAssign(wo.id, operatorId, wo.quantity || order.quantity, order.routing || '', workCenter, wo.operation);
+                                    }
+                                    // Refresh assignments after bulk assignment
+                                    onAssignmentChange?.();
+                                  }}
+                                  className="w-full"
+                                />
+                                {/* Display estimated hours for this specific MO */}
+                                {(() => {
+                                  const assignedWorkOrders = workOrdersInCenter.filter(wo => assignments.has(wo.id));
+                                  if (assignedWorkOrders.length > 0) {
+                                    const totalHours = assignedWorkOrders.reduce((sum, wo) => {
+                                      const assignment = assignments.get(wo.id);
+                                      return sum + (assignment?.estimatedHours || 0);
+                                    }, 0);
+                                    
+                                    if (totalHours > 0) {
+                                      return (
+                                        <div className="text-xs text-green-600 font-medium bg-green-50 rounded px-2 py-1 mt-1">
+                                          ⏱️ {totalHours.toFixed(1)}h for {order.moNumber}
+                                        </div>
+                                      );
+                                    }
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
