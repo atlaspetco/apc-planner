@@ -72,7 +72,11 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
         if (assignment.workOrderState !== 'finished') {
           // Calculate estimated hours based on UPH data if available
           let estimatedHours = 1; // Default fallback
-          if (uphData?.uphResults && assignment.quantity > 0) {
+          
+          // Use assignment.estimatedHours if available (real-time calculation)
+          if (assignment.estimatedHours && assignment.estimatedHours > 0) {
+            estimatedHours = assignment.estimatedHours;
+          } else if (uphData?.uphResults && assignment.quantity > 0) {
             const uphEntry = uphData.uphResults.find((entry: any) => 
               entry.operatorName === assignment.operatorName &&
               entry.workCenter === assignment.workCenter &&
@@ -85,6 +89,9 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
           }
           
           operator.totalEstimatedHours += estimatedHours;
+          
+          // Store estimated hours for this assignment for display
+          operator.assignments[operator.assignments.length - 1].estimatedHours = estimatedHours;
         }
       }
     });
@@ -221,13 +228,25 @@ export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummary
                 <div className="text-gray-600">Assigned MOs: {operator.totalAssignments}</div>
                 <div className="text-gray-500 text-xs">Est. Completion: {operator.estimatedCompletion}</div>
               </div>
-              <div className="flex items-center space-x-1">
-                <Clock className="w-4 h-4 text-gray-400" />
-                <span className="text-xs text-gray-500">
-                  {operator.totalEstimatedHours > 0 ? `${operator.totalEstimatedHours.toFixed(1)}h` : '0h'}
-                </span>
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1">
+                  <Clock className="w-4 h-4 text-gray-400" />
+                  <span className="text-xs font-medium text-gray-700">
+                    {operator.totalEstimatedHours.toFixed(1)}h
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500">
+                  / {operator.availableHours || 40}h
+                </div>
               </div>
             </div>
+
+            {/* Real-time capacity warning if approaching limits */}
+            {operator.capacityPercent > 90 && (
+              <div className="mt-2 text-xs text-red-600 bg-red-50 rounded px-2 py-1">
+                ⚠️ Approaching capacity limit ({operator.capacityPercent}%)
+              </div>
+            )}
           </div>
         ))}
       </div>

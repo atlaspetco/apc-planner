@@ -109,7 +109,34 @@ export function OperatorDropdown({
         const data = await response.json();
         
         if (response.ok && data.operators) {
-          setQualifiedOperators(data.operators);
+          // Enhanced filtering: Only show operators with existing UPH data for this specific combination
+          const strictlyQualifiedOperators = data.operators.filter((op: any) => {
+            // Must have meaningful UPH data for this combination
+            const hasValidUphData = op.averageUph > 0 && op.observations > 0;
+            
+            // Must have work center enabled in settings
+            const hasWorkCenterEnabled = op.workCenters?.includes(workCenter) || 
+              (workCenter === 'Assembly' && (op.workCenters?.includes('Sewing') || op.workCenters?.includes('Rope') || op.workCenters?.includes('Assembly')));
+            
+            // Must have routing enabled (if routing constraints exist)
+            const hasRoutingEnabled = !op.routings?.length || op.routings.includes(routing);
+            
+            // Log filtering decision for debugging
+            if (!hasValidUphData) {
+              console.log(`❌ ${op.name}: No UPH data (UPH: ${op.averageUph}, Obs: ${op.observations}) for ${routing}/${workCenter}`);
+            } else if (!hasWorkCenterEnabled) {
+              console.log(`❌ ${op.name}: Work center not enabled for ${workCenter} (has: ${op.workCenters?.join(', ')})`);
+            } else if (!hasRoutingEnabled) {
+              console.log(`❌ ${op.name}: Routing not enabled for ${routing} (has: ${op.routings?.join(', ')})`);
+            } else {
+              console.log(`✅ ${op.name}: Qualified for ${routing}/${workCenter} (${op.averageUph.toFixed(1)} UPH, ${op.observations} obs)`);
+            }
+            
+            return hasValidUphData && hasWorkCenterEnabled && hasRoutingEnabled;
+          });
+          
+          console.log(`Filtered ${data.operators.length} operators to ${strictlyQualifiedOperators.length} with UPH data for ${routing}/${workCenter}`);
+          setQualifiedOperators(strictlyQualifiedOperators);
         } else {
           // Don't log errors for normal operation, just handle gracefully
           setQualifiedOperators([]);
@@ -209,6 +236,62 @@ export function OperatorDropdown({
   // For single work order, check if it's auto-assigned
   const currentAssignment = workOrderId && assignments ? assignments.get(workOrderId) : null;
   const isCurrentAutoAssigned = currentAssignment?.isAutoAssigned || false;
+  
+  // Determine assignment color based on type
+  const getAssignmentColor = (assignment: any, isFinished: boolean) => {
+    if (isFinished) {
+      return "text-gray-700"; // Actual/Completed assignments (locked)
+    } else if (assignment?.isAutoAssigned) {
+      return "text-blue-600 font-medium"; // Auto-Assignment (AI) - Blue
+    } else if (assignment) {
+      return "text-green-600 font-medium"; // Manual Assignment - Green
+    }
+    return "text-gray-500"; // Unassigned
+  };
+
+  // Calculate operator capacity and constraints
+  const getOperatorCapacity = (operatorId: number) => {
+    const operator = qualifiedOperators.find(op => op.id === operatorId);
+    if (!operator) return { canAssign: false, reason: "Operator not found" };
+
+    const availableHours = operator.availableHours || 40;
+    const schedulePercentage = operator.schedulePercentage || 90;
+    const maxSchedulableHours = (availableHours * schedulePercentage) / 100;
+    
+    // Calculate current assigned hours for this operator
+    let currentAssignedHours = 0;
+    if (assignments) {
+      Array.from(assignments.values()).forEach(assignment => {
+        if (assignment.operatorId === operatorId && assignment.workOrderState !== 'finished') {
+          // Estimate hours based on quantity and UPH
+          const estimatedHours = assignment.estimatedHours || 
+            (assignment.quantity && operator.averageUph ? assignment.quantity / operator.averageUph : 1);
+          currentAssignedHours += estimatedHours;
+        }
+      });
+    }
+
+    // Calculate hours needed for this assignment
+    const estimatedHoursNeeded = quantity && operator.averageUph > 0 
+      ? quantity / operator.averageUph 
+      : 1; // Default 1 hour if no UPH data
+
+    const totalHoursAfterAssignment = currentAssignedHours + estimatedHoursNeeded;
+    const remainingHours = maxSchedulableHours - currentAssignedHours;
+    const utilizationPercentage = (totalHoursAfterAssignment / maxSchedulableHours) * 100;
+
+    return {
+      canAssign: totalHoursAfterAssignment <= maxSchedulableHours,
+      currentAssignedHours,
+      maxSchedulableHours,
+      remainingHours,
+      estimatedHoursNeeded,
+      utilizationPercentage,
+      reason: totalHoursAfterAssignment > maxSchedulableHours 
+        ? `Would exceed capacity (${utilizationPercentage.toFixed(0)}% utilization)` 
+        : `Available (${utilizationPercentage.toFixed(0)}% utilization)`
+    };
+  };
 
   // If all work orders are finished, show the finished operators
   if (allFinished && uniqueFinishedOperators.length > 0) {
@@ -248,8 +331,15 @@ export function OperatorDropdown({
                       return operatorDetails ? (
                         <div className="flex items-center justify-between w-full min-w-0">
                           <div className="flex items-center space-x-1">
-                            {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                            <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)}</span>
+                            {hasAutoAssignment && <Sparkles className="w-3 h-3 text-blue-500" />}
+                            <span className={`truncate ${getAssignmentColor(bulkAssignmentInfo[0]?.assignment, bulkAssignmentInfo[0]?.isFinished)}`}>
+                              {formatOperatorName(operatorDetails.name)}
+                            </span>
+                            {hasAutoAssignment && (
+                              <Badge variant="outline" className="text-xs px-1 py-0 text-blue-600 border-blue-200">
+                                AI
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center space-x-1 ml-2">
                             {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
@@ -272,19 +362,40 @@ export function OperatorDropdown({
                         </div>
                       ) : (
                         <div className="flex items-center space-x-1">
-                          {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                          <span className="text-green-700">{formatOperatorName(operatorName)}</span>
+                          {hasAutoAssignment && <Sparkles className="w-3 h-3 text-blue-500" />}
+                          <span className={getAssignmentColor(bulkAssignmentInfo[0]?.assignment, bulkAssignmentInfo[0]?.isFinished)}>
+                            {formatOperatorName(operatorName)}
+                          </span>
+                          {hasAutoAssignment && (
+                            <Badge variant="outline" className="text-xs px-1 py-0 text-blue-600 border-blue-200">
+                              AI
+                            </Badge>
+                          )}
                         </div>
                       );
                     })() : 
-                    <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
+                    <div className="flex items-center space-x-1">
+                      <span className="text-gray-600">{uniqueOperators.length} operators assigned</span>
+                      {hasAutoAssignment && (
+                        <Badge variant="outline" className="text-xs px-1 py-0 text-blue-600 border-blue-200">
+                          AI
+                        </Badge>
+                      )}
+                    </div>
                 ) : ""
               ) : (
                 currentOperator ? (
                   <div className="flex items-center justify-between w-full min-w-0">
                     <div className="flex items-center space-x-1">
-                      {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-purple-600" />}
-                      <span className="truncate text-green-700">{formatOperatorName(currentOperator.name)}</span>
+                      {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-blue-500" />}
+                      <span className={`truncate ${getAssignmentColor(currentAssignment, false)}`}>
+                        {formatOperatorName(currentOperator.name)}
+                      </span>
+                      {isCurrentAutoAssigned && (
+                        <Badge variant="outline" className="text-xs px-1 py-0 text-blue-600 border-blue-200">
+                          AI
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center space-x-1 ml-2">
                       {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
@@ -313,10 +424,24 @@ export function OperatorDropdown({
         <SelectContent>
           {qualifiedOperators.length === 0 && !loading && (
             <SelectItem value="no-operators" disabled>
-              <div className="flex items-center justify-between w-full">
-                <span className="text-muted-foreground text-xs">
-                  No qualified operators - missing UPH data for {routing}
-                </span>
+              <div className="flex flex-col w-full py-2">
+                <div className="flex items-center space-x-2 text-red-600">
+                  <span className="text-xs">⚠️ No Qualified Operators</span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Missing UPH data for {routing} / {workCenter}
+                </div>
+                <div className="text-xs text-blue-600 mt-1">
+                  💡 Operators need historical performance data to be assignable
+                </div>
+              </div>
+            </SelectItem>
+          )}
+          {loading && (
+            <SelectItem value="loading" disabled>
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin h-3 w-3 border border-gray-300 border-t-blue-600 rounded-full"></div>
+                <span className="text-xs text-muted-foreground">Loading qualified operators...</span>
               </div>
             </SelectItem>
           )}
@@ -339,31 +464,52 @@ export function OperatorDropdown({
                 !uniqueOperators.includes(operator.name) : 
                 currentOperatorId !== operator.id;
             })
-            .map(operator => (
-              <SelectItem key={operator.id} value={operator.id.toString()}>
-                <div className="flex items-center justify-between w-full">
-                  <span className="truncate">{formatOperatorName(operator.name)}</span>
-                  <div className="flex items-center space-x-2 ml-2">
-                    {operator.observations > 0 && operator.averageUph > 0 ? (
-                      <>
-                        <span className="text-xs text-muted-foreground">
-                          {operator.averageUph.toFixed(1)} UPH
+            .map(operator => {
+              const capacity = getOperatorCapacity(operator.id);
+              return (
+                <SelectItem 
+                  key={operator.id} 
+                  value={operator.id.toString()}
+                  disabled={!capacity.canAssign}
+                  className={!capacity.canAssign ? "opacity-50" : ""}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="truncate">{formatOperatorName(operator.name)}</span>
+                      {!capacity.canAssign && (
+                        <span className="text-xs text-red-600 truncate">
+                          {capacity.reason}
                         </span>
-                        {quantity > 0 && (
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-2 ml-2">
+                      {operator.observations > 0 && operator.averageUph > 0 ? (
+                        <>
                           <span className="text-xs text-muted-foreground">
-                            • {calculateEstimatedTime(operator.averageUph)}
+                            {operator.averageUph.toFixed(1)} UPH
                           </span>
-                        )}
-                      </>
-                    ) : (
-                      <Badge variant="outline" className="text-xs px-1 py-0">
-                        No data
-                      </Badge>
-                    )}
+                          {quantity > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              • {calculateEstimatedTime(operator.averageUph)}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <Badge variant="outline" className="text-xs px-1 py-0">
+                          No data
+                        </Badge>
+                      )}
+                      {/* Capacity indicator */}
+                      <div className={`w-2 h-2 rounded-full ${
+                        capacity.utilizationPercentage >= 95 ? 'bg-red-500' :
+                        capacity.utilizationPercentage >= 80 ? 'bg-yellow-500' :
+                        'bg-green-500'
+                      }`} title={`${capacity.utilizationPercentage.toFixed(0)}% utilization`}></div>
+                    </div>
                   </div>
-                </div>
-              </SelectItem>
-            ))}
+                </SelectItem>
+              );
+            })}
         </SelectContent>
       </Select>
       
