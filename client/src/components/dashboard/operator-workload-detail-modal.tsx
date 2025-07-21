@@ -127,11 +127,32 @@ export function OperatorWorkloadDetailModal({
 
   // Calculate total hours per routing
   const routingSummary = Array.from(assignmentsByRouting.entries()).map(([routing, workOrders]) => {
-    const totalHours = workOrders.reduce((sum, wo) => sum + wo.estimatedHours, 0);
+    // Consolidate work orders by MO number and work center
+    const consolidatedMap = new Map<string, WorkOrderDetail>();
+    
+    workOrders.forEach(wo => {
+      const key = `${wo.moNumber}-${wo.workCenter}`;
+      if (!consolidatedMap.has(key)) {
+        // First occurrence - use this work order
+        consolidatedMap.set(key, {
+          ...wo,
+          estimatedHours: wo.estimatedHours
+        });
+      } else {
+        // Already exists - just add to the estimated hours
+        const existing = consolidatedMap.get(key)!;
+        existing.estimatedHours += wo.estimatedHours;
+      }
+    });
+    
+    // Convert back to array
+    const consolidatedWorkOrders = Array.from(consolidatedMap.values());
+    
+    const totalHours = consolidatedWorkOrders.reduce((sum, wo) => sum + wo.estimatedHours, 0);
     
     // For total quantity, deduplicate by MO number (since we already have MO quantities)
     const uniqueMOs = new Map<string, number>();
-    workOrders.forEach(wo => {
+    consolidatedWorkOrders.forEach(wo => {
       if (!uniqueMOs.has(wo.moNumber)) {
         uniqueMOs.set(wo.moNumber, wo.quantity);
       }
@@ -144,7 +165,7 @@ export function OperatorWorkloadDetailModal({
       totalHours,
       totalQuantity,
       moCount,
-      workOrders
+      workOrders: consolidatedWorkOrders
     };
   }).sort((a, b) => b.totalHours - a.totalHours);
 
