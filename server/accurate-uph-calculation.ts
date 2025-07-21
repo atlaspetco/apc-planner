@@ -77,7 +77,7 @@ export async function calculateAccurateUPH() {
         work_id as work_order_id,
         state
       FROM work_cycles 
-      WHERE state = 'done'  -- Only completed cycles
+      WHERE (state = 'done' OR state IS NULL)  -- Include completed cycles and cycles without state
         AND work_cycles_operator_rec_name IS NOT NULL 
         AND work_cycles_operator_rec_name != ''
         AND work_cycles_work_center_rec_name IS NOT NULL

@@ -1083,8 +1083,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Only include operators who have actual performance data for this combination
           if (!hasUphData) return false;
           
-          // If operator has historical UPH data, they are qualified regardless of settings
-          // This ensures operators who have performed work are shown even if settings haven't been updated
+          // CRITICAL: Check if operator has explicitly disabled this work center
+          // Even if they have historical data, respect their current settings
+          if (op.workCenters && !op.workCenters.includes(workCenter as string)) {
+            // For Assembly, also check if they have Sewing or Rope enabled since Assembly is aggregated
+            if (workCenter === 'Assembly') {
+              const hasAssemblyRelated = op.workCenters.some(wc => 
+                wc === 'Assembly' || wc === 'Sewing' || wc === 'Rope'
+              );
+              if (!hasAssemblyRelated) {
+                console.log(`  - ${op.name} has ${workCenter} disabled in settings, excluding from qualified list`);
+                return false;
+              }
+            } else {
+              console.log(`  - ${op.name} has ${workCenter} disabled in settings, excluding from qualified list`);
+              return false;
+            }
+          }
+          
+          // If operator has historical UPH data AND the work center is enabled, they are qualified
           return true;
         })
         .map(op => {
