@@ -327,9 +327,9 @@ export class FulfilAPIService {
                   rec_name: wo.rec_name,
                   state: wo.state || 'assigned',
                   work_center: workCenter,
-                  work_center_name: workCenter,
+                  'work_center.name': workCenter,
                   operation: operation,
-                  operation_name: operation,
+                  'operation.name': operation,
                   planned_date: wo.planned_date,
                   quantity_done: wo.quantity_done || 0,
                   routing: operation
