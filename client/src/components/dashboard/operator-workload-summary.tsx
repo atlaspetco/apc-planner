@@ -17,10 +17,9 @@ interface OperatorWorkload {
 
 interface OperatorWorkloadSummaryProps {
   assignments: Map<number, any>;
-  assignmentsData?: any;
 }
 
-export function OperatorWorkloadSummary({ assignments, assignmentsData }: OperatorWorkloadSummaryProps) {
+export function OperatorWorkloadSummary({ assignments }: OperatorWorkloadSummaryProps) {
   const [selectedOperator, setSelectedOperator] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   // Fetch operator data for workload calculations
@@ -39,12 +38,10 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
   const workloadSummary = React.useMemo(() => {
     // Handle both direct array and wrapped operators response
     const operators = operatorsData?.operators || operatorsData || [];
-    const uphResults = uphData?.uphResults || [];
-    
     if (!assignments || !operators.length) return [];
 
     const operatorMap = new Map();
-    operators.forEach((op: any) => {
+    operators.forEach(op => {
       operatorMap.set(op.id, {
         operatorId: op.id,
         operatorName: op.name,
@@ -52,13 +49,12 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         totalEstimatedHours: 0,
         availableHours: op.availableHours || 40, // Default 40h/week
         observations: op.observations || 0,
-        assignments: [],
-        productSummary: new Map() // Group by product routing
+        assignments: []
       });
     });
 
     // Process assignments to calculate workload using UPH data
-    Array.from(assignments.values()).forEach((assignment: any) => {
+    Array.from(assignments.values()).forEach(assignment => {
       const operator = operatorMap.get(assignment.operatorId);
       if (operator) {
         operator.totalAssignments++;
@@ -72,45 +68,22 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           productionOrderId: assignment.productionOrderId || null
         });
         
-        // Aggregate by product routing
-        const routing = assignment.productRouting || assignment.routing || 'Unknown';
-        const workCenter = assignment.workCenter || 'Unknown';
-        const key = `${routing}|${workCenter}`;
-        
-        if (!operator.productSummary.has(key)) {
-          operator.productSummary.set(key, {
-            routing,
-            workCenter,
-            totalQuantity: 0,
-            estimatedHours: 0,
-            uph: 0
-          });
-        }
-        
-        const productData = operator.productSummary.get(key);
-        productData.totalQuantity += assignment.quantity || 0;
-        
         // Only include hours for non-finished work orders
         if (assignment.workOrderState !== 'finished') {
           // Calculate estimated hours based on UPH data if available
-          let estimatedHours = 0;
-          if (uphResults && assignment.quantity > 0) {
-            const uphEntry = uphResults.find((entry: any) => 
-              entry.operatorName === operator.operatorName &&
-              entry.workCenter === workCenter &&
-              entry.productRouting === routing
+          let estimatedHours = 1; // Default fallback
+          if (uphData?.uphResults && assignment.quantity > 0) {
+            const uphEntry = uphData.uphResults.find(entry => 
+              entry.operatorName === assignment.operatorName &&
+              entry.workCenter === assignment.workCenter &&
+              entry.productRouting === (assignment.productRouting || assignment.routing)
             );
             
-            if (uphEntry && uphEntry.uph > 0) {
-              estimatedHours = assignment.quantity / uphEntry.uph;
-              productData.uph = uphEntry.uph;
-              console.log(`Found UPH for ${operator.operatorName} - ${workCenter}/${routing}: ${uphEntry.uph} UPH, Hours: ${estimatedHours}`);
-            } else {
-              console.log(`No UPH data found for ${operator.operatorName} - ${workCenter}/${routing}`);
+            if (uphEntry && uphEntry.unitsPerHour > 0) {
+              estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
             }
           }
           
-          productData.estimatedHours += estimatedHours;
           operator.totalEstimatedHours += estimatedHours;
         }
       }
@@ -122,11 +95,11 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
       
       // Calculate total observations from UPH data
       let totalObservations = 0;
-      if (uphResults) {
-        const operatorUphEntries = uphResults.filter((entry: any) => 
+      if (uphData?.uphResults) {
+        const operatorUphEntries = uphData.uphResults.filter(entry => 
           entry.operatorName === operator.operatorName
         );
-        totalObservations = operatorUphEntries.reduce((sum: number, entry: any) => sum + (entry.observationCount || 0), 0);
+        totalObservations = operatorUphEntries.reduce((sum, entry) => sum + (entry.observations || 0), 0);
       }
       
       // Estimate completion date based on workload
@@ -142,12 +115,11 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           weekday: 'short', 
           month: 'short', 
           day: 'numeric' 
-        }),
-        productSummary: Array.from(operator.productSummary.values())
+        })
       };
     }).filter(operator => operator.totalAssignments > 0) // Only show operators with assignments
      .sort((a, b) => b.totalAssignments - a.totalAssignments); // Sort by workload
-  }, [assignmentsData, operatorsData, uphData]);
+  }, [assignments, operatorsData, uphData]);
 
 
 
@@ -194,9 +166,9 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {workloadSummary.slice(0, 8).map((operator) => (
-          <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100 relative min-h-[220px]">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {workloadSummary.slice(0, 6).map((operator) => (
+          <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100 relative">
             {/* Expand button in top right */}
             <Button
               variant="ghost"
@@ -213,7 +185,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
             {/* Operator Header */}
             <div className="flex items-center space-x-3 mb-3">
               <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                {operator.operatorName.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+                {operator.operatorName.split(' ').map(n => n[0]).join('').toUpperCase()}
               </div>
               <div>
                 <div className="font-medium text-gray-900">{operator.operatorName}</div>
@@ -243,34 +215,17 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
               </div>
             </div>
 
-            {/* Product Summary */}
-            <div className="space-y-1">
-              {operator.productSummary && operator.productSummary.slice(0, 3).map((product: any, idx: number) => (
-                <div key={idx} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-gray-700 font-medium">{product.routing}</span>
-                    <span className="text-gray-500">({product.workCenter})</span>
-                  </div>
-                  <div className="flex items-center space-x-2 text-gray-600">
-                    <span className="font-medium">{product.totalQuantity} units</span>
-                    {product.uph > 0 && (
-                      <>
-                        <span className="text-gray-400">•</span>
-                        <span>{product.uph.toFixed(0)} UPH</span>
-                        <span className="text-gray-400">•</span>
-                        <span>{product.estimatedHours.toFixed(1)}h</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {operator.productSummary && operator.productSummary.length > 3 && (
-                <div className="text-xs text-gray-500 text-center">
-                  +{operator.productSummary.length - 3} more products
-                </div>
-              )}
-              <div className="text-xs text-gray-500 pt-1 border-t border-gray-200">
-                Est. Completion: {operator.estimatedCompletion}
+            {/* Assignment Details */}
+            <div className="flex items-center justify-between text-sm">
+              <div>
+                <div className="text-gray-600">Assigned MOs: {operator.totalAssignments}</div>
+                <div className="text-gray-500 text-xs">Est. Completion: {operator.estimatedCompletion}</div>
+              </div>
+              <div className="flex items-center space-x-1">
+                <Clock className="w-4 h-4 text-gray-400" />
+                <span className="text-xs text-gray-500">
+                  {operator.totalEstimatedHours > 0 ? `${operator.totalEstimatedHours.toFixed(1)}h` : '0h'}
+                </span>
               </div>
             </div>
           </div>

@@ -4,7 +4,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ProductionOrder } from "@shared/schema";
 import { OperatorDropdown } from "./operator-dropdown";
-import { useToast } from "@/hooks/use-toast";
 
 interface ProductionGridProps {
   productionOrders: ProductionOrder[];
@@ -35,7 +34,6 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
-  const { toast } = useToast();
   
   const toggleRouting = (routing: string) => {
     const newExpanded = new Set(expandedRoutings);
@@ -45,6 +43,35 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
       newExpanded.add(routing);
     }
     setExpandedRoutings(newExpanded);
+  };
+
+  // Handle operator assignment
+  const handleOperatorAssign = async (workOrderId: number, operatorId: number, quantity: number, routing: string, workCenter: string, operation: string) => {
+    try {
+      const response = await fetch('/api/work-orders/assign-operator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workOrderId: workOrderId.toString(),
+          operatorId: operatorId === 0 ? null : operatorId.toString(),
+          quantity,
+          routing,
+          workCenter,
+          operation
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('Assignment successful:', result.message);
+        // Optionally refresh data or update local state
+      } else {
+        console.error('Assignment failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Assignment error:', error);
+    }
   };
   
   if (isLoading) {
@@ -142,17 +169,10 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     </td>
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
-                      
-                      // Calculate total MO quantities (deduplicated) for this work center
-                      // Group work orders by their parent MO to avoid double-counting
-                      const uniqueMOQuantities = new Map<string, number>();
-                      workOrdersInCenter.forEach(wo => {
-                        const parentOrder = orders.find(o => o.workOrders?.some(workOrder => workOrder.id === wo.id));
-                        if (parentOrder && !uniqueMOQuantities.has(parentOrder.moNumber)) {
-                          uniqueMOQuantities.set(parentOrder.moNumber, parentOrder.quantity || 0);
-                        }
-                      });
-                      const totalUniqueQuantity = Array.from(uniqueMOQuantities.values()).reduce((sum, qty) => sum + qty, 0);
+                      // Use manufacturing order quantities instead of work order quantities (which are often 0)
+                      const totalQuantity = orders
+                        .filter(order => (order.workOrders || []).some(wo => wo.workCenter === workCenter))
+                        .reduce((sum, order) => sum + (order.quantity || 0), 0);
                       
                       return (
                         <td key={workCenter} className="p-4 text-center">
@@ -165,52 +185,18 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 workCenter={workCenter}
                                 routing={routing}
                                 operation=""
-                                quantity={totalUniqueQuantity}
+                                quantity={totalQuantity}
                                 workOrderIds={workOrdersInCenter.map(wo => wo.id)}
                                 workOrderStates={workOrdersInCenter.map(wo => wo.state)}
                                 finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
                                 assignments={assignments}
                                 onAssign={async (operatorId) => {
-                                  try {
-                                    // Use smart bulk assignment endpoint
-                                    const response = await fetch('/api/assignments/smart-bulk', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({
-                                        routing,
-                                        workCenter,
-                                        operatorId
-                                      })
-                                    });
-                                    
-                                    const result = await response.json();
-                                    
-                                    if (!response.ok) {
-                                      toast({
-                                        title: "Assignment Failed",
-                                        description: result.error || "Failed to assign operator",
-                                        variant: "destructive"
-                                      });
-                                      return;
-                                    }
-                                    
-                                    // Show success message
-                                    toast({
-                                      title: "Assignments Updated",
-                                      description: result.message,
-                                      variant: "default"
-                                    });
-                                    
-                                    // Refresh assignments after bulk assignment
-                                    onAssignmentChange?.();
-                                  } catch (error) {
-                                    console.error("Smart bulk assignment error:", error);
-                                    toast({
-                                      title: "Error",
-                                      description: "Failed to perform bulk assignment",
-                                      variant: "destructive"
-                                    });
+                                  // Bulk assign to all work orders in this work center for this routing
+                                  for (const wo of workOrdersInCenter) {
+                                    await handleOperatorAssign(wo.id, operatorId, wo.quantity || totalQuantity, routing, workCenter, wo.operation);
                                   }
+                                  // Refresh assignments after bulk assignment
+                                  onAssignmentChange?.();
                                 }}
                                 className="w-full"
                               />

@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { FulfilAPIService } from "./fulfil-api";
 import { db } from "./db.js";
 import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph } from "../shared/schema.js";
-import { sql, eq, desc, or, and, inArray, isNotNull, gt } from "drizzle-orm";
+import { sql, eq, desc } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
 
@@ -114,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const workOrderRequestBody = {
             filters: [
               ["production", "in", allMOIds], // Get work orders by parent MO ID
-              ["state", "in", ["request", "draft", "waiting", "assigned", "running", "finished", "done"]] // Include ALL states to show operators for all MOs
+              ["state", "in", ["request", "draft", "waiting", "assigned"]] // ACTIVE WORK ORDERS: request, draft, waiting, assigned (excludes running/done/finished)
             ],
             fields: [
               "id",
@@ -573,54 +573,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
         .where(eq(workOrderAssignments.isActive, true));
       
-      // Get fresh production orders - retry multiple times if needed
+      // Get fresh production orders directly from Fulfil API to avoid circular dependency
       let allProductionOrders = [];
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      while (retryCount < maxRetries) {
-        try {
-          // Directly call the Fulfil service like production orders endpoint does
-          const { FulfilCurrentService } = await import('./fulfil-current.js');
-          const fulfilService = new FulfilCurrentService();
-          
-          console.log(`Fetching production orders from Fulfil service (attempt ${retryCount + 1}/${maxRetries})...`);
-          const manufacturingOrders = await fulfilService.getCurrentProductionOrders();
-          
-          if (manufacturingOrders && manufacturingOrders.length > 0) {
-            allProductionOrders = manufacturingOrders;
-            console.log(`Got ${allProductionOrders.length} production orders from Fulfil service`);
-            break; // Success, exit retry loop
-          } else {
-            console.log('Fulfil service returned empty data, retrying...');
-            retryCount++;
-          }
-        } catch (error) {
-          console.error(`Failed to fetch production orders from Fulfil (attempt ${retryCount + 1}):`, error);
-          retryCount++;
-          
-          if (retryCount < maxRetries) {
-            // Wait a bit before retrying
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-      }
-      
-      // If all retries failed, use direct HTTP request as last resort
-      if (allProductionOrders.length === 0) {
-        try {
-          console.log('All Fulfil attempts failed, trying direct HTTP request...');
-          const response = await fetch('http://localhost:5000/api/production-orders');
-          if (response.ok) {
-            allProductionOrders = await response.json();
-            console.log(`Direct HTTP request succeeded: ${allProductionOrders.length} production orders`);
-          }
-        } catch (httpError) {
-          console.error('Direct HTTP request also failed:', httpError);
-          // Final fallback to database
-          allProductionOrders = await db.select().from(productionOrders);
-          console.log(`Database fallback returned ${allProductionOrders.length} production orders`);
-        }
+      try {
+        // Directly call the Fulfil API logic instead of making an internal HTTP request
+        const { FulfilCurrentService } = await import('./fulfil-current.js');
+        const fulfilService = new FulfilCurrentService();
+        
+        // Fetch manufacturing orders from Fulfil API
+        const manufacturingOrders = await fulfilService.getCurrentProductionOrders();
+        
+        // Convert to production orders format
+        allProductionOrders = manufacturingOrders;
+      } catch (error) {
+        console.error('Failed to fetch from Fulfil API, using database:', error);
+        // Fallback to database if API fails
+        allProductionOrders = await db.select().from(productionOrders);
       }
       
       // Create a map of work order ID to production order and work order details
@@ -628,18 +596,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       allProductionOrders.forEach(po => {
         if (po.workOrders && Array.isArray(po.workOrders)) {
           po.workOrders.forEach((wo: any) => {
-            // Ensure we're using numeric IDs for consistency
-            const woId = typeof wo.id === 'string' ? parseInt(wo.id, 10) : wo.id;
-            workOrderMap.set(woId, {
+            workOrderMap.set(wo.id, {
               workOrder: wo,
               productionOrder: po
             });
           });
         }
       });
-      
-      console.log(`WorkOrderMap populated with ${workOrderMap.size} entries`);
-      console.log(`Sample work order IDs: ${Array.from(workOrderMap.keys()).slice(0, 10).join(', ')}`);
       
       // Enrich assignments with production order data
       const enrichedAssignments = await Promise.all(assignments.map(async (assignment) => {
@@ -651,11 +614,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           let foundWorkOrder = null;
           let foundProductionOrder = null;
           
-          // Debug: Log what we're searching for
-          console.log(`Searching for work order ID: ${assignment.workOrderId} (type: ${typeof assignment.workOrderId})`);
-          console.log(`Available work order IDs in map: ${Array.from(workOrderMap.keys()).slice(0, 10).join(', ')}...`);
-          console.log(`Map size: ${workOrderMap.size}, First few entries:`, Array.from(workOrderMap.entries()).slice(0, 3));
-          
           for (const po of allProductionOrders) {
             if (po.workOrders && Array.isArray(po.workOrders)) {
               // Check both number and string comparisons
@@ -666,27 +624,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (wo) {
                 foundWorkOrder = wo;
                 foundProductionOrder = po;
-                console.log(`Found work order ${assignment.workOrderId} in PO ${po.moNumber}`);
                 break;
               }
             }
           }
           
           if (foundWorkOrder && foundProductionOrder) {
-            // Use the full production order quantity for each work order
-            // Each work order represents the full quantity going through that work center
-            const workCenter = foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter || 'Unknown';
-            const workOrderQuantity = foundWorkOrder.quantity || foundProductionOrder.quantity || 0;
-            
-            console.log(`Work order ${assignment.workOrderId} quantity: ${workOrderQuantity} (from PO ${foundProductionOrder.moNumber} with qty: ${foundProductionOrder.quantity})`);
-            
             return {
               ...assignment,
-              workCenter: workCenter,
+              workCenter: foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter || 'Unknown',
               operation: foundWorkOrder.operation || 'Unknown',
               routing: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
               productRouting: foundProductionOrder.routing || foundProductionOrder.routingName || 'Unknown',
-              quantity: workOrderQuantity,
+              quantity: foundWorkOrder.quantity || foundProductionOrder.quantity || 0,
               productionOrderId: foundProductionOrder.id,
               productName: foundProductionOrder.productName || 'Unknown',
               moNumber: foundProductionOrder.moNumber || 'Unknown'
@@ -718,7 +668,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 operation: wo.operation || 'Unknown',
                 routing: wo.routing || po?.routing || 'Unknown',
                 productRouting: wo.routing || po?.routing || 'Unknown',
-                quantity: wo.quantityRequired || wo.quantity || po?.quantity || 0,
+                quantity: wo.quantityRequired || po?.quantity || 0,
                 productionOrderId: po?.id || null,
                 productName: po?.productName || 'Unknown',
                 moNumber: po?.moNumber || `MO${assignment.workOrderId}`
@@ -744,23 +694,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const { workOrder, productionOrder } = workOrderData;
         
-        // Calculate proportional quantity for work orders
-        const workCenter = workOrder.workCenter || workOrder.originalWorkCenter || 'Unknown';
-        const workOrdersInSameCenter = productionOrder.workOrders?.filter((wo: any) => 
-          (wo.workCenter || wo.originalWorkCenter) === workCenter
-        ).length || 1;
-        
-        // Divide the production order quantity by the number of operations in this work center
-        const proportionalQuantity = workOrder.quantity || 
-          Math.ceil(productionOrder.quantity / workOrdersInSameCenter) || 0;
-        
         return {
           ...assignment,
-          workCenter: workCenter,
+          workCenter: workOrder.workCenter || workOrder.originalWorkCenter || 'Unknown',
           operation: workOrder.operation || 'Unknown',
           routing: productionOrder.routing || productionOrder.routingName || 'Unknown',
           productRouting: productionOrder.routing || productionOrder.routingName || 'Unknown',
-          quantity: proportionalQuantity,
+          quantity: workOrder.quantity || productionOrder.quantity || 0,
           productionOrderId: productionOrder.id,
           productName: productionOrder.productName || 'Unknown',
           moNumber: productionOrder.moNumber || 'Unknown'
@@ -2756,7 +2696,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: Date.now()
       });
 
-      const { importMultipleBatches } = await import("./fetch-newer-work-cycles.js");
       const results = await importMultipleBatches(maxBatches, batchSize, 1000);
 
       // Clear importing status
@@ -2793,73 +2732,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Bulk import all work cycles from Fulfil API
-  app.post("/api/fulfil/bulk-import-work-cycles", async (req: Request, res: Response) => {
-    try {
-      console.log("Starting bulk work cycles import...");
-      
-      // Set importing status
-      global.updateImportStatus?.({
-        isImporting: true,
-        currentOperation: 'Bulk importing all work cycles from Fulfil',
-        progress: 0,
-        startTime: Date.now()
-      });
-
-      const { bulkImportAllWorkCycles } = await import("./bulk-work-cycles-import.js");
-      const results = await bulkImportAllWorkCycles();
-
-      // Clear importing status
-      global.updateImportStatus?.({
-        isImporting: false,
-        currentOperation: 'Bulk import completed',
-        progress: 100,
-        startTime: null
-      });
-
-      res.json({
-        success: true,
-        message: `Bulk import complete: ${results.totalImported} cycles imported`,
-        totalImported: results.totalImported,
-        totalSkipped: results.totalSkipped,
-        highestId: results.highestId,
-        newOperatorsCreated: results.newOperatorsCreated,
-        uniqueOperatorsCount: results.uniqueOperatorsCount
-      });
-
-    } catch (error) {
-      console.error("Bulk import error:", error);
-      
-      global.updateImportStatus?.({
-        isImporting: false,
-        lastError: error instanceof Error ? error.message : "Unknown error"
-      });
-
-      res.status(500).json({
-        success: false,
-        message: "Bulk work cycles import failed",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
   // Single UPH calculation from work cycles
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating UPH using unified methodology',
+        currentOperation: 'Calculating UPH using authentic Fulfil API field mapping',
         startTime: Date.now()
       });
 
-      // Use unified calculator and rebuild historical table
-      const { rebuildHistoricalUph } = await import("./rebuild-historical-uph.js");
-      await rebuildHistoricalUph();
+      const { calculateUphFromFulfilFields } = await import("./fulfil-uph-calculation.js");
       
-      // Get the results for response
-      const { calculateUnifiedUph } = await import("./unified-uph-calculator.js");
-      const calculations = await calculateUnifiedUph();
+      console.log("Starting UPH calculation using authentic Fulfil field mapping...");
+      const results = await calculateUphFromFulfilFields();
       
       // Clear calculating status
       (global as any).updateImportStatus({
@@ -2868,15 +2754,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: null
       });
       
-      res.json({
-        success: true,
-        message: `Successfully calculated ${calculations.length} UPH values using unified methodology`,
-        calculations: calculations.length,
-        method: "Unified UPH calculation from database work cycles",
-        note: "Groups by Operator+WorkCenter+Routing+MO, averages across MOs"
-      });
+      if (results.success) {
+        res.json({
+          success: true,
+          message: results.message,
+          calculations: results.calculations,
+          summary: results.summary,
+          totalCalculations: results.calculations,
+          workCenters: results.workCenters,
+          method: "Authentic Fulfil API field mapping with work center aggregation",
+          note: "Uses exact production.work/cycles endpoint field paths with Assembly consolidation"
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to calculate UPH using Fulfil field mapping",
+          error: results.error
+        });
+      }
     } catch (error) {
-      console.error("Error calculating UPH from unified calculator:", error);
+      console.error("Error calculating UPH from Fulfil fields:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
@@ -2888,7 +2785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate UPH using unified methodology",
+        message: "Failed to calculate UPH using Fulfil field mapping",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
@@ -3321,13 +3218,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Use the core UPH calculator for consistency
-      const { calculateCoreUph } = await import("./uph-core-calculator.js");
-      const calculationResults = await calculateCoreUph();
-      
+      // Direct database query to get stored UPH data from historical_uph table
+      const uphResults = await db.select().from(historicalUph);
       const allOperators = await db.select().from(operators);
       
-      if (calculationResults.length === 0) {
+      if (uphResults.length === 0) {
         return res.json({
           routings: [],
           summary: {
@@ -3344,28 +3239,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create operator name mapping
       const operatorMap = new Map(allOperators.map(op => [op.id, op.name]));
       
-      // Transform calculated results to match expected format
-      const cleanedUphResults = calculationResults.map(calc => {
-        // Find operator ID by name
-        const operator = allOperators.find(op => op.name === calc.operatorName);
-        return {
-          operatorId: operator?.id || 0,
-          operatorName: calc.operatorName,
-          workCenter: calc.workCenter, // Already consolidated in unified calculator
-          routing: calc.routing,
-          unitsPerHour: calc.unitsPerHour,
-          calculationPeriod: calc.observations
-        };
-      });
+      // Work center cleanup (no consolidation)
+      const cleanWorkCenterForDisplay = (workCenter: string): string => {
+        if (!workCenter) return 'Unknown';
+        
+        // Only clean up compound names, keep original work centers
+        if (workCenter.includes(' / ')) {
+          return workCenter.split(' / ')[0].trim();
+        }
+        
+        // Capitalize properly but keep original names (Rope, Sewing, Cutting, Packaging)
+        return workCenter.charAt(0).toUpperCase() + workCenter.slice(1).toLowerCase();
+      };
+      
+      // Clean work center names (no aggregation)
+      const cleanedUphResults = uphResults.map(row => ({
+        ...row,
+        workCenter: cleanWorkCenterForDisplay(row.workCenter),
+        unitsPerHour: row.unitsPerHour, // historicalUph uses unitsPerHour field
+        calculationPeriod: row.observations // historicalUph uses observations field
+      }));
       
       // Get unique work centers and routings after cleaning
-      const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
+      const allWorkCenters = Array.from(new Set(cleanedUphResults.map(row => row.workCenter))).sort();
       const allRoutings = Array.from(new Set(cleanedUphResults.map(row => row.routing))).sort();
       
       // Group UPH data by routing, then by operator
-      const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
+      const routingData = new Map<string, Map<number, Record<string, number[]>>>();
       
-      // Build the routing data structure directly from unified calculator results
       cleanedUphResults.forEach(row => {
         // Skip rows with null operator ID
         if (!row.operatorId || !row.routing || !row.workCenter) {
@@ -3383,11 +3284,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const operatorData = routingOperators.get(row.operatorId)!;
         
-        // Use the unified calculator's UPH directly (it already handles operation grouping correctly)
-        operatorData[row.workCenter] = {
-          uph: row.unitsPerHour,
-          observations: row.calculationPeriod
-        };
+        if (!operatorData[row.workCenter]) {
+          operatorData[row.workCenter] = [];
+        }
+        operatorData[row.workCenter].push(row.unitsPerHour);
       });
       
       // Transform to response format
@@ -3395,18 +3295,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
           // Use operator name directly from historicalUph data
           const operatorRecord = cleanedUphResults.find(r => r.operatorId === operatorId);
-          const operatorName = operatorRecord?.operatorName || operatorMap.get(operatorId) || `Operator ${operatorId}`;
+          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
           let totalObservations = 0;
           
           allWorkCenters.forEach(workCenter => {
-            const uphData = workCenterData[workCenter];
-            if (uphData) {
-              // Use the exact UPH value from unified calculator (no additional averaging)
-              workCenterPerformance[workCenter] = Math.round(uphData.uph * 100) / 100;
-              totalObservations += uphData.observations || 0;
+            const uphValues = workCenterData[workCenter];
+            if (uphValues && uphValues.length > 0) {
+              const avgUph = uphValues.reduce((sum, val) => sum + val, 0) / uphValues.length;
+              workCenterPerformance[workCenter] = Math.round(avgUph * 100) / 100;
+              
+              // Sum up observations for this work center using cleaned data
+              const operatorWorkCenterRecords = cleanedUphResults.filter(r => 
+                r.operatorId === operatorId && 
+                r.routing === routingName && 
+                r.workCenter === workCenter
+              );
+              totalObservations += operatorWorkCenterRecords.reduce((sum, record) => 
+                sum + (record.calculationPeriod || 0), 0
+              );
             } else {
               workCenterPerformance[workCenter] = null;
             }
@@ -3455,14 +3364,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
       
-      // Calculate summary statistics from historical UPH data
+      // Calculate summary statistics using cleaned data
       const workCenterUph = new Map<string, number[]>();
-      const uniqueOperators = new Set<number>();
-      
       cleanedUphResults.forEach(row => {
-        if (row.operatorId) {
-          uniqueOperators.add(row.operatorId);
-        }
         const existing = workCenterUph.get(row.workCenter) || [];
         existing.push(row.unitsPerHour);
         workCenterUph.set(row.workCenter, existing);
@@ -3478,7 +3382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         routings: routings.sort((a, b) => a.routingName.localeCompare(b.routingName)),
         summary: {
-          totalOperators: uniqueOperators.size,
+          totalOperators: new Set(cleanedUphResults.map(r => r.operatorId)).size,
           totalCombinations: cleanedUphResults.length,
           totalRoutings: allRoutings.length,
           avgUphByCeter: avgUphByCenter
@@ -3487,11 +3391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error getting UPH table data:", error);
-      console.error("Error in /api/uph/table-data:", error);
-      res.status(500).json({ 
-        message: "Error getting UPH table data",
-        error: error instanceof Error ? error.message : String(error)
-      });
+      res.status(500).json({ message: "Error getting UPH table data" });
     }
   });
 
@@ -3531,66 +3431,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get detailed work cycles for a specific UPH calculation
-  app.get("/api/uph/calculation-details", async (req, res) => {
-    try {
-      const { operatorName, workCenter, routing } = req.query;
-      
-      if (!operatorName || !workCenter || !routing) {
-        return res.status(400).json({ error: 'Missing required parameters' });
-      }
-
-      console.log('UPH calculation details request:', { operatorName, workCenter, routing });
-
-      // Use core calculator for consistency
-      const { getCoreUphDetails } = await import("./uph-core-calculator.js");
-      const result = await getCoreUphDetails(
-        operatorName as string,
-        workCenter as string,
-        routing as string
-      );
-
-      // Transform the grouped MO data to match existing modal expectations
-      const transformedCycles = result.moGroupedData.map((moData, index) => ({
-        id: index,
-        moNumber: moData.moNumber,
-        woNumber: `WO${moData.moNumber}`, // Using MO number as fallback
-        workCenter: moData.workCenter,
-        operation: 'Combined Operations', // Since we group all operations
-        quantity: moData.moQuantity,
-        durationSeconds: moData.totalDurationSeconds,
-        durationHours: moData.totalDurationSeconds / 3600,
-        uph: moData.moQuantity && moData.totalDurationSeconds > 0 ? 
-          moData.moQuantity / (moData.totalDurationSeconds / 3600) : 0,
-        date: null, // Date not available in grouped data
-        cycleCount: moData.cycleCount
-      }));
-
-      // Calculate summary statistics
-      const totalQuantity = result.moGroupedData.reduce((sum, mo) => sum + mo.moQuantity, 0);
-      const totalDurationHours = result.moGroupedData.reduce((sum, mo) => sum + (mo.totalDurationSeconds / 3600), 0);
-      const totalCycles = result.moGroupedData.reduce((sum, mo) => sum + mo.cycleCount, 0);
-
-      // Send the response with calculated average UPH
-      res.json({
-        cycles: transformedCycles,
-        summary: {
-          averageUph: result.averageUph,
-          totalQuantity,
-          totalDurationHours,
-          totalCycles,
-          moCount: result.moGroupedData.length,
-          operatorName,
-          workCenter,
-          routing
-        }
-      });
-    } catch (error) {
-      console.error('Error fetching UPH calculation details:', error);
-      res.status(500).json({ error: 'Failed to fetch calculation details' });
-    }
-  });
-
   // Import comprehensive Fulfil data
   app.post("/api/fulfil/import-comprehensive", async (req: Request, res: Response) => {
     try {
@@ -3611,38 +3451,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to import Fulfil data",
         error: error instanceof Error ? error.message : "Unknown error"
       });
-    }
-  });
-
-  // Test UPH calculation endpoint
-  app.get("/api/test/uph-calculation", async (req: Request, res: Response) => {
-    try {
-      const { getCoreUphDetails } = await import("./uph-core-calculator.js");
-      
-      // Test the specific case
-      const result = await getCoreUphDetails(
-        "Courtney Banh",
-        "Assembly", 
-        "Lifetime Pouch"
-      );
-      
-      // Find MOs with 40 units
-      const fortyUnitMos = result.moGroupedData.filter(mo => mo.moQuantity === 40);
-      
-      res.json({
-        averageUph: result.averageUph,
-        totalMos: result.moGroupedData.length,
-        fortyUnitMos: fortyUnitMos.map(mo => ({
-          moNumber: mo.moNumber,
-          quantity: mo.moQuantity,
-          durationHours: (mo.totalDurationSeconds / 3600).toFixed(2),
-          calculatedUph: (mo.moQuantity / (mo.totalDurationSeconds / 3600)).toFixed(2)
-        })),
-        message: `Average UPH ${result.averageUph.toFixed(2)} is calculated from ${result.moGroupedData.length} MOs`
-      });
-    } catch (error) {
-      console.error("Test UPH calculation error:", error);
-      res.status(500).json({ error: error.message });
     }
   });
 
@@ -5088,282 +4896,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
-      });
-    }
-  });
-
-  // Smart bulk assignment for routing/work center combination
-  app.post("/api/assignments/smart-bulk", async (req, res) => {
-    try {
-      const { routing, workCenter, operatorId } = req.body;
-      const { workOrderAssignments, historicalUph } = await import("../shared/schema.js");
-      
-      if (!routing || !workCenter) {
-        return res.status(400).json({ error: "Routing and work center are required" });
-      }
-
-      // Get operator details
-      const operator = operatorId > 0 ? await storage.getOperator(operatorId) : null;
-      
-      // Check if operator has this work center enabled
-      if (operator) {
-        const operatorWorkCenters = operator.workCenters || [];
-        let hasWorkCenter = false;
-        
-        if (workCenter === 'Assembly') {
-          // Assembly includes Sewing and Rope
-          hasWorkCenter = operatorWorkCenters.includes('Assembly') || 
-                         operatorWorkCenters.includes('Sewing') || 
-                         operatorWorkCenters.includes('Rope');
-        } else {
-          hasWorkCenter = operatorWorkCenters.includes(workCenter);
-        }
-        
-        if (!hasWorkCenter) {
-          return res.status(400).json({ 
-            error: `${operator.name} is not enabled for ${workCenter} work center` 
-          });
-        }
-      }
-
-      // Get all production orders from live API data
-      const productionOrdersUrl = `${req.protocol}://${req.get('host')}/api/production-orders`;
-      const fulfilResponse = await fetch(productionOrdersUrl);
-      
-      if (!fulfilResponse.ok) {
-        console.error("Failed to fetch production orders for smart bulk assignment");
-        return res.status(500).json({ error: "Failed to fetch production orders" });
-      }
-      
-      const allProductionOrders = await fulfilResponse.json();
-      console.log(`Smart bulk assignment: Found ${allProductionOrders.length} total production orders`);
-      
-      const routingOrders = allProductionOrders.filter((po: any) => po.routing === routing || po.routingName === routing);
-      console.log(`Smart bulk assignment: Found ${routingOrders.length} orders for routing ${routing}`);
-      
-      // Get all work orders for this routing and work center
-      const workOrdersToAssign = [];
-      for (const po of routingOrders) {
-        if (po.workOrders) {
-          // Handle Assembly work center which includes Sewing and Rope
-          const relevantWOs = po.workOrders.filter((wo: any) => {
-            const woWorkCenter = wo.workCenter || wo.originalWorkCenter;
-            let matchesWorkCenter = false;
-            
-            if (workCenter === 'Assembly') {
-              matchesWorkCenter = woWorkCenter === 'Assembly' || woWorkCenter === 'Sewing' || woWorkCenter === 'Rope';
-            } else {
-              matchesWorkCenter = woWorkCenter === workCenter;
-            }
-            
-            const notCompleted = wo.state !== 'done' && wo.state !== 'finished';
-            
-            console.log(`Work order ${wo.id}: workCenter=${woWorkCenter}, matchesWorkCenter=${matchesWorkCenter}, state=${wo.state}, notCompleted=${notCompleted}`);
-            
-            return matchesWorkCenter && notCompleted;
-          });
-          
-          for (const wo of relevantWOs) {
-            workOrdersToAssign.push({
-              workOrderId: wo.id,
-              productionOrder: po,
-              workOrder: wo
-            });
-          }
-        }
-      }
-      
-      console.log(`Smart bulk assignment: Found ${workOrdersToAssign.length} work orders to assign for ${workCenter}/${routing}`);
-
-      if (workOrdersToAssign.length === 0) {
-        return res.json({ 
-          success: true, 
-          message: "No work orders to assign",
-          assigned: 0 
-        });
-      }
-
-      // If unassigning (operatorId = 0), remove all assignments
-      if (operatorId === 0) {
-        for (const { workOrderId } of workOrdersToAssign) {
-          // Delete existing assignments for this work order
-          await db.delete(workOrderAssignments)
-            .where(eq(workOrderAssignments.workOrderId, workOrderId));
-        }
-        return res.json({ 
-          success: true, 
-          message: `Unassigned ${workOrdersToAssign.length} work orders`,
-          unassigned: workOrdersToAssign.length 
-        });
-      }
-
-      // Calculate operator's current workload
-      const assignments = await db.select()
-        .from(workOrderAssignments)
-        .where(and(
-          eq(workOrderAssignments.operatorId, operatorId),
-          eq(workOrderAssignments.isActive, true)
-        ));
-      const operatorAssignments = assignments;
-      
-      let currentWorkloadHours = 0;
-      for (const assignment of operatorAssignments) {
-        // Find the production order for this assignment
-        const po = allProductionOrders.find(p => 
-          p.workOrders?.some(wo => wo.id === assignment.workOrderId)
-        );
-        if (!po) continue;
-        
-        const wo = po.workOrders?.find(w => w.id === assignment.workOrderId);
-        if (!wo) continue;
-
-        // Get UPH data
-        const uphData = await db
-          .select()
-          .from(historicalUph)
-          .where(and(
-            eq(historicalUph.operatorId, operatorId),
-            eq(historicalUph.workCenter, wo.workCenter),
-            eq(historicalUph.routing, po.routing)
-          ))
-          .limit(1);
-
-        if (uphData.length > 0 && uphData[0].unitsPerHour > 0) {
-          currentWorkloadHours += po.quantity / uphData[0].unitsPerHour;
-        }
-      }
-
-      // Check operator capacity
-      const operatorCapacity = operator?.availableHours || 40;
-      const remainingCapacity = operatorCapacity - currentWorkloadHours;
-
-      if (remainingCapacity <= 0) {
-        return res.status(400).json({ 
-          error: `${operator.name} is at full capacity (${currentWorkloadHours.toFixed(1)}/${operatorCapacity} hours)` 
-        });
-      }
-
-      // Calculate hours needed for new assignments
-      let totalNewHours = 0;
-      const assignmentDetails = [];
-
-      for (const { workOrderId, productionOrder, workOrder } of workOrdersToAssign) {
-        // Get UPH data for this combination
-        const uphData = await db
-          .select()
-          .from(historicalUph)
-          .where(and(
-            eq(historicalUph.operatorId, operatorId),
-            eq(historicalUph.workCenter, workCenter),
-            eq(historicalUph.routing, routing)
-          ))
-          .limit(1);
-
-        if (uphData.length === 0 || uphData[0].unitsPerHour === 0) {
-          assignmentDetails.push({
-            workOrderId,
-            quantity: productionOrder.quantity,
-            estimatedHours: 0,
-            uph: 0,
-            skip: true,
-            reason: "No UPH data"
-          });
-          continue;
-        }
-
-        const estimatedHours = productionOrder.quantity / uphData[0].unitsPerHour;
-        totalNewHours += estimatedHours;
-        
-        assignmentDetails.push({
-          workOrderId,
-          quantity: productionOrder.quantity,
-          estimatedHours,
-          uph: uphData[0].unitsPerHour,
-          skip: false
-        });
-      }
-
-      // Filter out work orders without UPH data
-      const validAssignments = assignmentDetails.filter(a => !a.skip);
-      const skippedCount = assignmentDetails.filter(a => a.skip).length;
-
-      if (validAssignments.length === 0) {
-        return res.status(400).json({ 
-          error: `${operator.name} has no UPH data for ${workCenter}/${routing}` 
-        });
-      }
-
-      // Check if total hours exceed capacity
-      if (totalNewHours > remainingCapacity) {
-        // Sort by efficiency (highest UPH first) and assign what fits
-        validAssignments.sort((a, b) => b.uph - a.uph);
-        
-        let assignedHours = 0;
-        let assignedCount = 0;
-        
-        for (const assignment of validAssignments) {
-          if (assignedHours + assignment.estimatedHours <= remainingCapacity) {
-            // Delete any existing assignments for this work order
-            await db.delete(workOrderAssignments)
-              .where(eq(workOrderAssignments.workOrderId, assignment.workOrderId));
-            
-            // Create new assignment
-            await db.insert(workOrderAssignments).values({
-              workOrderId: assignment.workOrderId,
-              operatorId: operatorId,
-              assignedBy: "smart-bulk",
-              isActive: true
-            });
-            
-            assignedHours += assignment.estimatedHours;
-            assignedCount++;
-          }
-        }
-        
-        return res.json({ 
-          success: true, 
-          message: `Assigned ${assignedCount} of ${workOrdersToAssign.length} work orders (capacity limit)`,
-          assigned: assignedCount,
-          skipped: workOrdersToAssign.length - assignedCount,
-          capacityUsed: assignedHours.toFixed(1),
-          capacityRemaining: (remainingCapacity - assignedHours).toFixed(1)
-        });
-      }
-
-      // Assign all valid work orders
-      let assignedCount = 0;
-      for (const assignment of validAssignments) {
-        // Delete any existing assignments for this work order
-        await db.delete(workOrderAssignments)
-          .where(eq(workOrderAssignments.workOrderId, assignment.workOrderId));
-        
-        // Create new assignment
-        await db.insert(workOrderAssignments).values({
-          workOrderId: assignment.workOrderId,
-          operatorId: operatorId,
-          assignedBy: "smart-bulk",
-          isActive: true
-        });
-        assignedCount++;
-      }
-
-      return res.json({ 
-        success: true, 
-        message: `Assigned ${assignedCount} work orders to ${operator.name}`,
-        assigned: assignedCount,
-        skipped: skippedCount,
-        totalHours: totalNewHours.toFixed(1),
-        capacityRemaining: (remainingCapacity - totalNewHours).toFixed(1)
-      });
-
-    } catch (error) {
-      console.error("Smart bulk assignment error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error("Error details:", errorMessage);
-      console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace");
-      return res.status(500).json({ 
-        error: "Failed to perform smart bulk assignment",
-        details: errorMessage 
       });
     }
   });

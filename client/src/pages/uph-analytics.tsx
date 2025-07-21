@@ -8,7 +8,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 
 interface UphTableData {
   routings: Array<{
@@ -36,12 +35,6 @@ export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
-  const [selectedUphDetails, setSelectedUphDetails] = useState<{
-    operatorName: string;
-    workCenter: string;
-    routing: string;
-    uphValue: number;
-  } | null>(null);
 
   // Get UPH table data
   const { data: uphData, isLoading: uphLoading } = useQuery<UphTableData>({
@@ -382,17 +375,7 @@ export default function UphAnalytics() {
                                     <td key={wc} className="text-center py-2">
                                       <Badge
                                         variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
-                                        className={`min-w-[60px] ${operator.workCenterPerformance[wc] ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                                        onClick={() => {
-                                          if (operator.workCenterPerformance[wc]) {
-                                            setSelectedUphDetails({
-                                              operatorName: operator.operatorName,
-                                              workCenter: wc,
-                                              routing: routing.routingName,
-                                              uphValue: operator.workCenterPerformance[wc]
-                                            });
-                                          }
-                                        }}
+                                        className="min-w-[60px]"
                                       >
                                         {formatUph(operator.workCenterPerformance[wc])}
                                       </Badge>
@@ -449,25 +432,13 @@ export default function UphAnalytics() {
               {Object.entries(uphData.summary.avgUphByCeter).map(([workCenter, avgUph]) => (
                 <div key={workCenter} className="text-center p-4 border rounded-lg">
                   <h3 className="font-medium text-sm text-muted-foreground mb-1">{workCenter}</h3>
-                  <p className="text-2xl font-bold">{avgUph?.toFixed(1) || '0.0'}</p>
+                  <p className="text-2xl font-bold">{avgUph.toFixed(1)}</p>
                   <p className="text-xs text-muted-foreground">units/hour</p>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
-      )}
-      
-      {/* UPH Calculation Details Modal */}
-      {selectedUphDetails && (
-        <UphCalculationModal
-          isOpen={true}
-          onClose={() => setSelectedUphDetails(null)}
-          operatorName={selectedUphDetails.operatorName}
-          workCenter={selectedUphDetails.workCenter}
-          routing={selectedUphDetails.routing}
-          uphValue={selectedUphDetails.uphValue}
-        />
       )}
     </div>
   );
