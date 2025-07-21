@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User, Activity, Clock, Save } from "lucide-react";
@@ -20,6 +21,7 @@ interface Operator {
   routings: string[];
   lastActiveDate?: string;
   availableHours?: number;
+  uphCalculationWindow?: number;
 }
 
 interface OperatorCardProps {
@@ -101,6 +103,11 @@ export default function OperatorCard({
     setHasChanges(true);
   };
 
+  const handleUphWindowChange = (value: string) => {
+    setLocalOperator(prev => ({ ...prev, uphCalculationWindow: parseInt(value) }));
+    setHasChanges(true);
+  };
+
   const handleSave = () => {
     const updates: Partial<Operator> = {
       isActive: localOperator.isActive,
@@ -108,6 +115,7 @@ export default function OperatorCard({
       operations: localOperator.operations,
       routings: localOperator.routings, // Using correct database field name
       slackUserId: localOperator.slackUserId,
+      uphCalculationWindow: localOperator.uphCalculationWindow,
     };
     
     updateOperatorMutation.mutate(updates);
@@ -180,6 +188,27 @@ export default function OperatorCard({
             />
             <p className="text-xs text-gray-500">
               Find this in Slack profile → More → Copy member ID
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`uph-window-${operator.id}`}>UPH Calculation Window</Label>
+            <Select
+              value={String(localOperator.uphCalculationWindow || 30)}
+              onValueChange={handleUphWindowChange}
+            >
+              <SelectTrigger id={`uph-window-${operator.id}`} className="text-sm">
+                <SelectValue placeholder="Select time window" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="60">Last 60 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="180">Last 180 days</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">
+              Historical data used for UPH calculations
             </p>
           </div>
         </div>
