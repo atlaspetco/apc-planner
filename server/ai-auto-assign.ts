@@ -420,7 +420,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         if (!operator) continue;
         
         const operatorWorkCenters = operator.workCenters || [];
-        const hasRequiredWorkCenters = Array.from(workCentersNeeded).every(wc => {
+        const hasRequiredWorkCenters = Array.from(workCentersNeeded).some(wc => {
           // Handle Assembly work center - operator can have Assembly, Sewing, or Rope
           if (wc === 'Assembly') {
             return operatorWorkCenters.includes('Assembly') || 
@@ -441,9 +441,25 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
           routingsToCheck.push('Lifetime Harness');
         }
         
-        const hasRoutingExperience = Array.from(profile.uphData.keys()).some(key => 
-          routingsToCheck.some(r => key.includes(r))
-        );
+        // Check for UPH experience with any of the work centers in this routing group
+        const hasRoutingExperience = Array.from(profile.uphData.keys()).some(key => {
+          // Check if the UPH key matches any routing we're looking for
+          const hasRouting = routingsToCheck.some(r => key.includes(r));
+          if (!hasRouting) return false;
+          
+          // Check if the UPH key matches any of the work centers needed for this routing
+          return Array.from(workCentersNeeded).some(wc => {
+            // Direct match
+            if (key.includes(wc)) return true;
+            
+            // Handle Assembly work center mapping to original work centers
+            if (wc === 'Assembly') {
+              return key.includes('Sewing') || key.includes('Rope') || key.includes('Assembly');
+            }
+            
+            return false;
+          });
+        });
         
         if (hasRoutingExperience) {
           qualifiedOperators.push({
@@ -452,7 +468,19 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
             currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
             remainingHours: profile.maxHours - profile.hoursAssigned,
             uphPerformance: Array.from(profile.uphData.entries())
-              .filter(([key]) => routingsToCheck.some(r => key.includes(r)))
+              .filter(([key]) => {
+                // Check if key matches routing and work center criteria
+                const hasRouting = routingsToCheck.some(r => key.includes(r));
+                if (!hasRouting) return false;
+                
+                return Array.from(workCentersNeeded).some(wc => {
+                  if (key.includes(wc)) return true;
+                  if (wc === 'Assembly') {
+                    return key.includes('Sewing') || key.includes('Rope') || key.includes('Assembly');
+                  }
+                  return false;
+                });
+              })
               .map(([key, data]) => ({
                 workCenterRouting: key,
                 uph: data.uph,
