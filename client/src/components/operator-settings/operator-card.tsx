@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User, Activity, Clock, Save } from "lucide-react";
@@ -20,7 +21,7 @@ interface Operator {
   routings: string[];
   lastActiveDate?: string;
   availableHours?: number;
-  schedulePercentage?: number;
+  uphCalculationWindow?: number;
 }
 
 interface OperatorCardProps {
@@ -102,6 +103,11 @@ export default function OperatorCard({
     setHasChanges(true);
   };
 
+  const handleUphWindowChange = (value: string) => {
+    setLocalOperator(prev => ({ ...prev, uphCalculationWindow: parseInt(value) }));
+    setHasChanges(true);
+  };
+
   const handleSave = () => {
     const updates: Partial<Operator> = {
       isActive: localOperator.isActive,
@@ -109,8 +115,7 @@ export default function OperatorCard({
       operations: localOperator.operations,
       routings: localOperator.routings, // Using correct database field name
       slackUserId: localOperator.slackUserId,
-      availableHours: localOperator.availableHours,
-      schedulePercentage: localOperator.schedulePercentage,
+      uphCalculationWindow: localOperator.uphCalculationWindow,
     };
     
     updateOperatorMutation.mutate(updates);
@@ -187,34 +192,23 @@ export default function OperatorCard({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`available-hours-${operator.id}`}>Available Hours per Week</Label>
-            <Input
-              id={`available-hours-${operator.id}`}
-              type="number"
-              min="1"
-              max="168"
-              value={localOperator.availableHours || 40}
-              onChange={(e) => setLocalOperator(prev => ({ ...prev, availableHours: parseInt(e.target.value) || 40 }))}
-              className="text-sm"
-            />
+            <Label htmlFor={`uph-window-${operator.id}`}>UPH Calculation Window</Label>
+            <Select
+              value={String(localOperator.uphCalculationWindow || 30)}
+              onValueChange={handleUphWindowChange}
+            >
+              <SelectTrigger id={`uph-window-${operator.id}`} className="text-sm">
+                <SelectValue placeholder="Select time window" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="60">Last 60 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="180">Last 180 days</SelectItem>
+              </SelectContent>
+            </Select>
             <p className="text-xs text-gray-500">
-              Maximum weekly hours this operator can work (default: 40h)
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`schedule-percentage-${operator.id}`}>Scheduling Percentage</Label>
-            <Input
-              id={`schedule-percentage-${operator.id}`}
-              type="number"
-              min="1"
-              max="100"
-              value={localOperator.schedulePercentage || 90}
-              onChange={(e) => setLocalOperator(prev => ({ ...prev, schedulePercentage: parseInt(e.target.value) || 90 }))}
-              className="text-sm"
-            />
-            <p className="text-xs text-gray-500">
-              Percentage of available hours to schedule (e.g., 90% of 40h = 36h scheduled)
+              Historical data used for UPH calculations
             </p>
           </div>
         </div>
@@ -236,7 +230,7 @@ export default function OperatorCard({
                 <div key={workCenter} className="flex items-center justify-between p-2 border rounded">
                   <div className="flex items-center space-x-2">
                     <span className="text-sm">{workCenter}</span>
-                    {hasData && <Badge variant="outline" className="text-xs bg-green-50">Has Data</Badge>}
+                    {hasData && isEnabled && <Badge variant="outline" className="text-xs bg-green-50">Has Data</Badge>}
                   </div>
                   <Switch
                     checked={isEnabled}
@@ -266,7 +260,7 @@ export default function OperatorCard({
                 <div key={operation} className="flex items-center justify-between p-2 border rounded">
                   <div className="flex items-center space-x-2">
                     <span className="text-sm">{operation}</span>
-                    {hasData && <Badge variant="outline" className="text-xs bg-blue-50">Has Data</Badge>}
+                    {hasData && isEnabled && <Badge variant="outline" className="text-xs bg-blue-50">Has Data</Badge>}
                   </div>
                   <Switch
                     checked={isEnabled}
@@ -287,25 +281,87 @@ export default function OperatorCard({
               {localOperator.routings?.length || 0} selected
             </Badge>
           </div>
-          <div className="grid grid-cols-1 gap-2">
-            {availableRoutings.map((routing) => {
-              const isEnabled = localOperator.routings?.includes(routing) || false;
-              const hasData = operatorCapabilities.routings.includes(routing);
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {(() => {
+              // Define routing categories
+              const routingCategories = [
+                {
+                  name: 'Lifetime',
+                  routings: ['Lifetime Leash', 'Lifetime Handle', 'Lifetime Slip Collar', 'Lifetime Harness']
+                },
+                {
+                  name: 'Lifetime Pro',
+                  routings: ['Lifetime Pro Collar', 'Lifetime Pro Harness', 'LCP Handle']
+                },
+                {
+                  name: 'Lifetime Lite',
+                  routings: ['Lifetime Lite Collar', 'Lifetime Lite Leash', 'LLA']
+                },
+                {
+                  name: 'Accessories',
+                  routings: ['Lifetime Pouch', 'Lifetime Bowl', 'Lifetime Loop', 'Belt Bag', 'Lifetime Bandana']
+                },
+                {
+                  name: 'Cuts',
+                  routings: ['Cutting - Fabric', 'Cutting - Webbing']
+                },
+                {
+                  name: 'Packaging',
+                  routings: ['Packaging']
+                }
+              ];
+
+              // Get all categorized routings
+              const categorizedRoutings = routingCategories.flatMap(cat => cat.routings);
               
-              return (
-                <div key={routing} className="flex items-center justify-between p-2 border rounded">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm">{routing}</span>
-                    {hasData && <Badge className="text-xs bg-purple-100 text-purple-800">Has Data</Badge>}
-                  </div>
-                  <Switch
-                    checked={isEnabled}
-                    onCheckedChange={(checked) => handleToggle('routings', checked, routing)}
-                    size="sm"
-                  />
-                </div>
+              // Find any uncategorized routings
+              const uncategorizedRoutings = availableRoutings.filter(
+                routing => !categorizedRoutings.includes(routing)
               );
-            })}
+
+              const renderRouting = (routing: string) => {
+                const isEnabled = localOperator.routings?.includes(routing) || false;
+                const hasData = operatorCapabilities.routings.includes(routing);
+                
+                return (
+                  <div key={routing} className="flex items-center justify-between p-2 border rounded">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm">{routing}</span>
+                      {hasData && isEnabled && <Badge className="text-xs bg-purple-100 text-purple-800">Has Data</Badge>}
+                    </div>
+                    <Switch
+                      checked={isEnabled}
+                      onCheckedChange={(checked) => handleToggle('routings', checked, routing)}
+                      size="sm"
+                    />
+                  </div>
+                );
+              };
+
+              // First, filter categories that have available routings
+              const categoriesWithRoutings = routingCategories
+                .map(category => ({
+                  ...category,
+                  routings: category.routings.filter(r => availableRoutings.includes(r))
+                }))
+                .filter(category => category.routings.length > 0);
+
+              return (
+                <>
+                  {categoriesWithRoutings.map((category) => (
+                    <div key={category.name} className="space-y-2">
+                      {category.routings.map(renderRouting)}
+                    </div>
+                  ))}
+                  {/* Render any uncategorized routings at the end */}
+                  {uncategorizedRoutings.length > 0 && (
+                    <div className="space-y-2">
+                      {uncategorizedRoutings.map(renderRouting)}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
 

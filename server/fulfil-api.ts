@@ -34,10 +34,9 @@ interface FulfilWorkOrder {
   priority?: string;
   type?: string;
   cost?: { decimal: string };
-  work_center_name?: string;
-  operation_name?: string;
-  operator_name?: string;
-  routing?: string;
+  'work_center.name'?: string;
+  'operation.name'?: string;
+  'operator.name'?: string;
 }
 
 interface FulfilWorkCycle {

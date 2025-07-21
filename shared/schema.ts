@@ -20,7 +20,6 @@ export const productionOrders = pgTable("production_orders", {
   priority: text("priority").default("Normal"), // High, Normal, Low
   fulfilId: integer("fulfil_id"), // Reference to Fulfil.io production order ID
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at"),
   // Fulfil API compatible fields
   rec_name: text("rec_name"), // Fulfil display name (e.g., "MO5471")
   state: text("state"), // Fulfil state: draft, waiting, assigned, running, done
@@ -60,8 +59,6 @@ export const workOrders = pgTable("work_orders", {
   workCenterName: text("work_center_name"), // Denormalized work center name
   operationName: text("operation_name"), // Denormalized operation name
   operatorName: text("operator_name"), // Denormalized operator name
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at"),
 });
 
 // Active Work Orders table - stores current work orders from Fulfil for planning
@@ -153,6 +150,9 @@ export const workCycles = pgTable("work_cycles", {
   work_production_id: integer("work_production_id"), // work/production/id
   work_production_number: text("work_production_number"), // work/production/number
   work_production_product_code: text("work_production_product_code"), // work/production/product/code
+  work_production_quantity: real("work_production_quantity"), // work/production/quantity - CRITICAL for correct UPH calculation
+  work_production_priority: text("work_production_priority"), // work/production/priority
+  work_production_create_date: timestamp("work_production_create_date"), // work/production/create_date
   work_production_routing_rec_name: text("work_production_routing_rec_name"), // work/production/routing/rec_name
   work_rec_name: text("work_rec_name"), // work/rec_name
   work_operation_rec_name: text("work_operation_rec_name"), // work/operation/rec_name

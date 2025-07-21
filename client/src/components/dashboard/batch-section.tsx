@@ -341,8 +341,8 @@ function MORow({ order, isSelected, onSelection, onOperatorAssignment, variant }
                           return (order.quantity / relevantUph.unitsPerHour).toFixed(1);
                         }
                         
-                        // Fallback to historical average if no specific data found
-                        return (order.quantity / 15).toFixed(1);
+                        // No UPH data available
+                        return "No UPH";
                       };
                       const expectedHours = calculateExpectedHours(operator.id);
                       return (
