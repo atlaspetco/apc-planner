@@ -42,6 +42,7 @@ export async function calculateCoreUph(
     workCenterFilter?: string;
     routingFilter?: string;
     timeWindowDays?: number; // Override operator's default time window
+    bypassDateFilter?: boolean; // Allow bypassing date filter for analytics
   }
 ): Promise<UphCalculationResult[]> {
   console.log('=== CORE UPH CALCULATOR STARTED ===', filters);
@@ -106,25 +107,29 @@ export async function calculateCoreUph(
     });
   }
   
-  // Apply date filtering based on operator's time window
-  const now = new Date();
-  
-  filteredCycles = filteredCycles.filter(cycle => {
-    // Get the operator's time window setting
-    const operatorName = cycle.work_cycles_operator_rec_name;
-    if (!operatorName) return false;
+  // Apply date filtering based on operator's time window (unless bypassed)
+  if (!filters?.bypassDateFilter) {
+    const now = new Date();
     
-    const timeWindowDays = filters?.timeWindowDays || operatorTimeWindows.get(operatorName) || 30;
-    const cutoffDate = new Date(now.getTime() - (timeWindowDays * 24 * 60 * 60 * 1000));
+    filteredCycles = filteredCycles.filter(cycle => {
+      // Get the operator's time window setting
+      const operatorName = cycle.work_cycles_operator_rec_name;
+      if (!operatorName) return false;
+      
+      const timeWindowDays = filters?.timeWindowDays || operatorTimeWindows.get(operatorName) || 30;
+      const cutoffDate = new Date(now.getTime() - (timeWindowDays * 24 * 60 * 60 * 1000));
+      
+      // Use work production create date if available, otherwise use cycle creation date
+      const cycleDate = cycle.work_production_create_date || cycle.createdAt;
+      if (!cycleDate) return true; // Include if no date available
+      
+      return new Date(cycleDate) >= cutoffDate;
+    });
     
-    // Use work production create date if available, otherwise use cycle creation date
-    const cycleDate = cycle.work_production_create_date || cycle.createdAt;
-    if (!cycleDate) return true; // Include if no date available
-    
-    return new Date(cycleDate) >= cutoffDate;
-  });
-  
-  console.log(`After date filtering: ${filteredCycles.length} cycles remain`);
+    console.log(`After date filtering: ${filteredCycles.length} cycles remain`);
+  } else {
+    console.log(`Date filtering bypassed: ${filteredCycles.length} cycles included`);
+  }
   
   // Group work cycles by Operator + Work Center + Routing + MO
   const moGroupedData = new Map<string, MoGroupData>();

@@ -31,12 +31,18 @@ export async function calculateUnifiedUph(
   operatorFilter?: string,
   workCenterFilter?: string,
   routingFilter?: string,
-  daysBack: number = 30
+  daysBack: number = 30,
+  bypassDateFilter: boolean = false
 ): Promise<UphCalculationResult[]> {
   try {
     // Use core calculator for consistency
     const { calculateCoreUph } = await import("./uph-core-calculator.js");
-    const coreResults = await calculateCoreUph({ operatorFilter, workCenterFilter, routingFilter });
+    const coreResults = await calculateCoreUph({ 
+      operatorFilter, 
+      workCenterFilter, 
+      routingFilter,
+      bypassDateFilter 
+    });
     
     // Transform core results to match this interface's expected output
     return coreResults.map(result => ({
