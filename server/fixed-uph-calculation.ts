@@ -215,6 +215,16 @@ export async function calculateFixedUPH() {
 export async function getAccurateMoDetails(operator: string, workCenter: string, routing: string) {
   console.log(`🔍 Getting MO details for ${operator} + ${workCenter} + ${routing}`);
   
+  // Handle Assembly work center mapping - includes Rope and Sewing
+  let workCenterCondition = '';
+  if (workCenter === 'Assembly') {
+    workCenterCondition = `(work_cycles_work_center_rec_name LIKE '%Assembly%' OR 
+                           work_cycles_work_center_rec_name LIKE '%Sewing%' OR 
+                           work_cycles_work_center_rec_name LIKE '%Rope%')`;
+  } else {
+    workCenterCondition = `work_cycles_work_center_rec_name LIKE '%' || '${workCenter}' || '%'`;
+  }
+
   const moDetailsResult = await db.execute(sql`
     SELECT 
       work_production_id as production_id,
@@ -225,7 +235,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
-      AND work_cycles_work_center_rec_name LIKE '%' || ${workCenter} || '%'
+      AND ${sql.raw(workCenterCondition)}
       AND work_production_routing_rec_name = ${routing}
       AND (state = 'done' OR state IS NULL)
       AND work_cycles_duration > 0
