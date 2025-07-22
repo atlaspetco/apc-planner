@@ -3577,10 +3577,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routing as string
       );
 
-      // Calculate summary statistics from MO details
+      // Calculate summary statistics from MO details - BLUE methodology (average of individual MO UPH)
       const totalQuantity = moDetails.reduce((sum, mo) => sum + mo.moQuantity, 0);
       const totalHours = moDetails.reduce((sum, mo) => sum + mo.totalDurationHours, 0);
-      const averageUph = totalHours > 0 ? totalQuantity / totalHours : 0;
+      
+      // CRITICAL: Use average of individual MO UPH values instead of total qty/total hours
+      const averageUph = moDetails.length > 0 
+        ? moDetails.reduce((sum, mo) => sum + mo.uph, 0) / moDetails.length 
+        : 0;
 
       // Send the response with authentic MO-level data
       res.json({

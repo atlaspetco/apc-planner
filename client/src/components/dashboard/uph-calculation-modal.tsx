@@ -16,16 +16,16 @@ interface UphCalculationModalProps {
 }
 
 interface WorkCycleDetail {
-  id: number;
+  productionId: number;
   moNumber: string;
   woNumber: string;
-  quantity: number;
-  duration?: number;
-  durationHours: number;
+  moQuantity: number;
+  totalDurationHours: number;
   uph: number;
-  date?: string;
-  operation: string;
-  workCenter: string;
+  createDate?: string;
+  actualWorkCenter: string;
+  operations: string;
+  cycleCount: number;
 }
 
 export function UphCalculationModal({
@@ -104,18 +104,15 @@ export function UphCalculationModal({
             </div>
           </div>
 
-          {/* Calculation Formula */}
-          <div className="bg-gray-50 p-4 rounded-lg mb-6">
-            <p className="text-sm font-medium text-gray-700 mb-2">Calculation Formula:</p>
-            <p className="font-mono text-lg">
-              UPH = Total Quantity ÷ Total Hours = {totalQuantity?.toLocaleString() || '0'} ÷ {totalHours?.toFixed(2) || '0.00'} = <strong>{calculatedUph?.toFixed(2) || '0.00'}</strong>
+          {/* Calculation Formula - BLUE methodology */}
+          <div className="bg-blue-50 p-4 rounded-lg mb-6 border-2 border-blue-200">
+            <p className="text-sm font-medium text-blue-800 mb-2">✓ Calculation Formula (BLUE - Correct Method):</p>
+            <p className="font-mono text-lg text-blue-900">
+              UPH = Average of Individual MO UPH = {cyclesData?.summary?.moCount || 0} MOs averaged = <strong>{calculatedUph?.toFixed(2) || '0.00'}</strong>
             </p>
-            {calculatedUph && uphValue && Math.abs(calculatedUph - uphValue) > 0.01 && (
-              <p className="text-sm text-amber-600 mt-2">
-                Note: Table displays weighted average UPH ({uphValue?.toFixed(2) || '0.00'}) when multiple operations exist.
-                This shows combined performance across all operations.
-              </p>
-            )}
+            <p className="text-xs text-blue-600 mt-2">
+              Each Manufacturing Order is calculated individually (MO Quantity ÷ MO Duration), then averaged across all MOs.
+            </p>
           </div>
 
           {/* Detailed Work Cycles Table */}
@@ -145,17 +142,17 @@ export function UphCalculationModal({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {cyclesData.cycles.map((cycle: WorkCycleDetail) => (
-                      <TableRow key={cycle.id}>
+                    {cyclesData.cycles.map((cycle: WorkCycleDetail, index: number) => (
+                      <TableRow key={`${cycle.productionId}-${index}`}>
                         <TableCell className="text-sm">
-                          {cycle.date ? format(new Date(cycle.date), 'MMM d, yyyy') : 'N/A'}
+                          {cycle.createDate ? format(new Date(cycle.createDate), 'MMM d, yyyy') : 'N/A'}
                         </TableCell>
                         <TableCell className="font-mono text-sm">{cycle.moNumber}</TableCell>
                         <TableCell className="font-mono text-sm">{cycle.woNumber}</TableCell>
-                        <TableCell className="text-sm">{cycle.workCenter}</TableCell>
-                        <TableCell className="text-sm">{cycle.operation}</TableCell>
-                        <TableCell className="text-right">{cycle.quantity?.toLocaleString() || '0'}</TableCell>
-                        <TableCell className="text-right">{cycle.durationHours?.toFixed(2) || '0.00'}</TableCell>
+                        <TableCell className="text-sm">{cycle.actualWorkCenter}</TableCell>
+                        <TableCell className="text-sm">{cycle.operations}</TableCell>
+                        <TableCell className="text-right">{cycle.moQuantity?.toLocaleString() || '0'}</TableCell>
+                        <TableCell className="text-right">{cycle.totalDurationHours?.toFixed(2) || '0.00'}</TableCell>
                         <TableCell className="text-right">
                           <Badge variant="outline">{cycle.uph?.toFixed(1) || '0.0'}</Badge>
                         </TableCell>
@@ -172,14 +169,15 @@ export function UphCalculationModal({
           {/* Statistics */}
           {cyclesData?.cycles && cyclesData.cycles.length > 0 && (
             <div className="mt-4 text-sm text-muted-foreground">
-              <p><strong>Total Observations:</strong> {cyclesData.cycles.length}</p>
+              <p><strong>Total Manufacturing Orders:</strong> {cyclesData.cycles.length}</p>
+              <p><strong>Total Work Cycles:</strong> {cyclesData.cycles.reduce((sum, mo) => sum + (mo.cycleCount || 0), 0)}</p>
               <p><strong>Date Range:</strong> {
                 (() => {
                   const validDates = cyclesData.cycles
-                    .map((c: WorkCycleDetail) => c.date ? new Date(c.date).getTime() : null)
+                    .map((c: WorkCycleDetail) => c.createDate ? new Date(c.createDate).getTime() : null)
                     .filter((d: number | null): d is number => d !== null && !isNaN(d));
                   
-                  if (validDates.length === 0) return 'No valid dates';
+                  if (validDates.length === 0) return 'Date information not available';
                   
                   const minDate = new Date(Math.min(...validDates));
                   const maxDate = new Date(Math.max(...validDates));

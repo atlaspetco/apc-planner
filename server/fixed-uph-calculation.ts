@@ -230,9 +230,12 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       work_production_id as production_id,
       work_production_number as mo_number,
       work_production_quantity as mo_quantity,
+      work_production_create_date as create_date,
+      work_cycles_work_center_rec_name as actual_work_center,
       SUM(work_cycles_duration) as total_duration_seconds,
       COUNT(*) as cycle_count,
-      STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations
+      STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations,
+      STRING_AGG(DISTINCT work_cycles_work_id::text, ', ') as work_order_ids
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
       AND ${sql.raw(workCenterCondition)}
@@ -243,11 +246,13 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     GROUP BY 
       work_production_id,
       work_production_number,
-      work_production_quantity
+      work_production_quantity,
+      work_production_create_date,
+      work_cycles_work_center_rec_name
     ORDER BY production_id DESC
   `);
 
-  return moDetailsResult.rows.map(row => {
+  const moDetails = moDetailsResult.rows.map(row => {
     const moQuantity = parseFloat(row.mo_quantity?.toString() || '0');
     const totalDurationSeconds = parseFloat(row.total_duration_seconds?.toString() || '0');
     const totalDurationHours = totalDurationSeconds / 3600;
@@ -256,6 +261,9 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     return {
       productionId: row.production_id,
       moNumber: row.mo_number?.toString() || '',
+      woNumber: row.work_order_ids?.toString() || 'N/A',
+      createDate: row.create_date?.toString() || null,
+      actualWorkCenter: row.actual_work_center?.toString() || '',
       moQuantity,
       totalDurationHours: parseFloat(totalDurationHours.toFixed(4)),
       cycleCount: parseInt(row.cycle_count?.toString() || '0'),
@@ -263,4 +271,6 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       uph: parseFloat(uph.toFixed(2))
     };
   });
+
+  return moDetails;
 }
