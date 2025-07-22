@@ -1015,7 +1015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get qualified operators for specific work center/routing/operation combination
   app.get("/api/operators/qualified", async (req: Request, res: Response) => {
     try {
-      const { workCenter, routing, operation } = req.query;
+      const { workCenter, routing, operation, productName } = req.query;
       
       if (!workCenter) {
         return res.status(400).json({ error: "workCenter parameter required" });
@@ -1024,59 +1024,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all active operators
       const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
       
-      // Get UPH data from the historical_uph table - this is the source of truth!
-      // This matches what the UPH analytics page uses
-      const historicalUphData = await db.select().from(historicalUph);
+      // Get standardized UPH data
+      const { calculateStandardizedUph } = await import("./services/uphService.js");
+      const { mapWorkCenterToCategory } = await import("./utils/categoryMap.js");
       
-      // Build UPH map from historical data
+      // Map work center to category
+      const workCenterCategory = mapWorkCenterToCategory(workCenter as string);
+      
+      // Get UPH data for all operators for this product/category
+      const uphResults = await calculateStandardizedUph({
+        productName: productName as string || routing as string, // Use routing as product name fallback
+        workCenterCategory: workCenterCategory || undefined,
+        windowDays: 30 // Default to 30 days
+      });
+      
+      // Build UPH map from standardized data
       const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
       
-      historicalUphData.forEach(record => {
-        // Find operator ID by name
-        const operator = allOperators.find(op => op.name === record.operator);
-        if (!operator) return;
-        
-        const key = `${operator.id}-${record.workCenter}-${record.routing}`;
-        
-        uphMap.set(key, {
-          uph: record.unitsPerHour,
-          observations: record.observations,
-          operator: record.operator
-        });
+      uphResults.forEach(result => {
+        if (result.dataAvailable) {
+          const key = `${result.operatorId}-${result.workCenterCategory}-${result.productName}`;
+          uphMap.set(key, {
+            uph: result.averageUph,
+            observations: result.totalObservations,
+            operator: result.operatorName
+          });
+        }
       });
 
       // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
       const qualifiedOperators = allOperators
         .filter(op => {
-          // First check if operator has UPH data for this work center/routing combination
-          // Handle Assembly work center aggregation - check for Sewing and Rope data when Assembly is requested
-          const workCentersToCheck = workCenter === 'Assembly' 
-            ? ['Assembly', 'Sewing', 'Rope'] 
-            : [workCenter as string];
+          // Use standardized key format: operatorId-category-productName
+          const category = workCenterCategory || 'Unknown';
+          const product = productName as string || routing as string || '';
           
-          const uphKeys: string[] = [];
-          
-          // Handle routing mapping for products without historical data
-          // Map "Lifetime Air Harness" to use "Lifetime Harness" data until actual data is available
-          let effectiveRouting = routing;
-          if (routing === 'Lifetime Air Harness') {
-            effectiveRouting = 'Lifetime Harness';
+          // Handle product name mapping for variants
+          let effectiveProduct = product;
+          if (product === 'Lifetime Air Harness' || routing === 'Lifetime Air Harness') {
+            effectiveProduct = 'Lifetime Harness';
           }
           
-          workCentersToCheck.forEach(wc => {
-            // Create keys to match our UPH map structure
-            uphKeys.push(`${op.id}-${wc}-${effectiveRouting || ''}`);
-          });
-          
-          const hasUphData = uphKeys.some(key => uphMap.has(key));
+          // Create key to match standardized UPH map
+          const uphKey = `${op.id}-${category}-${effectiveProduct}`;
+          const hasUphData = uphMap.has(uphKey);
           
           // Debug logging for qualification check
           console.log(`Qualified operators for ${workCenter}/${routing}: checking operator ${op.name} (ID: ${op.id})`);
-          console.log(`  - Keys checked: [${uphKeys.join(', ')}]`);
+          console.log(`  - Key checked: ${uphKey}`);
           console.log(`  - Has UPH data: ${hasUphData}`);
           if (hasUphData) {
-            const matchedKey = uphKeys.find(key => uphMap.has(key));
-            const uphInfo = uphMap.get(matchedKey!);
+            const uphInfo = uphMap.get(uphKey);
             console.log(`  - UPH: ${uphInfo?.uph?.toFixed(2)} (${uphInfo?.observations} observations)`);
           }
           
@@ -1105,40 +1103,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return true;
         })
         .map(op => {
-          // Calculate UPH performance using comprehensive work cycles data (same as UPH Analytics)
-          // Handle Assembly work center aggregation for UPH lookup
-          const workCentersToCheck = workCenter === 'Assembly' 
-            ? ['Assembly', 'Sewing', 'Rope'] 
-            : [workCenter as string];
+          // Get UPH performance using standardized calculation
+          const category = workCenterCategory || 'Unknown';
+          const product = productName as string || routing as string || '';
           
-          // Handle routing mapping for products without historical data
-          // Map "Lifetime Air Harness" to use "Lifetime Harness" data until actual data is available
-          let effectiveRouting = routing;
-          if (routing === 'Lifetime Air Harness') {
-            effectiveRouting = 'Lifetime Harness';
+          // Handle product name mapping for variants
+          let effectiveProduct = product;
+          if (product === 'Lifetime Air Harness' || routing === 'Lifetime Air Harness') {
+            effectiveProduct = 'Lifetime Harness';
           }
           
-          const uphKeys: string[] = [];
-          workCentersToCheck.forEach(wc => {
-            // First try operation-specific keys, then fall back to broader matches
-            if (operation) {
-              uphKeys.push(`${op.id}-${wc}-${effectiveRouting || ''}-${operation}`);
-            }
-            uphKeys.push(
-              `${op.id}-${wc}-${effectiveRouting || ''}`,
-              `${op.id}-${wc}-`,
-              `${op.id}-${wc}`
-            );
-          });
-          
-          let performanceData = { uph: 0, observations: 0 };
-          for (const key of uphKeys) {
-            const data = uphMap.get(key);
-            if (data && data.observations > 0) {
-              performanceData = data;
-              break;
-            }
-          }
+          // Look up standardized UPH data
+          const uphKey = `${op.id}-${category}-${effectiveProduct}`;
+          const performanceData = uphMap.get(uphKey) || { uph: 0, observations: 0 };
           
           return {
             id: op.id,
@@ -1273,6 +1250,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     res.json(uphData);
   });
+  
+  // ============= NEW STANDARDIZED UPH ENDPOINTS =============
+  // These endpoints use the new MO-first calculation logic
+  // keyed on (product_name, work_center_category, operator_id)
+  
+  // Get standardized UPH data with optional filters
+  app.get("/api/uph/standardized", async (req, res) => {
+    try {
+      const { calculateStandardizedUph } = await import("./services/uphService.js");
+      
+      const {
+        productName,
+        workCenterCategory,
+        operatorId,
+        windowDays = "30"
+      } = req.query;
+      
+      const results = await calculateStandardizedUph({
+        productName: productName as string,
+        workCenterCategory: workCenterCategory as any,
+        operatorId: operatorId ? parseInt(operatorId as string) : undefined,
+        windowDays: parseInt(windowDays as string)
+      });
+      
+      res.json({
+        success: true,
+        data: results,
+        windowDays: parseInt(windowDays as string),
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error fetching standardized UPH:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch standardized UPH data",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // Get UPH for specific operator/product/work center
+  app.get("/api/uph/standardized/operator/:operatorId", async (req, res) => {
+    try {
+      const { getOperatorProductUph } = await import("./services/uphService.js");
+      
+      const operatorId = parseInt(req.params.operatorId);
+      const { productName, workCenterCategory, windowDays = "30" } = req.query;
+      
+      if (!productName || !workCenterCategory) {
+        return res.status(400).json({
+          success: false,
+          message: "productName and workCenterCategory are required"
+        });
+      }
+      
+      const uph = await getOperatorProductUph(
+        operatorId,
+        productName as string,
+        workCenterCategory as any,
+        parseInt(windowDays as string)
+      );
+      
+      res.json({
+        success: true,
+        operatorId,
+        productName,
+        workCenterCategory,
+        windowDays: parseInt(windowDays as string),
+        uph: uph || 0,
+        dataAvailable: uph !== null
+      });
+    } catch (error) {
+      console.error("Error fetching operator UPH:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch operator UPH",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // Trigger manual UPH calculation job
+  app.post("/api/uph/standardized/calculate", async (req, res) => {
+    try {
+      const { runUphCalculationJob, getJobStatus } = await import("./jobs/uphCron.js");
+      
+      // Check if job is already running
+      const status = getJobStatus();
+      if (status.isRunning) {
+        return res.status(409).json({
+          success: false,
+          message: "UPH calculation job is already running",
+          status
+        });
+      }
+      
+      // Start the job asynchronously
+      runUphCalculationJob();
+      
+      res.json({
+        success: true,
+        message: "UPH calculation job started",
+        status: getJobStatus()
+      });
+    } catch (error) {
+      console.error("Error starting UPH calculation:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to start UPH calculation",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // Get UPH calculation job status
+  app.get("/api/uph/standardized/job-status", async (req, res) => {
+    try {
+      const { getJobStatus } = await import("./jobs/uphCron.js");
+      const status = getJobStatus();
+      
+      res.json({
+        success: true,
+        ...status
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Failed to get job status",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  // ============= END NEW STANDARDIZED UPH ENDPOINTS =============
 
   // UPH Analysis and Calculation Endpoints
   app.get("/api/uph/operator/:operatorId/analysis", async (req, res) => {

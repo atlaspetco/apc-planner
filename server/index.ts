@@ -38,6 +38,15 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+  
+  // Initialize UPH calculation cron job
+  try {
+    const { initializeUphCronJob } = await import("./jobs/uphCron.js");
+    initializeUphCronJob(6); // Run every 6 hours
+    log("UPH calculation cron job initialized");
+  } catch (error) {
+    log(`Warning: Failed to initialize UPH cron job: ${error}`);
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
