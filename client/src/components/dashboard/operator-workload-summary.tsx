@@ -56,6 +56,15 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
     queryKey: ["/api/uph/historical"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+  
+  React.useEffect(() => {
+    if (uphResults) {
+      console.log('UPH data loaded:', uphResults.length, 'entries');
+      const evanUph = uphResults.filter((d: any) => d.operator === "Evan Crosby");
+      console.log('Evan Crosby UPH entries:', evanUph.length);
+      console.log('Sample Evan UPH:', evanUph.slice(0, 3));
+    }
+  }, [uphResults]);
 
   // Calculate workload summary from assignments
   const workloadSummary = React.useMemo(() => {
@@ -67,6 +76,10 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
 
     console.log('Processing assignments:', assignmentsData.assignments.length);
     console.log('UPH data available:', uphResults?.length || 0);
+    
+    // Debug Evan's assignments specifically
+    const evanAssignments = assignmentsData.assignments.filter((a: any) => a.operatorName === "Evan Crosby");
+    console.log(`Evan Crosby has ${evanAssignments.length} assignments:`, evanAssignments.slice(0, 3));
     
     // Debug log some sample UPH data
     if (uphResults && uphResults.length > 0) {
@@ -90,6 +103,16 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
 
     // Process assignments to calculate workload using UPH data
     assignmentsData.assignments.forEach((assignment: any) => {
+      // Debug specific work order
+      if (assignment.workOrderId === 33915) {
+        console.log('Processing work order 33915:', assignment);
+      }
+      
+      // Debug Evan's assignments
+      if (assignment.operatorName === "Evan Crosby") {
+        console.log(`Evan assignment: operatorId=${assignment.operatorId}, routing=${assignment.productRouting || assignment.routing}, workCenter=${assignment.workCenter}`);
+      }
+      
       const operator = operatorMap.get(assignment.operatorId);
       if (operator) {
         operator.totalAssignments++;
@@ -122,10 +145,33 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         productData.totalQuantity += assignment.quantity || 0;
         
         // Only include hours for non-finished work orders
+        // Debug workOrderState for Evan
+        if (operator.operatorName === "Evan Crosby" && routing === "Lifetime Leash") {
+          console.log(`Evan's Lifetime Leash assignment:`, {
+            workOrderId: assignment.workOrderId,
+            workOrderState: assignment.workOrderState,
+            workCenter: assignment.workCenter, 
+            routing: routing,
+            quantity: assignment.quantity,
+            operatorId: assignment.operatorId
+          });
+        }
+        
+        // Include all work orders except explicitly finished ones
+        // null state should be treated as active/in-progress
         if (assignment.workOrderState !== 'finished') {
           // Calculate estimated hours based on UPH data if available
           let estimatedHours = 0;
           if (uphResults && uphResults.length > 0 && assignment.quantity > 0) {
+            // Debug: log what we're searching for
+            console.log(`Searching UPH for: operator="${operator.operatorName}", workCenter="${workCenter}", routing="${routing}"`);
+            
+            // Debug: log a sample of UPH data to see format
+            if (operator.operatorName === "Evan Crosby") {
+              const evanUphData = uphResults.filter((e: UphEntry) => e.operator === "Evan Crosby");
+              console.log(`Evan's UPH data (${evanUphData.length} entries):`, evanUphData.slice(0, 3));
+            }
+            
             const uphEntry = uphResults.find((entry: UphEntry) => 
               entry.operator === operator.operatorName &&
               entry.workCenter === workCenter &&
@@ -143,6 +189,9 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           
           productData.estimatedHours += estimatedHours;
           operator.totalEstimatedHours += estimatedHours;
+        } else {
+          // Debug why work order is finished
+          console.log(`Skipping finished work order for ${operator.operatorName}: ${routing}`);
         }
       }
     });
