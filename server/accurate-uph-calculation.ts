@@ -61,18 +61,20 @@ export async function calculateAccurateUPH() {
   console.log("🎯 Starting accurate UPH calculation following exact specification...");
 
   try {
-    // Step 1: Extract completed work cycles with all required fields including MO quantity
+    // Step 1: Extract completed work cycles grouped by PRODUCTION_ID (not MO number)
+    // This ensures we get the authentic Manufacturing Order groupings
     const cyclesResult = await db.execute(sql`
-      SELECT DISTINCT
+      SELECT 
         work_cycles_operator_id as operator_id,
         work_cycles_operator_rec_name as operator_name,
         work_cycles_work_center_rec_name as work_center_name,
         work_production_routing_rec_name as routing_name,
         work_production_number as mo_number,
-        work_production_id as production_id,
-        work_production_quantity as mo_quantity,  -- CRITICAL: MO quantity, not cycle quantity
-        work_cycles_duration as duration_seconds,
-        work_operation_rec_name as operation_name,
+        work_production_id as production_id,  -- CRITICAL: This is the authentic MO identifier
+        work_production_quantity as mo_quantity,  -- MO quantity from production order
+        SUM(work_cycles_duration) as total_duration_seconds,  -- Sum all cycles for this production_id
+        COUNT(*) as cycle_count,
+        STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations
         work_cycles_id as cycle_id,
         work_id as work_order_id,
         state

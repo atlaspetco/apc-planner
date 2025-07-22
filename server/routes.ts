@@ -2890,33 +2890,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating accurate UPH using MO quantities',
+        currentOperation: 'Rebuilding UPH using production.id grouping',
         startTime: Date.now()
       });
 
-      // Use accurate UPH calculator that uses MO quantities properly
-      const { calculateAccurateUPH } = await import("./accurate-uph-calculation.js");
-      const result = await calculateAccurateUPH();
+      // Use FIXED UPH calculator that properly groups by production.id
+      const { calculateFixedUPH } = await import("./fixed-uph-calculation.js");
+      const result = await calculateFixedUPH();
       
       // Clear calculating status
       (global as any).updateImportStatus({
         isCalculating: false,
-        currentOperation: 'Accurate UPH calculation completed',
+        currentOperation: 'Fixed UPH calculation completed',
         startTime: null
       });
       
       res.json({
-        success: result.success,
-        message: `Successfully calculated ${result.inserted} accurate UPH values`,
-        calculations: result.calculations.length,
-        details: {
-          totalCycles: result.totalCycles,
-          moGroups: result.moGroups,
-          operatorGroups: result.operatorGroups,
-          inserted: result.inserted
-        },
-        method: "Accurate UPH calculation using MO quantities",
-        note: "UPH per MO = MO Quantity / Total Duration, then averaged across MOs"
+        success: true,
+        message: `Fixed UPH calculation complete: ${result.operatorWorkCenterCombinations} combinations from ${result.productionOrders} production orders`,
+        productionOrders: result.productionOrders,
+        operatorWorkCenterCombinations: result.operatorWorkCenterCombinations,
+        totalObservations: result.totalObservations,
+        averageUph: result.averageUph,
+        method: "Fixed UPH using production.id grouping",
+        note: "Groups by production_id to ensure authentic MO totals"
       });
     } catch (error) {
       console.error("Error calculating accurate UPH:", error);
@@ -3570,25 +3567,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('UPH calculation details request:', { operatorName, workCenter, routing });
 
-      // Import the accurate calculation module that shows MO-level data
-      const { getAccurateMoDetails } = await import("./accurate-uph-calculation.js");
+      // Use the FIXED UPH calculator details function for authentic MO grouping
+      const { getAccurateMoDetails } = await import("./fixed-uph-calculation.js");
       
-      // Get MO-level aggregated data using the accurate calculation method
-      const result = await getAccurateMoDetails(
+      // Get MO-level details using production.id grouping
+      const moDetails = await getAccurateMoDetails(
         operatorName as string,
         workCenter as string,
         routing as string
       );
 
-      // Send the response with MO-level data
+      // Calculate summary statistics from MO details
+      const totalQuantity = moDetails.reduce((sum, mo) => sum + mo.moQuantity, 0);
+      const totalHours = moDetails.reduce((sum, mo) => sum + mo.totalDurationHours, 0);
+      const averageUph = totalHours > 0 ? totalQuantity / totalHours : 0;
+
+      // Send the response with authentic MO-level data
       res.json({
-        cycles: result.moLevelData,
+        cycles: moDetails, // MO-level data instead of work cycle data
         summary: {
-          averageUph: result.averageUph,
-          totalQuantity: result.totalQuantity,
-          totalDurationHours: result.totalDurationHours,
-          totalCycles: result.totalCycles,
-          moCount: result.moCount,
+          averageUph: parseFloat(averageUph.toFixed(2)),
+          totalQuantity,
+          totalDurationHours: totalHours,
+          totalCycles: moDetails.reduce((sum, mo) => sum + mo.cycleCount, 0),
+          moCount: moDetails.length,
           operatorName,
           workCenter,
           routing
