@@ -49,7 +49,23 @@ interface RawUphData {
   lastUpdated: string;
 }
 
-function transformRawUphData(rawData: RawUphData[]): UphTableData {
+function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
+  // Ensure rawData is an array
+  if (!Array.isArray(rawData)) {
+    console.error("transformRawUphData: rawData is not an array:", rawData);
+    return {
+      routings: [],
+      summary: {
+        totalOperators: 0,
+        totalCombinations: 0,
+        totalRoutings: 0,
+        avgUphByCeter: {},
+        noDataReason: "Invalid data format"
+      },
+      workCenters: ['Cutting', 'Assembly', 'Packaging']
+    };
+  }
+
   // Group by routing
   const routingMap = new Map<string, {
     routingName: string;
@@ -173,7 +189,16 @@ export default function UphAnalytics() {
   });
 
   // Transform raw UPH data to table format
-  const uphData = rawUphData ? transformRawUphData(rawUphData) : null;
+  const uphData = (() => {
+    if (!rawUphData) return null;
+    // Handle both array and object responses
+    const dataArray = Array.isArray(rawUphData) ? rawUphData : rawUphData.data || [];
+    if (!Array.isArray(dataArray)) {
+      console.error("UPH data is not an array:", rawUphData);
+      return null;
+    }
+    return transformRawUphData(dataArray);
+  })();
 
   // Use standardized UPH calculation job
   const { calculate, isCalculating, status: jobStatus } = useUphCalculationJob();
