@@ -291,4 +291,6 @@ Preferred communication style: Simple, everyday language.
 
 **PRODUCT ROUTING REQUIREMENT**: All product routings are distinct products and must match exactly. Never map between different products (e.g., "Lifetime Air Harness", "Lifetime Air - Bio", and "Lifetime Harness" are all completely different products). Only exact routing name matches should be used for operator qualification and UPH calculations.
 
+**NO FALLBACKS WITH BLENDED DATA**: The system must only use exact routing matches for operator qualifications. If an operator doesn't have specific UPH data for the exact work center + routing combination requested, they should not be shown as qualified. No averaging or blending of UPH data across different routings is allowed.
+
 **EXCEPTION - Manufacturing Routing Mapping**: "Lifetime Air Harness" products (with codes like LHA-XS) use "Lifetime Harness" routing for manufacturing operations. When calculating UPH or finding qualified operators for "Lifetime Air Harness" products, the system must check for historical data under "Lifetime Harness" routing.
