@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
+import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
 
 interface UphTableData {
   routings: Array<{
@@ -36,6 +38,7 @@ export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
+  const [windowDays, setWindowDays] = useState<7 | 30 | 180>(30);
   const [selectedUphDetails, setSelectedUphDetails] = useState<{
     operatorName: string;
     workCenter: string;
@@ -43,76 +46,50 @@ export default function UphAnalytics() {
     uphValue: number;
   } | null>(null);
 
-  // Get UPH table data
-  const { data: uphData, isLoading: uphLoading } = useQuery<UphTableData>({
-    queryKey: ["/api/uph/table-data"],
+  // Get standardized UPH data
+  const { data: standardizedUphData, isLoading: uphLoading } = useStandardizedUph({ 
+    windowDays 
   });
+  
+  // Transform standardized data to table format
+  const uphData = standardizedUphData?.data 
+    ? transformUphDataForTable(standardizedUphData.data)
+    : null;
 
-  // Unified status state
-  const [currentOperation, setCurrentOperation] = useState<string | null>(null);
+  // Use standardized UPH calculation job
+  const { calculate, isCalculating, status: jobStatus } = useUphCalculationJob();
 
-  // Fix observations calculation
-  const fixObservationsMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/uph/fix-observations"),
-    onMutate: () => setCurrentOperation("Fixing observations..."),
-    onSuccess: (data) => {
-      console.log("Fixed UPH observations:", data);
-      queryClient.invalidateQueries({ queryKey: ["/api/uph/table-data"] });
-      setCurrentOperation(null);
-    },
-    onError: () => setCurrentOperation(null),
-  });
-
-  // Single UPH calculation from work cycles
-  const calculateUphMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/uph/calculate"),
-    onMutate: () => setCurrentOperation("Calculating UPH..."),
-    onSuccess: (data) => {
-      console.log("UPH calculation completed:", data);
-      queryClient.invalidateQueries({ queryKey: ["/api/uph/table-data"] });
-      setCurrentOperation(null);
-    },
-    onError: () => setCurrentOperation(null),
-  });
-
-  // AI anomaly detection
+  // AI anomaly detection (keep for now)
   const detectAnomaliesMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/uph/detect-anomalies"),
-    onMutate: () => setCurrentOperation("Detecting anomalies..."),
     onSuccess: (data) => {
       console.log("Anomaly detection completed:", data);
-      setCurrentOperation(null);
     },
-    onError: () => setCurrentOperation(null),
   });
 
-  // Clean UPH calculation with AI filtering
+  // Clean UPH calculation with AI filtering (keep for now)
   const calculateCleanUphMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/uph/calculate-clean"),
-    onMutate: () => setCurrentOperation("Calculating AI-filtered UPH..."),
     onSuccess: (data) => {
       console.log("Clean UPH calculation completed:", data);
-      queryClient.invalidateQueries({ queryKey: ["/api/uph/table-data"] });
-      setCurrentOperation(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/uph/standardized"] });
     },
-    onError: () => setCurrentOperation(null),
   });
 
   // Check if any operation is running
-  const isAnyOperationRunning = fixObservationsMutation.isPending || 
-                                calculateUphMutation.isPending || 
+  const isAnyOperationRunning = isCalculating || 
                                 detectAnomaliesMutation.isPending || 
                                 calculateCleanUphMutation.isPending;
 
-  // Refresh handler - uses AI optimization when toggle is enabled
+  // Refresh handler - uses standardized calculation
   const handleRefresh = () => {
     console.log('UPH Analytics refresh initiated - processing latest work cycles data');
     if (aiOptimized) {
       // Run AI-optimized refresh: detect anomalies then calculate clean UPH
       calculateCleanUphMutation.mutate();
     } else {
-      // Simple refresh: just recalculate UPH
-      calculateUphMutation.mutate();
+      // Use standardized calculation job
+      calculate();
     }
   };
 
@@ -204,20 +181,30 @@ export default function UphAnalytics() {
           <p className="text-gray-600">Units Per Hour performance metrics organized by product routing</p>
           
           {/* Unified Status Indicator */}
-          {(isAnyOperationRunning || currentOperation) && (
+          {isAnyOperationRunning && (
             <div className="flex items-center mt-2 text-sm text-blue-600">
               <div className="flex items-center">
                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
                 <span className="font-medium">Live</span>
-                {currentOperation && (
-                  <span className="ml-2 text-gray-600">• {currentOperation}</span>
-                )}
+                <span className="ml-2 text-gray-600">• Calculating UPH...</span>
               </div>
             </div>
           )}
         </div>
         
         <div className="flex items-center gap-4">
+          {/* Window Days Selector */}
+          <Select value={windowDays.toString()} onValueChange={(value) => setWindowDays(parseInt(value) as 7 | 30 | 180)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7">Last 7 days</SelectItem>
+              <SelectItem value="30">Last 30 days</SelectItem>
+              <SelectItem value="180">Last 180 days</SelectItem>
+            </SelectContent>
+          </Select>
+          
           {/* AI Optimized Toggle */}
           <div className="flex items-center space-x-2">
             <Switch
