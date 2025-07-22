@@ -182,14 +182,19 @@ export default function UphAnalytics() {
   } | null>(null);
 
   // Get UPH data from historical table
-  const { data: rawUphData, isLoading: uphLoading, isRefetching } = useQuery({
+  const { data: rawUphData, isLoading: uphLoading, isRefetching, refetch } = useQuery({
     queryKey: ["/api/uph-data"],
-    queryFn: () => apiRequest("GET", "/api/uph-data"),
+    queryFn: async () => {
+      const response = await fetch("/api/uph-data");
+      if (!response.ok) throw new Error("Failed to fetch UPH data");
+      return response.json();
+    },
     staleTime: 5 * 60 * 1000,
   });
 
   // Transform raw UPH data to table format
   const uphData = (() => {
+    console.log("Raw UPH data:", rawUphData);
     if (!rawUphData) return null;
     // Handle both array and object responses
     const dataArray = Array.isArray(rawUphData) ? rawUphData : rawUphData.data || [];
@@ -197,7 +202,10 @@ export default function UphAnalytics() {
       console.error("UPH data is not an array:", rawUphData);
       return null;
     }
-    return transformRawUphData(dataArray);
+    console.log("Processing", dataArray.length, "UPH records");
+    const result = transformRawUphData(dataArray);
+    console.log("Transformed data:", result);
+    return result;
   })();
 
   // Use standardized UPH calculation job
@@ -228,8 +236,8 @@ export default function UphAnalytics() {
   // Refresh handler - refreshes the UPH data
   const handleRefresh = () => {
     console.log('UPH Analytics refresh initiated - reloading historical UPH data');
-    // Invalidate and refetch the UPH data
-    queryClient.invalidateQueries({ queryKey: ["/api/uph-data"] });
+    // Directly refetch the UPH data
+    refetch();
   };
 
   const toggleRouting = (routingName: string) => {
