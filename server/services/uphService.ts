@@ -8,17 +8,6 @@ import { db } from "../db.js";
 import { workCycles, productionOrders, workOrders } from "../../shared/schema.js";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { mapWorkCenterToCategory, type WorkCenterCategory } from "../utils/categoryMap.js";
-import { Redis } from "ioredis";
-
-// Redis client for caching (optional - will work without it)
-let redis: Redis | null = null;
-try {
-  if (process.env.REDIS_URL) {
-    redis = new Redis(process.env.REDIS_URL);
-  }
-} catch (error) {
-  console.warn("Redis not available, using in-memory cache");
-}
 
 // In-memory cache as fallback
 const memoryCache = new Map<string, { data: any; expires: number }>();
@@ -121,18 +110,8 @@ export async function calculateStandardizedUph(
     const allCycles = await cyclesQuery;
     
     if (allCycles.length === 0) {
-      return [{
-        productName: productName || 'All Products',
-        workCenterCategory: workCenterCategory || 'All Categories',
-        operatorId: operatorId || 0,
-        operatorName: 'Unknown',
-        averageUph: 0,
-        moCount: 0,
-        totalObservations: 0,
-        windowDays: window,
-        dataAvailable: false,
-        message: 'No work cycles found in the specified window'
-      }];
+      // Return empty array when no data found
+      return [];
     }
     
     // Step 2: Group cycles by MO + category + operator
@@ -316,19 +295,7 @@ function getCacheKey(
 }
 
 async function getFromCache(key: string): Promise<any | null> {
-  // Try Redis first
-  if (redis) {
-    try {
-      const cached = await redis.get(key);
-      if (cached) {
-        return JSON.parse(cached);
-      }
-    } catch (error) {
-      console.warn("Redis get error:", error);
-    }
-  }
-  
-  // Fallback to memory cache
+  // Use memory cache
   const cached = memoryCache.get(key);
   if (cached && cached.expires > Date.now()) {
     return cached.data;
@@ -338,17 +305,7 @@ async function getFromCache(key: string): Promise<any | null> {
 }
 
 async function setInCache(key: string, data: any, ttlSeconds: number): Promise<void> {
-  // Try Redis first
-  if (redis) {
-    try {
-      await redis.setex(key, ttlSeconds, JSON.stringify(data));
-      return;
-    } catch (error) {
-      console.warn("Redis set error:", error);
-    }
-  }
-  
-  // Fallback to memory cache
+  // Use memory cache
   memoryCache.set(key, {
     data,
     expires: Date.now() + (ttlSeconds * 1000)

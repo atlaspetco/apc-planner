@@ -34,6 +34,125 @@ interface UphTableData {
   workCenters: string[];
 }
 
+interface RawUphData {
+  id: number;
+  operatorId: number;
+  operatorName: string;
+  workCenter: string;
+  operation: string;
+  routing: string;
+  uph: number;
+  observationCount: number;
+  totalDurationHours: number;
+  totalQuantity: number;
+  dataSource: string;
+  lastUpdated: string;
+}
+
+function transformRawUphData(rawData: RawUphData[]): UphTableData {
+  // Group by routing
+  const routingMap = new Map<string, {
+    routingName: string;
+    operators: Map<number, {
+      operatorId: number;
+      operatorName: string;
+      workCenterPerformance: Record<string, number | null>;
+      totalObservations: number;
+    }>;
+  }>();
+  
+  // Process each record
+  rawData.forEach(record => {
+    const routing = record.routing;
+    if (!routingMap.has(routing)) {
+      routingMap.set(routing, {
+        routingName: routing,
+        operators: new Map()
+      });
+    }
+    
+    const routingData = routingMap.get(routing)!;
+    
+    if (!routingData.operators.has(record.operatorId)) {
+      routingData.operators.set(record.operatorId, {
+        operatorId: record.operatorId,
+        operatorName: record.operatorName,
+        workCenterPerformance: {
+          Cutting: null,
+          Assembly: null,
+          Packaging: null
+        },
+        totalObservations: 0
+      });
+    }
+    
+    const operatorData = routingData.operators.get(record.operatorId)!;
+    operatorData.workCenterPerformance[record.workCenter] = record.uph;
+    operatorData.totalObservations += record.observationCount;
+  });
+  
+  // Convert to array format
+  const routings = Array.from(routingMap.values()).map(routing => {
+    const operators = Array.from(routing.operators.values());
+    
+    // Calculate routing averages
+    const routingAverages: Record<string, number | null> = {
+      Cutting: null,
+      Assembly: null,
+      Packaging: null
+    };
+    
+    ['Cutting', 'Assembly', 'Packaging'].forEach(wc => {
+      const operatorsWithData = operators.filter(op => 
+        op.workCenterPerformance[wc] !== null
+      );
+      
+      if (operatorsWithData.length > 0) {
+        const sum = operatorsWithData.reduce((acc, op) => 
+          acc + (op.workCenterPerformance[wc] || 0), 0
+        );
+        routingAverages[wc] = Math.round((sum / operatorsWithData.length) * 100) / 100;
+      }
+    });
+    
+    return {
+      routingName: routing.routingName,
+      operators,
+      routingAverages,
+      totalOperators: operators.length
+    };
+  });
+  
+  // Calculate summary
+  const workCenterUph = new Map<string, number[]>();
+  const uniqueOperators = new Set<number>();
+  
+  rawData.forEach(record => {
+    uniqueOperators.add(record.operatorId);
+    const existing = workCenterUph.get(record.workCenter) || [];
+    existing.push(record.uph);
+    workCenterUph.set(record.workCenter, existing);
+  });
+  
+  const avgUphByCenter = Object.fromEntries(
+    Array.from(workCenterUph.entries()).map(([wc, uphs]) => [
+      wc,
+      Math.round((uphs.reduce((sum, uph) => sum + uph, 0) / uphs.length) * 100) / 100,
+    ])
+  );
+  
+  return {
+    routings: routings.sort((a, b) => a.routingName.localeCompare(b.routingName)),
+    summary: {
+      totalOperators: uniqueOperators.size,
+      totalCombinations: rawData.length,
+      totalRoutings: routings.length,
+      avgUphByCeter: avgUphByCenter
+    },
+    workCenters: ['Cutting', 'Assembly', 'Packaging']
+  };
+}
+
 export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
@@ -46,15 +165,15 @@ export default function UphAnalytics() {
     uphValue: number;
   } | null>(null);
 
-  // Get standardized UPH data
-  const { data: standardizedUphData, isLoading: uphLoading } = useStandardizedUph({ 
-    windowDays 
+  // Get UPH data from historical table
+  const { data: rawUphData, isLoading: uphLoading } = useQuery({
+    queryKey: ["/api/uph-data"],
+    queryFn: () => apiRequest("GET", "/api/uph-data"),
+    staleTime: 5 * 60 * 1000,
   });
-  
-  // Transform standardized data to table format
-  const uphData = standardizedUphData?.data 
-    ? transformUphDataForTable(standardizedUphData.data)
-    : null;
+
+  // Transform raw UPH data to table format
+  const uphData = rawUphData ? transformRawUphData(rawUphData) : null;
 
   // Use standardized UPH calculation job
   const { calculate, isCalculating, status: jobStatus } = useUphCalculationJob();
