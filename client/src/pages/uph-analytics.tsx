@@ -409,10 +409,10 @@ export default function UphAnalytics() {
                 Click "Calculate UPH" to generate performance metrics from work cycles data.
               </p>
               <Button
-                onClick={() => calculateUphMutation.mutate()}
-                disabled={calculateUphMutation.isPending}
+                onClick={() => calculate()}
+                disabled={isCalculating}
               >
-                {calculateUphMutation.isPending ? (
+                {isCalculating ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
                 ) : null}
                 Calculate UPH

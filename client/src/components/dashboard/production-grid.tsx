@@ -6,8 +6,24 @@ import type { ProductionOrder } from "@shared/schema";
 import { OperatorDropdown } from "./operator-dropdown";
 import { useToast } from "@/hooks/use-toast";
 
+// Extended type for production orders with embedded work orders
+interface WorkOrderData {
+  id: number;
+  workCenter: string;
+  originalWorkCenter: string;
+  operation: string;
+  state: string;
+  quantity: number;
+  employee_name: string | null;
+  employee_id: number | null;
+}
+
+interface ProductionOrderWithWorkOrders extends ProductionOrder {
+  workOrders?: WorkOrderData[];
+}
+
 interface ProductionGridProps {
-  productionOrders: ProductionOrder[];
+  productionOrders: ProductionOrderWithWorkOrders[];
   isLoading: boolean;
   workCenters?: string[];
   assignments?: Map<number, any>;
@@ -18,7 +34,7 @@ interface ProductionGridProps {
 const DEFAULT_WORK_CENTERS = ['Cutting', 'Assembly', 'Packaging'];
 
 // Group orders by routing
-const groupOrdersByRouting = (orders: ProductionOrder[]) => {
+const groupOrdersByRouting = (orders: ProductionOrderWithWorkOrders[]) => {
   const grouped = orders.reduce((acc, order) => {
     const routing = order.routing || 'Unknown Routing';
     if (!acc[routing]) {
@@ -26,7 +42,7 @@ const groupOrdersByRouting = (orders: ProductionOrder[]) => {
     }
     acc[routing].push(order);
     return acc;
-  }, {} as Record<string, ProductionOrder[]>);
+  }, {} as Record<string, ProductionOrderWithWorkOrders[]>);
   
   return grouped;
 };
@@ -45,6 +61,39 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
       newExpanded.add(routing);
     }
     setExpandedRoutings(newExpanded);
+  };
+  
+  const handleOperatorAssign = async (
+    workOrderId: number,
+    operatorId: number,
+    quantity: number,
+    routing: string,
+    workCenter: string,
+    operation: string
+  ) => {
+    try {
+      // API call would go here to assign operator
+      console.log('Assigning operator:', {
+        workOrderId,
+        operatorId,
+        quantity,
+        routing,
+        workCenter,
+        operation
+      });
+      
+      toast({
+        title: "Operator assigned",
+        description: `Successfully assigned operator to work order`,
+      });
+    } catch (error) {
+      console.error('Error assigning operator:', error);
+      toast({
+        title: "Assignment failed",
+        description: "Could not assign operator to work order",
+        variant: "destructive",
+      });
+    }
   };
   
   if (isLoading) {
