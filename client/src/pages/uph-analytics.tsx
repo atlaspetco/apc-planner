@@ -320,6 +320,14 @@ export default function UphAnalytics() {
     );
   }
 
+  // Debug logging
+  console.log("UPH Analytics Render State:", {
+    uphLoading,
+    rawUphData,
+    uphData,
+    hasRoutings: uphData?.routings?.length > 0
+  });
+
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="mb-6 flex justify-between items-start">
