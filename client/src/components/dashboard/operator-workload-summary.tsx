@@ -99,6 +99,11 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         assignments: [],
         productSummary: new Map() // Group by product routing
       });
+      
+      // Debug operator creation
+      if (op.name === "Evan Crosby") {
+        console.log(`Created Evan in operatorMap: ID=${op.id}, name=${op.name}`);
+      }
     });
 
     // Process assignments to calculate workload using UPH data
@@ -110,10 +115,13 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
       
       // Debug Evan's assignments
       if (assignment.operatorName === "Evan Crosby") {
-        console.log(`Evan assignment: operatorId=${assignment.operatorId}, routing=${assignment.productRouting || assignment.routing}, workCenter=${assignment.workCenter}`);
+        console.log(`Evan assignment: operatorId=${assignment.operatorId}, routing=${assignment.productRouting || assignment.routing}, workCenter=${assignment.workCenter}, qty=${assignment.quantity}`);
       }
       
       const operator = operatorMap.get(assignment.operatorId);
+      if (!operator && assignment.operatorName === "Evan Crosby") {
+        console.log(`ERROR: Evan not found in operatorMap! operatorId=${assignment.operatorId}, Map keys:`, Array.from(operatorMap.keys()));
+      }
       if (operator) {
         operator.totalAssignments++;
         // Store complete assignment data for the modal
@@ -146,14 +154,15 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         
         // Only include hours for non-finished work orders
         // Debug workOrderState for Evan
-        if (operator.operatorName === "Evan Crosby" && routing === "Lifetime Leash") {
-          console.log(`Evan's Lifetime Leash assignment:`, {
+        if (operator.operatorName === "Evan Crosby") {
+          console.log(`Evan's assignment processing:`, {
             workOrderId: assignment.workOrderId,
             workOrderState: assignment.workOrderState,
             workCenter: assignment.workCenter, 
             routing: routing,
             quantity: assignment.quantity,
-            operatorId: assignment.operatorId
+            operatorId: assignment.operatorId,
+            operatorName: operator.operatorName
           });
         }
         
@@ -164,12 +173,16 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           let estimatedHours = 0;
           if (uphResults && uphResults.length > 0 && assignment.quantity > 0) {
             // Debug: log what we're searching for
-            console.log(`Searching UPH for: operator="${operator.operatorName}", workCenter="${workCenter}", routing="${routing}"`);
-            
-            // Debug: log a sample of UPH data to see format
             if (operator.operatorName === "Evan Crosby") {
+              console.log(`Searching UPH for Evan: operator="${operator.operatorName}", workCenter="${workCenter}", routing="${routing}"`);
+              
+              // Log all Evan's UPH entries to see what's available
               const evanUphData = uphResults.filter((e: UphEntry) => e.operator === "Evan Crosby");
-              console.log(`Evan's UPH data (${evanUphData.length} entries):`, evanUphData.slice(0, 3));
+              console.log(`Evan's UPH data (${evanUphData.length} entries):`, evanUphData);
+              
+              // Check if there's a name mismatch
+              const hasEvanInUph = uphResults.some((e: UphEntry) => e.operator === "Evan Crosby");
+              console.log(`UPH data has "Evan Crosby": ${hasEvanInUph}`);
             }
             
             const uphEntry = uphResults.find((entry: UphEntry) => 
