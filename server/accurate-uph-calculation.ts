@@ -90,7 +90,25 @@ export async function calculateAccurateUPH() {
     const cycles = cyclesResult.rows;
     console.log(`✅ Found ${cycles.length} completed work cycles with MO quantities`);
 
-    // Step 2: Group cycles by Operator + Routing + Work Center + MO
+    // Step 2: First, calculate total time per MO across ALL work centers
+    const moTotalTimes = new Map<string, { moQuantity: number; totalDurationSeconds: number }>();
+    
+    for (const cycle of cycles) {
+      const moNumber = cycle.mo_number?.toString() || '';
+      const moQuantity = parseFloat(cycle.mo_quantity?.toString() || '0');
+      const durationSeconds = parseFloat(cycle.duration_seconds?.toString() || '0');
+      
+      if (!moNumber || moQuantity <= 0) continue;
+      
+      if (!moTotalTimes.has(moNumber)) {
+        moTotalTimes.set(moNumber, { moQuantity, totalDurationSeconds: 0 });
+      }
+      
+      moTotalTimes.get(moNumber)!.totalDurationSeconds += durationSeconds;
+    }
+
+    // Step 3: Group cycles by Operator + Work Center + Routing + MO 
+    // but use the total MO time for UPH calculation
     const moGroups = new Map<string, MoGroupData>();
 
     for (const cycle of cycles) {
@@ -111,22 +129,23 @@ export async function calculateAccurateUPH() {
       const key = `${operatorName}|${workCenter}|${routing}|${moNumber}`;
       
       if (!moGroups.has(key)) {
+        const moTotalTime = moTotalTimes.get(moNumber);
+        if (!moTotalTime) continue;
+        
         moGroups.set(key, {
           operatorId,
           operatorName,
           workCenter,
           routing,
           moNumber,
-          moQuantity, // Use the MO quantity from production order
-          totalDurationSeconds: 0,
+          moQuantity,
+          totalDurationSeconds: moTotalTime.totalDurationSeconds, // CRITICAL: Use total MO time, not just work center time
           cycleCount: 0,
           operations: new Set()
         });
       }
 
       const group = moGroups.get(key)!;
-      // Sum durations from all work cycles for this MO
-      group.totalDurationSeconds += durationSeconds;
       group.cycleCount += 1;
       if (operation) group.operations.add(operation);
     }
@@ -189,33 +208,13 @@ export async function calculateAccurateUPH() {
     for (const [key, group] of operatorGroups) {
       if (group.moUphValues.length === 0) continue;
       
-      // CRITICAL FIX: Filter out outlier UPH values to prevent inflation
-      // Remove MOs with UPH > 100 (unrealistic) or duration < 5 minutes (too short)
-      const filteredMoUphValues = group.moUphValues.filter(mo => {
-        const isRealistic = mo.uph <= 100 && mo.durationHours >= (5/60); // 5 minutes minimum
-        if (!isRealistic) {
-          console.log(`⚠️  Filtering outlier: ${group.operatorName} | ${group.workCenter} | ${group.routing} | ${mo.moNumber} = ${mo.uph.toFixed(2)} UPH (${mo.durationHours.toFixed(2)}h)`);
-        }
-        return isRealistic;
-      });
+      // Calculate average UPH across all MOs (no filtering)
+      const averageUph = group.moUphValues.reduce((sum, mo) => sum + mo.uph, 0) / group.moUphValues.length;
       
-      if (filteredMoUphValues.length === 0) {
-        console.log(`❌ No valid MOs after outlier filtering for ${group.operatorName} | ${group.workCenter} | ${group.routing}`);
-        continue;
-      }
-      
-      // Calculate average UPH across filtered MOs
-      const averageUph = filteredMoUphValues.reduce((sum, mo) => sum + mo.uph, 0) / filteredMoUphValues.length;
-      
-      console.log(`📊 ${group.operatorName} | ${group.workCenter} | ${group.routing}: Filtered ${group.moUphValues.length - filteredMoUphValues.length} outliers, using ${filteredMoUphValues.length} MOs`);
-      
-      // Update group to use filtered values
-      group.moUphValues = filteredMoUphValues;
-      
-      // Calculate totals for context using filtered values
-      const totalQuantity = filteredMoUphValues.reduce((sum, mo) => sum + mo.moQuantity, 0);
-      const totalHours = filteredMoUphValues.reduce((sum, mo) => sum + mo.durationHours, 0);
-      const moCount = filteredMoUphValues.length;
+      // Calculate totals for context using all values
+      const totalQuantity = group.moUphValues.reduce((sum, mo) => sum + mo.moQuantity, 0);
+      const totalHours = group.moUphValues.reduce((sum, mo) => sum + mo.durationHours, 0);
+      const moCount = group.moUphValues.length;
       
       uphCalculations.push({
         operatorId: group.operatorId,
@@ -235,7 +234,7 @@ export async function calculateAccurateUPH() {
         }))
       });
       
-      console.log(`📊 ${group.operatorName} | ${group.workCenter} | ${group.routing}: Average UPH = ${averageUph.toFixed(2)} (from ${moCount} filtered MOs)`);
+      console.log(`📊 ${group.operatorName} | ${group.workCenter} | ${group.routing}: Average UPH = ${averageUph.toFixed(2)} (from ${moCount} MOs)`);
     }
 
     console.log(`\n✅ Calculated ${uphCalculations.length} averaged UPH values`);
@@ -389,14 +388,6 @@ export async function getAccurateMoDetails(
       const durationHours = moData.totalDurationSeconds / 3600;
       
       const moUph = moData.moQuantity / durationHours;
-      
-      // CRITICAL FIX: Apply same outlier filtering as main calculation
-      // Remove MOs with UPH > 100 (unrealistic) or duration < 5 minutes (too short)
-      const isRealistic = moUph <= 100 && durationHours >= (5/60);
-      if (!isRealistic) {
-        console.log(`⚠️  Filtering outlier MO ${moNumber}: ${moUph.toFixed(2)} UPH (${durationHours.toFixed(2)}h)`);
-        continue;
-      }
       
       uphValues.push(moUph);
       totalQuantity += moData.moQuantity;
