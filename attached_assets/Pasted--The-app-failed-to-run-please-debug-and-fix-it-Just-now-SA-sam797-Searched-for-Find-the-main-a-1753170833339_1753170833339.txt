@@ -1,0 +1,283 @@
+
+The app failed to run, please debug and fix it.
+
+Just now
+SA
+
+sam797
+
+Searched for "Find the main application entry points, startup files, or configuration files that would be used to run the application. Look for files like main.py, app.py, __init__.py, requirements.txt, or similar startup/configuration files."
+
+Scroll to latest
+Working…
+
+Message Agent…
+765ms
+ • 
+Just now
+Enable "Accessible Terminal" in Workspace Settings to use a screen reader with the shell.
+Production
+Status
+Sam deployed about 3 hours ago
+Visibility
+Public
+Domain
+https://APC-planner.replit.app
+Type
+Autoscale
+(8 vCPU / 32 GiB RAM / 8 Max)
+See all usage
+280a3a7b
+SA
+
+sam797
+Sam
+deployed about 10 hours ago
+0be42972
+SA
+
+sam797
+Sam
+deployed 4 days ago
+d4c6b579
+SA
+
+sam797
+Sam
+deployed 9 days ago
+04aff982
+SA
+
+sam797
+Sam
+deployed 9 days ago
+f7ea2ec7
+SA
+
+sam797
+Sam
+deployed 10 days ago
+36689c28
+SA
+
+sam797
+Sam
+deployed 10 days ago
+013cacdb
+SA
+
+sam797
+Sam
+deployed 10 days ago
+db48d659
+SA
+
+sam797
+Sam
+deployed 10 days ago
+a5e4f614
+SA
+
+sam797
+Sam
+deployed 10 days ago
+38fadf06
+SA
+
+sam797
+Sam
+deployed 10 days ago
+80c214cc
+SA
+
+sam797
+Sam
+deployed 10 days ago
+608496b8
+SA
+
+sam797
+Sam
+deployed 10 days ago
+45fa9e7b
+SA
+
+sam797
+Sam
+deployed 10 days ago
+873679cd
+SA
+
+sam797
+Sam
+deployed 10 days ago
+2cc71aa8
+SA
+
+sam797
+Sam
+rolled back 12 days ago
+1ec8621f
+bd9ecd55
+SA
+
+sam797
+Sam
+rolled back 12 days ago
+8ad2ab15
+02cb4b6b
+SA
+
+sam797
+Sam
+deployed 12 days ago
+1ec8621f
+SA
+
+sam797
+Sam
+deployed 12 days ago
+8ad2ab15
+SA
+
+sam797
+Sam
+deployed 12 days ago
+7696869a
+SA
+
+sam797
+Sam
+deployed 13 days ago
+ddb661dd
+SA
+
+sam797
+Sam
+deployed 13 days ago
+05f21fb6
+SA
+
+sam797
+Sam
+deployed 13 days ago
+73db0df0
+SA
+
+sam797
+Sam
+deployed 13 days ago
+fc58fc45
+SA
+
+sam797
+Sam
+deployed 13 days ago
+3c89b3b7
+SA
+
+sam797
+Sam
+deployed 13 days ago
+051f3477
+SA
+
+sam797
+Sam
+deployed 13 days ago
+fe5f8eb7
+SA
+
+sam797
+Sam
+deployed 13 days ago
+96b396d3
+SA
+
+sam797
+Sam
+rolled back 14 days ago
+2394c283
+b1bcb3dc
+SA
+
+sam797
+Sam
+failed to deploy 14 days ago
+d7c9f6d3
+SA
+
+sam797
+Sam
+deployed 14 days ago
+2394c283
+SA
+
+sam797
+Sam
+deployed 15 days ago
+f0134edf
+SA
+
+sam797
+Sam
+deployed 15 days ago
+7a5d3863
+SA
+
+sam797
+Sam
+deployed 15 days ago
+b33232a0
+SA
+
+sam797
+Sam
+deployed 18 days ago
+13c5d3f1
+SA
+
+sam797
+Sam
+deployed 18 days ago
+908bd43e
+SA
+
+sam797
+Sam
+deployed 19 days ago
+Database connected
+17 tables
+46.1MB/10GB
+Schema	Name	Type	Owner	Size	Description
+public	active_work_orders	table	neondb_owner	16 kB	
+public	batches	table	neondb_owner	32 kB	
+public	batches_id_seq	sequence	neondb_owner	8192 bytes	
+public	fulfil_operations	table	neondb_owner	64 kB	
+public	fulfil_operators	table	neondb_owner	16 kB	
+Docs
+Powered by
+SESSION_SECRET
+••••••••
+DATABASE_URL
+••••••••
+PGDATABASE
+••••••••
+PGHOST
+••••••••
+PGPORT
+••••••••
+PGUSER
+••••••••
+PGPASSWORD
+••••••••
+GITHUB_PERSONAL_ACCESS_TOKEN
+••••••••
+FULFIL_ACCESS_TOKEN
+••••••••
+OPENAI_API_KEY
+••••••••
+Your app crashed
+The agent is working on it…
+Unsupported state: you are in the middle of a rebase.
+Please finish the rebase manually.
