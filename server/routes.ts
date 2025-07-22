@@ -1068,7 +1068,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             uphKeys.push(`${op.id}-${wc}-${effectiveRouting || ''}`);
           });
           
-          const hasUphData = uphKeys.some(key => uphMap.has(key));
+          let hasUphData = uphKeys.some(key => uphMap.has(key));
+          
+          // FALLBACK: If routing looks like an operation name (contains " - ") and no direct UPH data found,
+          // check if operator has ANY UPH data for this work center
+          if (!hasUphData && routing && routing.includes(' - ')) {
+            console.log(`  - Routing "${routing}" appears to be an operation name, checking for any ${workCenter} data`);
+            // Check if operator has any UPH data for this work center
+            const workCenterKeys: string[] = [];
+            historicalUphData.forEach(record => {
+              if (record.operator === op.name && workCentersToCheck.includes(record.workCenter)) {
+                workCenterKeys.push(`${op.id}-${record.workCenter}-${record.routing}`);
+              }
+            });
+            hasUphData = workCenterKeys.length > 0;
+            if (hasUphData) {
+              console.log(`  - Found ${workCenterKeys.length} routing(s) for ${op.name} in ${workCenter}`);
+            }
+          }
           
           // Debug logging for qualification check
           console.log(`Qualified operators for ${workCenter}/${routing}: checking operator ${op.name} (ID: ${op.id})`);
@@ -1077,7 +1094,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (hasUphData) {
             const matchedKey = uphKeys.find(key => uphMap.has(key));
             const uphInfo = uphMap.get(matchedKey!);
-            console.log(`  - UPH: ${uphInfo?.uph?.toFixed(2)} (${uphInfo?.observations} observations)`);
+            if (uphInfo) {
+              console.log(`  - UPH: ${uphInfo.uph?.toFixed(2)} (${uphInfo.observations} observations)`);
+            }
           }
           
           // Only include operators who have actual performance data for this combination
@@ -1137,6 +1156,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (data && data.observations > 0) {
               performanceData = data;
               break;
+            }
+          }
+          
+          // FALLBACK: If routing looks like an operation name and no UPH found, 
+          // calculate average UPH across all routings for this operator in this work center
+          if (performanceData.observations === 0 && routing && routing.includes(' - ')) {
+            const operatorWorkCenterData: { uph: number; observations: number }[] = [];
+            historicalUphData.forEach(record => {
+              if (record.operator === op.name && workCentersToCheck.includes(record.workCenter)) {
+                operatorWorkCenterData.push({
+                  uph: record.unitsPerHour,
+                  observations: record.observations
+                });
+              }
+            });
+            
+            if (operatorWorkCenterData.length > 0) {
+              // Calculate weighted average UPH across all routings for this work center
+              let totalUnits = 0;
+              let totalObservations = 0;
+              operatorWorkCenterData.forEach(data => {
+                totalUnits += data.uph * data.observations;
+                totalObservations += data.observations;
+              });
+              performanceData = {
+                uph: totalUnits / totalObservations,
+                observations: totalObservations
+              };
+              console.log(`  - Using average UPH across ${operatorWorkCenterData.length} routings: ${performanceData.uph.toFixed(2)} (${performanceData.observations} total observations)`);
             }
           }
           
