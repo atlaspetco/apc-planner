@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import { db } from "../server/db.js";
-import { historicalUph } from "../shared/schema.js";
+import { db } from "./db.js";
+import { historicalUph, operators } from "../shared/schema.js";
 
 /**
  * FIXED UPH CALCULATION - Uses production.id as the authentic MO identifier
@@ -67,7 +67,7 @@ export async function calculateFixedUPH() {
         COUNT(*) as cycle_count,
         STRING_AGG(DISTINCT work_operation_rec_name, '|') as operations
       FROM work_cycles 
-      WHERE (work_cycles_state = 'done' OR work_cycles_state IS NULL)
+      WHERE (state = 'done' OR state IS NULL)
         AND work_cycles_operator_rec_name IS NOT NULL 
         AND work_cycles_work_center_rec_name IS NOT NULL
         AND work_production_routing_rec_name IS NOT NULL
@@ -156,7 +156,12 @@ export async function calculateFixedUPH() {
       }
     }
 
-    // Step 4: Calculate averages and save to historical UPH table
+    // Step 4: Get operator name-to-ID mapping
+    const allOperators = await db.select().from(operators);
+    const operatorNameToId = new Map<string, number>();
+    allOperators.forEach(op => operatorNameToId.set(op.name, op.id));
+
+    // Step 5: Calculate averages and save to historical UPH table
     console.log("💾 Clearing and rebuilding historical UPH table...");
     await db.delete(historicalUph);
 
@@ -166,17 +171,21 @@ export async function calculateFixedUPH() {
         // Calculate average UPH across all MOs
         group.averageUph = group.moUphValues.reduce((sum, uph) => sum + uph, 0) / group.moUphValues.length;
 
-        uphRecords.push({
-          operator: group.operatorName,
-          workCenter: group.workCenter,
-          routing: group.routing,
-          operation: group.operations.join(', '),
-          totalQuantity: Math.round(group.totalQuantity),
-          totalHours: parseFloat(group.totalHours.toFixed(4)),
-          unitsPerHour: parseFloat(group.averageUph.toFixed(2)),
-          observations: group.totalObservations,
-          dataSource: 'production_id_grouped'
-        });
+        const operatorId = operatorNameToId.get(group.operatorName);
+        if (operatorId) {
+          uphRecords.push({
+            operatorId,
+            operator: group.operatorName,
+            workCenter: group.workCenter,
+            routing: group.routing,
+            operation: group.operations.join(', '),
+            totalQuantity: Math.round(group.totalQuantity),
+            totalHours: parseFloat(group.totalHours.toFixed(4)),
+            unitsPerHour: parseFloat(group.averageUph.toFixed(2)),
+            observations: group.totalObservations,
+            dataSource: 'production_id_grouped'
+          });
+        }
       }
     }
 
@@ -218,7 +227,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     WHERE work_cycles_operator_rec_name = ${operator}
       AND work_cycles_work_center_rec_name LIKE '%' || ${workCenter} || '%'
       AND work_production_routing_rec_name = ${routing}
-      AND (work_cycles_state = 'done' OR work_cycles_state IS NULL)
+      AND (state = 'done' OR state IS NULL)
       AND work_cycles_duration > 0
       AND work_production_quantity > 0
     GROUP BY 
