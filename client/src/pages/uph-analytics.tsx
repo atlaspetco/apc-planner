@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search, AlertTriangle, Brain } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
+import { AnomalyDetailModal } from "@/components/dashboard/anomaly-detail-modal";
 import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
 
 interface UphTableData {
@@ -169,10 +170,25 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   };
 }
 
+interface AnomalyDetectionResult {
+  moNumber: string;
+  productionId: number;
+  workCycleIds: string[];
+  quantity: number;
+  durationHrs: number;
+  computedUPH: number;
+  cohortMedianUPH: number;
+  cohortSampleSize: number;
+  productName: string;
+  operatorName: string;
+  workCenter: string;
+}
+
 export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
+  const [anomalyDetectionEnabled, setAnomalyDetectionEnabled] = useState<boolean>(false);
   const [windowDays, setWindowDays] = useState<7 | 30 | 180>(30);
   const [selectedUphDetails, setSelectedUphDetails] = useState<{
     operatorName: string;
@@ -180,17 +196,31 @@ export default function UphAnalytics() {
     routing: string;
     uphValue: number;
   } | null>(null);
+  const [selectedAnomaly, setSelectedAnomaly] = useState<AnomalyDetectionResult | null>(null);
+  const [anomalies, setAnomalies] = useState<AnomalyDetectionResult[]>([]);
 
-  // Get UPH data from historical table
-  const { data: rawUphData, isLoading: uphLoading, isRefetching, refetch } = useQuery({
-    queryKey: ["/api/uph-data"],
+  // Get UPH data with optional anomaly detection
+  const { data: uphResponse, isLoading: uphLoading, isRefetching, refetch } = useQuery({
+    queryKey: ["/api/uph", { window: windowDays, anomalyDetection: anomalyDetectionEnabled ? '1' : '0' }],
     queryFn: async () => {
-      const response = await fetch("/api/uph-data");
-      if (!response.ok) throw new Error("Failed to fetch UPH data");
-      return response.json();
+      if (anomalyDetectionEnabled) {
+        const response = await fetch(`/api/uph?window=${windowDays}&anomalyDetection=1`);
+        if (!response.ok) throw new Error("Failed to fetch UPH data with anomaly detection");
+        return response.json();
+      } else {
+        const response = await fetch("/api/uph-data");
+        if (!response.ok) throw new Error("Failed to fetch UPH data");
+        const data = await response.json();
+        return { uphData: data, anomalies: [], filteredAverages: {} };
+      }
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  // Extract data from response
+  const rawUphData = uphResponse?.uphData || uphResponse;
+  const detectedAnomalies = uphResponse?.anomalies || [];
+  const filteredAverages = uphResponse?.filteredAverages || {};
 
   // Transform raw UPH data to table format
   const uphData = (() => {
@@ -280,8 +310,23 @@ export default function UphAnalytics() {
     return { max, min };
   };
 
-  const getUphBadgeVariant = (uph: number | null, workCenter?: string, routingName?: string) => {
+  // Helper function to check if operator+workCenter+routing has anomalies
+  const hasAnomaliesForOperator = (operatorName: string, workCenter: string, routingName: string) => {
+    if (!anomalyDetectionEnabled || !detectedAnomalies) return false;
+    return detectedAnomalies.some(anomaly => 
+      anomaly.operatorName === operatorName && 
+      anomaly.workCenter === workCenter && 
+      anomaly.productName === routingName
+    );
+  };
+
+  const getUphBadgeVariant = (uph: number | null, workCenter?: string, routingName?: string, operatorName?: string) => {
     if (uph === null || uph === undefined) return "outline";
+    
+    // Check for anomalies first
+    if (anomalyDetectionEnabled && operatorName && workCenter && routingName && hasAnomaliesForOperator(operatorName, workCenter, routingName)) {
+      return "destructive"; // Red for anomalies
+    }
     
     if (workCenter && routingName) {
       const { max, min } = getRoutingWorkCenterExtremes(routingName, workCenter);
@@ -360,6 +405,19 @@ export default function UphAnalytics() {
             </SelectContent>
           </Select>
           
+          {/* AI Anomaly Detection Toggle */}
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="anomaly-detection"
+              checked={anomalyDetectionEnabled}
+              onCheckedChange={setAnomalyDetectionEnabled}
+            />
+            <Label htmlFor="anomaly-detection" className="text-sm flex items-center gap-1">
+              <Brain className="h-3 w-3" />
+              AI Anomaly Detection
+            </Label>
+          </div>
+          
           {/* AI Optimized Toggle */}
           <div className="flex items-center space-x-2">
             <Switch
@@ -436,6 +494,18 @@ export default function UphAnalytics() {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Anomaly Detection Banner */}
+      {anomalyDetectionEnabled && detectedAnomalies && detectedAnomalies.length > 0 && (
+        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-600" />
+            <span className="font-medium text-yellow-800">
+              ⚠️ {detectedAnomalies.length} anomalies excluded from average. Review and fix in Fulfil.
+            </span>
+          </div>
         </div>
       )}
 
@@ -520,26 +590,44 @@ export default function UphAnalytics() {
                               {routing.operators.map((operator) => (
                                 <tr key={operator.operatorId} className="border-b">
                                   <td className="py-2 font-medium">{operator.operatorName}</td>
-                                  {getOrderedWorkCenters(uphData.workCenters).map((wc) => (
-                                    <td key={wc} className="text-center py-2">
-                                      <Badge
-                                        variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
-                                        className={`min-w-[60px] ${operator.workCenterPerformance[wc] ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                                        onClick={() => {
-                                          if (operator.workCenterPerformance[wc]) {
-                                            setSelectedUphDetails({
-                                              operatorName: operator.operatorName,
-                                              workCenter: wc,
-                                              routing: routing.routingName,
-                                              uphValue: operator.workCenterPerformance[wc]
-                                            });
-                                          }
-                                        }}
-                                      >
-                                        {formatUph(operator.workCenterPerformance[wc])}
-                                      </Badge>
-                                    </td>
-                                  ))}
+                                  {getOrderedWorkCenters(uphData.workCenters).map((wc) => {
+                                    const hasAnomaly = hasAnomaliesForOperator(operator.operatorName, wc, routing.routingName);
+                                    return (
+                                      <td key={wc} className="text-center py-2">
+                                        <div className="relative">
+                                          <Badge
+                                            variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName, operator.operatorName)}
+                                            className={`min-w-[60px] ${operator.workCenterPerformance[wc] ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                                            onClick={() => {
+                                              if (operator.workCenterPerformance[wc]) {
+                                                if (hasAnomaly) {
+                                                  // Find the specific anomaly for this operator+workCenter+routing
+                                                  const anomaly = detectedAnomalies.find(a => 
+                                                    a.operatorName === operator.operatorName && 
+                                                    a.workCenter === wc && 
+                                                    a.productName === routing.routingName
+                                                  );
+                                                  if (anomaly) {
+                                                    setSelectedAnomaly(anomaly);
+                                                  }
+                                                } else {
+                                                  setSelectedUphDetails({
+                                                    operatorName: operator.operatorName,
+                                                    workCenter: wc,
+                                                    routing: routing.routingName,
+                                                    uphValue: operator.workCenterPerformance[wc]
+                                                  });
+                                                }
+                                              }
+                                            }}
+                                          >
+                                            {hasAnomaly && <AlertTriangle className="h-3 w-3 mr-1" />}
+                                            {formatUph(operator.workCenterPerformance[wc])}
+                                          </Badge>
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
                                   <td className="text-center py-2">
                                     <span className="text-sm text-muted-foreground">
                                       {operator.totalObservations}
@@ -611,6 +699,13 @@ export default function UphAnalytics() {
           uphValue={selectedUphDetails.uphValue}
         />
       )}
+
+      {/* Anomaly Detail Modal */}
+      <AnomalyDetailModal
+        isOpen={!!selectedAnomaly}
+        onClose={() => setSelectedAnomaly(null)}
+        anomaly={selectedAnomaly}
+      />
     </div>
   );
 }

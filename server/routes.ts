@@ -3520,6 +3520,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Anomaly Detection endpoints
+  app.get('/api/uph', async (req, res) => {
+    try {
+      const { window = '30', anomalyDetection = '0', productName, operatorId } = req.query;
+      const windowDays = parseInt(window as string);
+      const enableAnomalyDetection = anomalyDetection === '1';
+      
+      if (enableAnomalyDetection) {
+        const { anomalyDetectionService } = await import('./services/anomalyDetectionService.js');
+        const result = await anomalyDetectionService.detectAnomalies(
+          windowDays,
+          productName as string,
+          operatorId ? parseInt(operatorId as string) : undefined
+        );
+        
+        res.json(result);
+      } else {
+        // Return regular UPH data without anomaly detection
+        const { uphService } = await import('./services/uphService.js');
+        const uphData = await uphService.getUphTableData();
+        res.json({ uphData, anomalies: [], filteredAverages: {} });
+      }
+    } catch (error) {
+      console.error('Error fetching UPH data with anomaly detection:', error);
+      res.status(500).json({ error: 'Failed to fetch UPH data' });
+    }
+  });
+
+  app.post('/api/uph/detect', async (req, res) => {
+    try {
+      const { windowDays = 30, productName, operatorId } = req.body;
+      
+      // Start anomaly detection job
+      const { anomalyDetectionService } = await import('./services/anomalyDetectionService.js');
+      const result = await anomalyDetectionService.detectAnomalies(windowDays, productName, operatorId);
+      
+      // In a real implementation, this would return a jobId and run async
+      // For now, return the result directly
+      res.json({ 
+        jobId: `anomaly-${Date.now()}`,
+        status: 'completed',
+        result 
+      });
+    } catch (error) {
+      console.error('Error starting anomaly detection:', error);
+      res.status(500).json({ error: 'Failed to start anomaly detection' });
+    }
+  });
+
+  app.get('/api/uph/anomalies/:moNumber/comparators', async (req, res) => {
+    try {
+      const { moNumber } = req.params;
+      const { productName, quantity, operatorName, workCenter, windowDays = '30' } = req.query;
+      
+      if (!productName || !quantity || !operatorName || !workCenter) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+      }
+      
+      const { anomalyDetectionService } = await import('./services/anomalyDetectionService.js');
+      const comparators = await anomalyDetectionService.getComparatorMos(
+        productName as string,
+        parseInt(quantity as string),
+        operatorName as string,
+        workCenter as string,
+        parseInt(windowDays as string)
+      );
+      
+      res.json({ comparators });
+    } catch (error) {
+      console.error('Error fetching comparator MOs:', error);
+      res.status(500).json({ error: 'Failed to fetch comparator MOs' });
+    }
+  });
+
   // Get individual UPH records for analytics page filtering (use historical_uph table)
   app.get("/api/uph-data", async (req, res) => {
     try {

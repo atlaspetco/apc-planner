@@ -1,0 +1,95 @@
+Prompt for Replit – AI-Driven UPH Anomaly Detection
+
+Copy + paste this block into your Replit task so engineering can implement the new anomaly-handling workflow exactly as described.
+
+⸻
+
+0 Context
+	•	In Evan Crosby → Lifetime Leash → Assembly, most MO-level UPH values fall between 10–40 units / hr, but MO133475 shows 25 200 UPH.
+	•	Such outliers inflate the rolling average and mis-inform capacity planning.
+	•	We must detect and exclude statistical anomalies from the UPH average without hiding them from the table, so planners can click into the Work Cycle, correct the duration inside Fulfil, and re-compute.
+
+⸻
+
+1 Feature Flag
+
+UI toggle :  "AI Anomaly Detection"   (default = OFF)
+Location  :  UPH Analytics page header, next to date-window selector
+
+	•	When OFF → current behaviour (all MOs included).
+	•	When ON  → anomaly detection runs on Refresh; flagged MOs are excluded from the average but remain visible & highlighted.
+
+⸻
+
+2 Detection Algorithm
+	1.	Data scope = the current rolling window (7 / 30 / 180 days), after grouping by
+(product_name, work_center_category, operator_id, MO_id).
+	2.	For every product + category + operator cohort compute:
+	•	Median and IQR of MO-level UPH values.
+	•	A MO is an anomaly if
+
+UPH > Q3 + 1.5 × IQR   or   UPH < Q1 – 1.5 × IQR
+
+(Use z-score > 3 if IQR cannot be formed – e.g., < 5 samples).
+
+	3.	Collect all anomalous MOs into anomalyList[] with:
+
+{
+  moNumber,
+  productionId,
+  workCycleIds[],      // one or more
+  quantity,
+  durationHrs,
+  computedUPH,
+  cohortMedianUPH,
+  cohortSampleSize
+}
+
+
+	4.	Cache both:
+	•	filtered average (anomalies removed)
+	•	anomalyList for the window + operator + category.
+
+⸻
+
+3 UI/UX Requirements
+
+Component	Behaviour
+Banner	After Refresh with toggle ON → “⚠️ 5 anomalies excluded from average. Review and fix in Fulfil.”
+Table Row	Outlier rows keep their place, but the UPH pill gets a red outline + tooltip “Anomaly – excluded from average”.
+Side Drawer / Modal	Clicking the red pill opens a drawer listing:• This MO’s cycles & duration• Comparator MOs (same product & ±20 % quantity) with their durations & UPH• “Open in Fulfil” button for every Work Cycle (deep-link: https://apc.fulfil.io/#/model/work.cycle/<cycleId>).
+Average Widgets	All roll-up tiles & graphs use the filtered UPH when toggle ON, raw UPH when OFF.
+
+
+⸻
+
+4 Back-end End-points
+
+GET /uph?window=30&anomalyDetection=1   → { uphData[], anomalies[] }
+
+POST /uph/detect
+Body: { windowDays, productName?, operatorId? }   // optional filters
+ → kicks off detection job, returns jobId
+
+Use Redis cache key UPH:<window>:detected with 6-hour TTL.
+
+⸻
+
+5 Unit / Integration Tests
+	1.	Detection test – MO133475 (25 200 UPH) must be flagged when cohort median ≈ 30.
+	2.	Average test – filtered average differs from raw when anomaly exists; identical when none.
+	3.	Toggle test – turning toggle ON/OFF swaps the numbers without page reload.
+	4.	Link test – “Open in Fulfil” opens correct Work Cycle URL.
+	5.	Performance – detection run ≤ 1 s for 10 000 MOs.
+
+⸻
+
+6 Acceptance Criteria
+	•	Outliers are visually indicated but never removed from the table.
+	•	Filtered averages drive every capacity calculation when toggle ON.
+	•	Planner can reach the exact Work Cycle in Fulfil in ≤1 click.
+	•	All tests in §5 pass in CI.
+
+⸻
+
+Cursor / Replit, implement the above.  Ensure the anomaly detection pipeline, UI hooks, and average-calculation service all share one source of truth so UPH values remain consistent everywhere.
