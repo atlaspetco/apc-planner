@@ -182,7 +182,7 @@ export default function UphAnalytics() {
   } | null>(null);
 
   // Get UPH data from historical table
-  const { data: rawUphData, isLoading: uphLoading } = useQuery({
+  const { data: rawUphData, isLoading: uphLoading, isRefetching } = useQuery({
     queryKey: ["/api/uph-data"],
     queryFn: () => apiRequest("GET", "/api/uph-data"),
     staleTime: 5 * 60 * 1000,
@@ -225,16 +225,11 @@ export default function UphAnalytics() {
                                 detectAnomaliesMutation.isPending || 
                                 calculateCleanUphMutation.isPending;
 
-  // Refresh handler - uses standardized calculation
+  // Refresh handler - refreshes the UPH data
   const handleRefresh = () => {
-    console.log('UPH Analytics refresh initiated - processing latest work cycles data');
-    if (aiOptimized) {
-      // Run AI-optimized refresh: detect anomalies then calculate clean UPH
-      calculateCleanUphMutation.mutate();
-    } else {
-      // Use standardized calculation job
-      calculate();
-    }
+    console.log('UPH Analytics refresh initiated - reloading historical UPH data');
+    // Invalidate and refetch the UPH data
+    queryClient.invalidateQueries({ queryKey: ["/api/uph-data"] });
   };
 
   const toggleRouting = (routingName: string) => {
@@ -362,10 +357,10 @@ export default function UphAnalytics() {
           {/* Refresh Button */}
           <Button
             onClick={handleRefresh}
-            disabled={isAnyOperationRunning}
+            disabled={isRefetching}
             variant="default"
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
