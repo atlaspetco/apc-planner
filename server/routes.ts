@@ -5226,12 +5226,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const wo = po.workOrders?.find(w => w.id === assignment.workOrderId);
         if (!wo) continue;
 
-        // Get UPH data
+        // Get UPH data using operator name (not ID)
         const uphData = await db
           .select()
           .from(historicalUph)
           .where(and(
-            eq(historicalUph.operatorId, operatorId),
+            eq(historicalUph.operator, operator.name),
             eq(historicalUph.workCenter, wo.workCenter),
             eq(historicalUph.routing, po.routing)
           ))
@@ -5257,12 +5257,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const assignmentDetails = [];
 
       for (const { workOrderId, productionOrder, workOrder } of workOrdersToAssign) {
-        // Get UPH data for this combination
+        // Get UPH data for this combination using operator name (not ID)
         const uphData = await db
           .select()
           .from(historicalUph)
           .where(and(
-            eq(historicalUph.operatorId, operatorId),
+            eq(historicalUph.operator, operator.name),
             eq(historicalUph.workCenter, workCenter),
             eq(historicalUph.routing, routing)
           ))
