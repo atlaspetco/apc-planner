@@ -1024,49 +1024,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all active operators
       const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
       
-      // Get standardized UPH data
-      const { calculateStandardizedUph } = await import("./services/uphService.js");
-      const { mapWorkCenterToCategory } = await import("./utils/categoryMap.js");
+      // Get historical UPH data from database directly
+      const historicalUphData = await db.select().from(historicalUph);
       
-      // Map work center to category
-      const workCenterCategory = mapWorkCenterToCategory(workCenter as string);
-      
-      // Get UPH data for all operators for this product/category
-      const uphResults = await calculateStandardizedUph({
-        productName: productName as string || routing as string, // Use routing as product name fallback
-        workCenterCategory: workCenterCategory || undefined,
-        windowDays: 30 // Default to 30 days
-      });
-      
-      // Build UPH map from standardized data
+      // Build UPH map from historical data using operator name as key
       const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
       
-      uphResults.forEach(result => {
-        if (result.dataAvailable) {
-          const key = `${result.operatorId}-${result.workCenterCategory}-${result.productName}`;
-          uphMap.set(key, {
-            uph: result.averageUph,
-            observations: result.totalObservations,
-            operator: result.operatorName
-          });
-        }
+      historicalUphData.forEach(uph => {
+        // Create key using operator name (not ID), work center, and routing
+        const key = `${uph.operator}-${uph.workCenter}-${uph.routing}`;
+        uphMap.set(key, {
+          uph: uph.unitsPerHour,
+          observations: uph.observations,
+          operator: uph.operator || ''
+        });
       });
 
       // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
       const qualifiedOperators = allOperators
         .filter(op => {
-          // Use standardized key format: operatorId-category-productName
-          const category = workCenterCategory || 'Unknown';
-          const product = productName as string || routing as string || '';
-          
           // Handle product name mapping for variants
-          let effectiveProduct = product;
-          if (product === 'Lifetime Air Harness' || routing === 'Lifetime Air Harness') {
-            effectiveProduct = 'Lifetime Harness';
+          let effectiveRouting = routing as string || '';
+          if (routing === 'Lifetime Air Harness') {
+            effectiveRouting = 'Lifetime Harness';
           }
           
-          // Create key to match standardized UPH map
-          const uphKey = `${op.id}-${category}-${effectiveProduct}`;
+          // Create key to match historical UPH map: operatorName-workCenter-routing
+          const uphKey = `${op.name}-${workCenter}-${effectiveRouting}`;
           const hasUphData = uphMap.has(uphKey);
           
           // Debug logging for qualification check
@@ -1103,18 +1087,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return true;
         })
         .map(op => {
-          // Get UPH performance using standardized calculation
-          const category = workCenterCategory || 'Unknown';
-          const product = productName as string || routing as string || '';
-          
           // Handle product name mapping for variants
-          let effectiveProduct = product;
-          if (product === 'Lifetime Air Harness' || routing === 'Lifetime Air Harness') {
-            effectiveProduct = 'Lifetime Harness';
+          let effectiveRouting = routing as string || '';
+          if (routing === 'Lifetime Air Harness') {
+            effectiveRouting = 'Lifetime Harness';
           }
           
-          // Look up standardized UPH data
-          const uphKey = `${op.id}-${category}-${effectiveProduct}`;
+          // Look up historical UPH data using name-based key
+          const uphKey = `${op.name}-${workCenter}-${effectiveRouting}`;
           const performanceData = uphMap.get(uphKey) || { uph: 0, observations: 0 };
           
           return {
