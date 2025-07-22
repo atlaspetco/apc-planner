@@ -235,7 +235,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       SUM(work_cycles_duration) as total_duration_seconds,
       COUNT(*) as cycle_count,
       STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations,
-      STRING_AGG(DISTINCT work_cycles_work_id::text, ', ') as work_order_ids
+      STRING_AGG(DISTINCT work_cycles_id::text, ', ') as work_order_ids
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
       AND ${sql.raw(workCenterCondition)}
