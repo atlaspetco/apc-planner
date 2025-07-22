@@ -166,12 +166,6 @@ export async function calculateAccurateUPH() {
       // Calculate UPH for this MO using MO quantity (not sum of cycle quantities)
       const moUph = moGroup.moQuantity / totalHours;
       
-      // Filter out unrealistic UPH values
-      if (moUph < 1 || moUph > 500) {
-        console.log(`⚠️  Skipping unrealistic UPH: ${moGroup.operatorName} - ${moGroup.moNumber} = ${moUph.toFixed(2)} UPH`);
-        continue;
-      }
-      
       // Group by operator + work center + routing for averaging
       const groupKey = `${moGroup.operatorName}|${moGroup.workCenter}|${moGroup.routing}`;
       
