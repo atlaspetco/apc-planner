@@ -179,6 +179,9 @@ export async function calculateCoreUph(
     const group = moGroupedData.get(groupKey)!;
     group.cycleCount++;
     
+    // CRITICAL FIX: Add duration ONLY within the same work center for this operator
+    group.totalDurationSeconds += cycle.work_cycles_duration;
+    
     // Get MO quantity - CRITICAL: Use production order quantity, not cycle quantity
     const moQuantity = moQuantityMap.get(cycle.work_production_number) || 
                       cycle.work_production_quantity || 

@@ -77,7 +77,7 @@ export default function OperatorCard({
   });
 
   const handleToggle = (field: keyof Operator, value: boolean, itemToToggle?: string) => {
-    let updatedValue;
+    let updatedValue: boolean | string[];
     
     if (field === 'isActive') {
       updatedValue = value;
@@ -92,6 +92,8 @@ export default function OperatorCard({
         // Remove item
         updatedValue = currentArray.filter(item => item !== itemToToggle);
       }
+    } else {
+      return; // Early return if no valid case
     }
 
     setLocalOperator(prev => ({ ...prev, [field]: updatedValue }));
@@ -237,7 +239,6 @@ export default function OperatorCard({
                   <Switch
                     checked={isEnabled}
                     onCheckedChange={(checked) => handleToggle('workCenters', checked, workCenter)}
-                    size="sm"
                   />
                 </div>
               );
@@ -267,7 +268,6 @@ export default function OperatorCard({
                   <Switch
                     checked={isEnabled}
                     onCheckedChange={(checked) => handleToggle('operations', checked, operation)}
-                    size="sm"
                   />
                 </div>
               );
@@ -334,7 +334,6 @@ export default function OperatorCard({
                     <Switch
                       checked={isEnabled}
                       onCheckedChange={(checked) => handleToggle('routings', checked, routing)}
-                      size="sm"
                     />
                   </div>
                 );
