@@ -4013,16 +4013,176 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Calculate UPH from work cycles
   app.post("/api/uph/calculate-from-cycles", async (req: Request, res: Response) => {
     try {
-      const { calculateUphFromWorkCycles } = await import("./work-cycles-import.js");
-      const result = await calculateUphFromWorkCycles();
-      
+      console.log("Starting UPH calculation from work cycles data...");
+
+      // Clear existing UPH data
+      await db.delete(uphData);
+      console.log("Cleared existing UPH data");
+
+      // Get all work cycles with valid data
+      const workCyclesData = await db
+        .select()
+        .from(workCycles)
+        .where(and(
+          isNotNull(workCycles.work_cycles_operator_rec_name),
+          isNotNull(workCycles.work_cycles_work_center_rec_name),
+          isNotNull(workCycles.work_production_routing_rec_name),
+          gt(workCycles.work_cycles_duration, 120), // minimum 2 minutes
+          gt(workCycles.work_cycles_quantity_done, 0)
+        ));
+
+      console.log(`Processing ${workCyclesData.length} valid work cycles...`);
+
+      // Group by operator + work center + routing + production ID
+      const groupedData = new Map<string, {
+        operatorName: string;
+        workCenter: string;
+        productRouting: string;
+        cycles: any[];
+        totalQuantity: number;
+        totalDuration: number;
+      }>();
+
+      for (const cycle of workCyclesData) {
+        // Standardize work center names
+        let workCenter = cycle.work_cycles_work_center_rec_name || 'Unknown';
+        if (workCenter.includes('Assembly') || workCenter.includes('Sewing') || workCenter.includes('Rope')) {
+          workCenter = 'Assembly';
+        } else if (workCenter.includes('Cutting')) {
+          workCenter = 'Cutting';
+        } else if (workCenter.includes('Packaging')) {
+          workCenter = 'Packaging';
+        }
+
+        const key = `${cycle.work_cycles_operator_rec_name}-${workCenter}-${cycle.work_production_routing_rec_name}`;
+        
+        if (!groupedData.has(key)) {
+          groupedData.set(key, {
+            operatorName: cycle.work_cycles_operator_rec_name,
+            workCenter: workCenter,
+            productRouting: cycle.work_production_routing_rec_name,
+            cycles: [],
+            totalQuantity: 0,
+            totalDuration: 0
+          });
+        }
+
+        const group = groupedData.get(key)!;
+        group.cycles.push(cycle);
+        group.totalQuantity += cycle.work_cycles_quantity_done || 0;
+        group.totalDuration += cycle.work_cycles_duration || 0;
+      }
+
+      // Get existing operators to map names to IDs
+      const existingOperators = await db.select().from(operators);
+      const operatorNameToId = new Map(
+        existingOperators.map(op => [op.name, op.id])
+      );
+
+      console.log(`Found ${existingOperators.length} existing operators:`, existingOperators.map(op => op.name));
+
+      // Get unique operator names from work cycles
+      const workCycleOperatorNames = [...new Set(workCyclesData.map(wc => wc.work_cycles_operator_rec_name).filter(Boolean))];
+      console.log(`Unique operator names in work cycles:`, workCycleOperatorNames);
+
+      // Check for missing operators and create them
+      const missingOperators = workCycleOperatorNames.filter(name => !operatorNameToId.has(name));
+      console.log(`Missing operators that need to be created:`, missingOperators);
+
+      // Create missing operators
+      if (missingOperators.length > 0) {
+        const newOperators = missingOperators.map(name => ({
+          name: name,
+          email: `${name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
+          availableHours: 40,
+          workCenters: JSON.stringify(['Assembly', 'Cutting', 'Packaging']),
+          operations: JSON.stringify(['Assembly', 'Cutting', 'Packaging']),
+          routings: JSON.stringify(['Lifetime Leash', 'Lifetime Collar', 'Lifetime Pouch']),
+          isActive: true,
+          calculationPeriod: 180,
+          slackUserId: null,
+          lastActiveDate: new Date()
+        }));
+
+        const insertedOperators = await db.insert(operators).values(newOperators).returning();
+        console.log(`Created ${insertedOperators.length} new operators:`, insertedOperators.map(op => op.name));
+
+        // Update the mapping with new operators
+        insertedOperators.forEach(op => {
+          operatorNameToId.set(op.name, op.id);
+        });
+      }
+
+      // Calculate UPH for each group
+      const uphResults = [];
+
+      for (const [key, group] of groupedData) {
+        if (group.totalDuration > 0 && group.totalQuantity > 0) {
+          const totalHours = group.totalDuration / 3600; // Convert seconds to hours
+          const uph = group.totalQuantity / totalHours;
+
+          // Apply outlier filtering (keep UPH under 1000)
+          if (uph > 0 && uph < 1000) {
+            // Find the operator ID for this operator name
+            const operatorId = operatorNameToId.get(group.operatorName);
+            
+            if (operatorId) {
+              uphResults.push({
+                operatorId: operatorId,
+                operatorName: group.operatorName,
+                workCenter: group.workCenter,
+                operation: group.workCenter, // Use work center as operation for now
+                productRouting: group.productRouting,
+                uph: Math.round(uph * 100) / 100, // Round to 2 decimal places
+                observationCount: group.cycles.length,
+                totalDurationHours: Math.round(totalHours * 100) / 100,
+                totalQuantity: group.totalQuantity,
+                dataSource: 'work_cycles',
+                calculationPeriod: 180,
+                createdAt: new Date(),
+                updatedAt: new Date()
+              });
+            } else {
+              console.log(`ERROR: Still missing operator ID for: ${group.operatorName}`);
+            }
+          }
+        }
+      }
+
+      // Store results in database
+      if (uphResults.length > 0) {
+        console.log(`Attempting to store ${uphResults.length} UPH calculations...`);
+        console.log("Sample UPH result:", uphResults[0]);
+        
+        // Check for any invalid operator IDs before inserting
+        const invalidResults = uphResults.filter(r => !r.operatorId || r.operatorId < 1);
+        if (invalidResults.length > 0) {
+          console.log(`Found ${invalidResults.length} invalid operator ID results:`, invalidResults.map(r => ({operatorName: r.operatorName, operatorId: r.operatorId})));
+        }
+
+        // Only insert valid results
+        const validResults = uphResults.filter(r => r.operatorId && r.operatorId > 0);
+        if (validResults.length > 0) {
+          await db.insert(uphData).values(validResults);
+          console.log(`Successfully stored ${validResults.length} UPH calculations`);
+        }
+      }
+
       res.json({
         success: true,
-        message: 'UPH calculated from work cycles',
-        ...result
+        message: `Calculated UPH from ${workCyclesData.length} work cycles`,
+        totalCalculations: uphResults.length,
+        groupsProcessed: groupedData.size,
+        workCyclesProcessed: workCyclesData.length,
+        averageUphByWorkCenter: {
+          Assembly: Math.round(uphResults.filter(r => r.workCenter === 'Assembly').reduce((sum, r) => sum + r.uph, 0) / uphResults.filter(r => r.workCenter === 'Assembly').length || 0),
+          Cutting: Math.round(uphResults.filter(r => r.workCenter === 'Cutting').reduce((sum, r) => sum + r.uph, 0) / uphResults.filter(r => r.workCenter === 'Cutting').length || 0),
+          Packaging: Math.round(uphResults.filter(r => r.workCenter === 'Packaging').reduce((sum, r) => sum + r.uph, 0) / uphResults.filter(r => r.workCenter === 'Packaging').length || 0)
+        }
       });
       
     } catch (error) {
+      console.error("Error calculating UPH from work cycles:", error);
       res.status(500).json({ 
         success: false,
         error: "Failed to calculate UPH from work cycles",
