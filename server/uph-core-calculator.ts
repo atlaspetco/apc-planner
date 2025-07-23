@@ -131,23 +131,7 @@ export async function calculateCoreUph(
     console.log(`Date filtering bypassed: ${filteredCycles.length} cycles included`);
   }
   
-  // STEP 1: First aggregate ALL operations within the same MO to get total MO duration
-  const moTotalDurations = new Map<string, number>();
-  
-  // Calculate total duration for each MO across ALL work centers and operations
-  filteredCycles.forEach(cycle => {
-    if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
-      return;
-    }
-    
-    const moNumber = cycle.work_production_number;
-    const currentTotal = moTotalDurations.get(moNumber) || 0;
-    moTotalDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
-  });
-  
-  console.log(`📊 Calculated total durations for ${moTotalDurations.size} MOs`);
-  
-  // STEP 2: Now group by Operator + Work Center + Routing + MO using TOTAL MO duration
+  // STEP 1: Group by Operator + Work Center + Routing + MO using INDIVIDUAL OPERATOR duration
   const moGroupedData = new Map<string, MoGroupData>();
   
   filteredCycles.forEach(cycle => {
@@ -169,24 +153,21 @@ export async function calculateCoreUph(
     const groupKey = `${cycle.work_cycles_operator_rec_name}|${consolidatedWC}|${routing}|${cycle.work_production_number}`;
     
     if (!moGroupedData.has(groupKey)) {
-      // CRITICAL FIX: Use total MO duration instead of work center specific duration
-      const totalMoDuration = moTotalDurations.get(cycle.work_production_number) || 0;
-      
       moGroupedData.set(groupKey, {
         operatorName: cycle.work_cycles_operator_rec_name,
         workCenter: consolidatedWC,
         routing,
         moNumber: cycle.work_production_number,
-        totalDurationSeconds: totalMoDuration, // Use TOTAL MO duration, not individual work center duration
+        totalDurationSeconds: 0, // Will accumulate individual operator's duration only
         moQuantity: 0,
         cycleCount: 0
       });
       
       // Debug specific case
-      if (cycle.work_cycles_operator_rec_name === 'Dani Mayta' && 
-          consolidatedWC === 'Assembly' && 
-          routing === 'Lifetime Pouch') {
-        console.log(`\n🔍 DEBUG MO ${cycle.work_production_number}: Work center duration would be ${cycle.work_cycles_duration}s, but using TOTAL MO duration: ${totalMoDuration}s`);
+      if (cycle.work_cycles_operator_rec_name === 'Devin Cann' && 
+          consolidatedWC === 'Packaging' && 
+          cycle.work_production_number === 'MO94699') {
+        console.log(`\n🔍 DEBUG MO ${cycle.work_production_number}: Using individual operator duration for ${cycle.work_cycles_operator_rec_name}`);
       }
     }
     
