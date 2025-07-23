@@ -102,7 +102,7 @@ export async function calculateFixedUPH() {
       const operations = (po.operations?.toString() || '').split('|').filter(op => op.trim());
 
       // Filter out entries with too short duration to avoid division by near-zero
-      if (productionId && moQuantity > 0 && totalDurationSeconds >= 300) { // Minimum 5 minutes
+      if (productionId && moQuantity > 0 && totalDurationSeconds >= 30) { // Minimum 30 seconds
         const totalDurationHours = totalDurationSeconds / 3600;
         const uph = moQuantity / totalDurationHours;
 
@@ -145,9 +145,21 @@ export async function calculateFixedUPH() {
         const upperBound = mean + (2 * stdDev);
 
         const filteredGroup = group.filter(po => {
-          const isValid = po.uph >= lowerBound && po.uph <= upperBound;
+          // Apply absolute UPH bounds first
+          const absoluteMaxUph = 1000;
+          const isWithinAbsoluteBounds = po.uph <= absoluteMaxUph && po.uph >= 0.1;
+          
+          // Apply statistical bounds
+          const isWithinStatisticalBounds = po.uph >= lowerBound && po.uph <= upperBound;
+          
+          const isValid = isWithinAbsoluteBounds && isWithinStatisticalBounds;
+          
           if (!isValid) {
-            console.log(`🚫 Filtering outlier MO: ${po.moNumber} (${po.operatorName}/${po.workCenter}/${po.routing}) with ${po.uph.toFixed(2)} UPH`);
+            if (!isWithinAbsoluteBounds) {
+              console.log(`🚫 Filtering corrupted data MO: ${po.moNumber} (${po.operatorName}/${po.workCenter}/${po.routing}) with ${po.uph.toFixed(2)} UPH`);
+            } else {
+              console.log(`🚫 Filtering statistical outlier MO: ${po.moNumber} (${po.operatorName}/${po.workCenter}/${po.routing}) with ${po.uph.toFixed(2)} UPH`);
+            }
           }
           return isValid;
         });
@@ -284,7 +296,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       AND ${sql.raw(workCenterCondition)}
       AND work_production_routing_rec_name = ${routing}
       AND (state = 'done' OR state IS NULL)
-      AND work_cycles_duration >= 300  -- Minimum 5 minutes to avoid unrealistic UPH calculations
+      AND work_cycles_duration >= 30  -- Minimum 30 seconds to filter only corrupted data
       AND work_cycles_quantity_done > 0
     ORDER BY work_production_id DESC
   `);
@@ -306,13 +318,26 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
 
   console.log(`📊 Outlier detection: mean=${mean.toFixed(2)}, stdDev=${stdDev.toFixed(2)}, bounds=[${lowerBound.toFixed(2)}, ${upperBound.toFixed(2)}]`);
 
-  // Step 2: Filter out outliers (more than 2 standard deviations from mean)
+  // Step 2: Filter out outliers using both statistical and absolute bounds
   const moDetailsResult = {
     rows: rawCyclesResult.rows.filter(row => {
       const uph = parseFloat(row.calculated_uph?.toString() || '0');
-      const isValid = uph >= lowerBound && uph <= upperBound;
+      
+      // Apply absolute UPH cap to filter corrupted data like 24000 UPH
+      const absoluteMaxUph = 1000; // No legitimate manufacturing should exceed 1000 UPH
+      const isWithinAbsoluteBounds = uph <= absoluteMaxUph && uph >= 0.1;
+      
+      // Apply statistical outlier detection for more refined filtering
+      const isWithinStatisticalBounds = uph >= lowerBound && uph <= upperBound;
+      
+      const isValid = isWithinAbsoluteBounds && isWithinStatisticalBounds;
+      
       if (!isValid) {
-        console.log(`🚫 Filtering outlier: MO${row.mo_number} with ${uph.toFixed(2)} UPH (outside bounds)`);
+        if (!isWithinAbsoluteBounds) {
+          console.log(`🚫 Filtering corrupted data: MO${row.mo_number} with ${uph.toFixed(2)} UPH (absolute bounds violation)`);
+        } else {
+          console.log(`🚫 Filtering statistical outlier: MO${row.mo_number} with ${uph.toFixed(2)} UPH (outside 2σ bounds)`);
+        }
       }
       return isValid;
     })
