@@ -5339,8 +5339,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ))
           .limit(1);
 
-        if (uphData.length > 0 && uphData[0].unitsPerHour > 0) {
-          currentWorkloadHours += po.quantity / uphData[0].unitsPerHour;
+        if (currentUphData.length > 0 && currentUphData[0].uph > 0) {
+          currentWorkloadHours += po.quantity / currentUphData[0].uph;
         }
       }
 
@@ -5370,7 +5370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ))
           .limit(1);
 
-        if (uphData.length === 0 || uphData[0].unitsPerHour === 0) {
+        if (currentUphData.length === 0 || currentUphData[0].uph === 0) {
           assignmentDetails.push({
             workOrderId,
             quantity: productionOrder.quantity,
@@ -5382,14 +5382,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        const estimatedHours = productionOrder.quantity / uphData[0].unitsPerHour;
+        const estimatedHours = productionOrder.quantity / currentUphData[0].uph;
         totalNewHours += estimatedHours;
         
         assignmentDetails.push({
           workOrderId,
           quantity: productionOrder.quantity,
           estimatedHours,
-          uph: uphData[0].unitsPerHour,
+          uph: currentUphData[0].uph,
           skip: false
         });
       }
