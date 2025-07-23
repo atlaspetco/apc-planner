@@ -263,6 +263,43 @@ export async function calculateCoreUph(
   
   console.log(`=== CORE UPH CALCULATOR COMPLETE: ${results.length} results ===`);
   
+  // Save corrected UPH results to database
+  const { db: database } = await import("./db.js");
+  const { uphData } = await import("../shared/schema.js");
+  const { eq } = await import("drizzle-orm");
+  
+  // Clear existing UPH data
+  await database.delete(uphData);
+  console.log("🗑️ Cleared existing UPH data");
+  
+  // Insert corrected UPH data
+  for (const result of results) {
+    if (result.unitsPerHour > 0 && result.observations > 0) {
+      // Find operator ID
+      const { operators } = await import("../shared/schema.js");
+      const [operator] = await database.select().from(operators).where(eq(operators.name, result.operatorName));
+      
+      if (operator) {
+        await database.insert(uphData).values({
+          operatorId: operator.id,
+          operatorName: result.operatorName,
+          workCenter: result.workCenter,
+          operation: result.workCenter, // Use work center as operation for now
+          routing: result.routing,
+          productRouting: result.routing, // Fix: Add required productRouting field
+          uph: result.unitsPerHour,
+          observationCount: result.observations,
+          totalDurationHours: result.observations, // Placeholder, will be calculated properly
+          totalQuantity: Math.round(result.unitsPerHour * result.observations), // Approximate
+          dataSource: 'work_cycles',
+          lastUpdated: new Date().toISOString()
+        });
+      }
+    }
+  }
+  
+  console.log(`✅ Saved ${results.length} corrected UPH calculations to database`);
+  
   return results;
 }
 
