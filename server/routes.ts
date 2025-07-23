@@ -1941,6 +1941,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // API endpoint to completely rebuild all work cycles from Fulfil API
+  app.post("/api/work-cycles/complete-rebuild", async (req, res) => {
+    try {
+      console.log("🚀 Starting complete work cycles rebuild from API...");
+      
+      // Import rebuild functions
+      const { fetchAllWorkCycles, insertAllWorkCycles, verifyCompleteDataIntegrity } = 
+        await import("./complete-work-cycles-rebuild.js");
+      
+      // Fetch all work cycles from API
+      const allCycles = await fetchAllWorkCycles();
+      
+      if (allCycles.length === 0) {
+        return res.json({
+          success: false,
+          message: "No work cycles retrieved from Fulfil API",
+          rebuiltCount: 0
+        });
+      }
+      
+      // Insert all cycles into database
+      const insertedCount = await insertAllWorkCycles(allCycles);
+      
+      // Verify data integrity
+      await verifyCompleteDataIntegrity();
+      
+      console.log(`✅ Complete rebuild: ${insertedCount} work cycles imported`);
+      
+      res.json({
+        success: true,
+        message: `Successfully rebuilt complete work cycles dataset with ${insertedCount} authentic records`,
+        cyclesFetched: allCycles.length,
+        cyclesInserted: insertedCount,
+        successRate: Math.round((insertedCount / allCycles.length) * 100)
+      });
+      
+    } catch (error) {
+      console.error("❌ Error during complete rebuild:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to complete work cycles rebuild",
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   // API endpoint to rebuild corrupted work cycles data from Fulfil API
   app.post("/api/work-cycles/rebuild-corrupted", async (req, res) => {
     try {
