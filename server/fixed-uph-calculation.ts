@@ -277,20 +277,20 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     workCenterCondition = `work_cycles_work_center_rec_name LIKE '%' || '${workCenter}' || '%'`;
   }
 
-  // CORRECT APPROACH: Calculate UPH per individual work cycle with outlier filtering
-  // Each work cycle represents a completed work order with its own quantity_done and duration
+  // CORRECTED APPROACH: Aggregate work cycles by MO to match main calculation methodology
+  // This ensures details modal shows same UPH values as main table
   const rawCyclesResult = await db.execute(sql`
     SELECT 
       work_production_id as production_id,
       work_production_number as mo_number,
-      work_cycles_quantity_done as wo_quantity,
+      work_production_quantity as mo_quantity,
       work_production_create_date as create_date,
       work_cycles_work_center_rec_name as actual_work_center,
-      work_cycles_duration as total_duration_seconds,
-      1 as cycle_count,
-      work_operation_rec_name as operations,
-      work_cycles_id::text as work_order_ids,
-      (work_cycles_quantity_done / (work_cycles_duration / 3600.0)) as calculated_uph
+      SUM(work_cycles_duration) as total_duration_seconds,
+      COUNT(*) as cycle_count,
+      STRING_AGG(DISTINCT work_operation_rec_name, ' | ') as operations,
+      STRING_AGG(DISTINCT work_cycles_id::text, ', ') as work_order_ids,
+      (work_production_quantity / (SUM(work_cycles_duration) / 3600.0)) as calculated_uph
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
       AND ${sql.raw(workCenterCondition)}
@@ -298,6 +298,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       AND (state = 'done' OR state IS NULL)
       AND work_cycles_duration >= 30  -- Minimum 30 seconds to filter only corrupted data
       AND work_cycles_quantity_done > 0
+    GROUP BY work_production_id, work_production_number, work_production_quantity, work_production_create_date, work_cycles_work_center_rec_name
     ORDER BY work_production_id DESC
   `);
 
@@ -344,10 +345,10 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
   };
 
   const moDetails = moDetailsResult.rows.map(row => {
-    const woQuantity = parseFloat(row.wo_quantity?.toString() || '0');
+    const moQuantity = parseFloat(row.mo_quantity?.toString() || '0');
     const totalDurationSeconds = parseFloat(row.total_duration_seconds?.toString() || '0');
     const totalDurationHours = totalDurationSeconds / 3600;
-    const uph = woQuantity / totalDurationHours;
+    const uph = moQuantity / totalDurationHours;
 
     return {
       productionId: row.production_id,
@@ -355,7 +356,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       woNumber: row.work_order_ids?.toString() || 'N/A',
       createDate: row.create_date?.toString() || null,
       actualWorkCenter: row.actual_work_center?.toString() || '',
-      moQuantity: woQuantity, // This is now work order quantity, not MO quantity
+      moQuantity: moQuantity, // Now correctly using MO quantity for consistent calculations
       totalDurationHours: parseFloat(totalDurationHours.toFixed(4)),
       cycleCount: parseInt(row.cycle_count?.toString() || '0'),
       operations: row.operations?.toString() || '',
