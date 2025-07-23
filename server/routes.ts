@@ -1181,24 +1181,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // UPH Data - Use current active UPH data system
   app.get("/api/uph-data", async (req, res) => {
     try {
-      // Return data from current uphData table
-      const data = await db.select({
-        id: uphData.id,
-        operatorId: uphData.operatorId,
-        operatorName: uphData.operatorName,
-        workCenter: uphData.workCenter,
-        operation: uphData.operation,
-        routing: uphData.routing,
-        productRouting: uphData.routing, // Alias for backward compatibility
-        uph: uphData.uph,
-        observationCount: uphData.observationCount,
-        totalDurationHours: uphData.totalDurationHours,
-        totalQuantity: uphData.totalQuantity,
-        dataSource: uphData.dataSource,
-        lastUpdated: uphData.lastCalculated
-      }).from(uphData);
+      console.log("Fetching UPH data from database...");
       
-      res.json(data);
+      // Use raw SQL to avoid Drizzle schema issues
+      const result = await db.execute(sql`SELECT * FROM uph_data ORDER BY uph DESC`);
+      const data = result.rows;
+      
+      console.log(`Retrieved ${data.length} UPH records`);
+      
+      // Transform data to match expected frontend format
+      const transformedData = data.map((record: any) => ({
+        id: record.id,
+        operatorId: record.operator_id,
+        operatorName: record.operator_name,
+        workCenter: record.work_center,
+        operation: record.operation || record.work_center, // Use workCenter as fallback
+        routing: record.product_routing,
+        uph: record.uph,
+        observationCount: record.observation_count,
+        totalDurationHours: record.total_duration_hours,
+        totalQuantity: record.total_quantity,
+        dataSource: record.data_source,
+        lastUpdated: record.updated_at || record.created_at
+      }));
+      
+      res.json(transformedData);
     } catch (error) {
       console.error("Error fetching UPH data:", error);
       res.status(500).json({ error: "Failed to fetch UPH data" });

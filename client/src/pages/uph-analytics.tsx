@@ -173,7 +173,7 @@ export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
-  const [windowDays, setWindowDays] = useState<7 | 30 | 180>(30);
+  const [windowDays, setWindowDays] = useState<7 | 30 | 90 | 180 | 365 | 'all'>('all');
   const [selectedUphDetails, setSelectedUphDetails] = useState<{
     operatorName: string;
     workCenter: string;
@@ -348,15 +348,18 @@ export default function UphAnalytics() {
         </div>
         
         <div className="flex items-center gap-4">
-          {/* Window Days Selector */}
-          <Select value={windowDays.toString()} onValueChange={(value) => setWindowDays(parseInt(value) as 7 | 30 | 180)}>
+          {/* Time Filter Selector */}
+          <Select value={windowDays.toString()} onValueChange={(value) => setWindowDays(value === 'all' ? 'all' : parseInt(value) as 7 | 30 | 90 | 180 | 365)}>
             <SelectTrigger className="w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="7">Last 7 days</SelectItem>
-              <SelectItem value="30">Last 30 days</SelectItem>
-              <SelectItem value="180">Last 180 days</SelectItem>
+              <SelectItem value="7">1 Week</SelectItem>
+              <SelectItem value="30">1 Month</SelectItem>
+              <SelectItem value="90">3 Months</SelectItem>
+              <SelectItem value="180">6 Months</SelectItem>
+              <SelectItem value="365">12 Months</SelectItem>
+              <SelectItem value="all">All</SelectItem>
             </SelectContent>
           </Select>
           
