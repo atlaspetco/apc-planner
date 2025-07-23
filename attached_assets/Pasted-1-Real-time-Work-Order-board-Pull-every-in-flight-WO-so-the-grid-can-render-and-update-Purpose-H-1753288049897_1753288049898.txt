@@ -1,0 +1,94 @@
+1  Real-time Work-Order board
+
+Pull every in-flight WO so the grid can render and update.
+
+Purpose	HTTP	Endpoint	filter (query-string)	fields param (comma-separated)
+Load active & unfinished WOs	GET	/api/v2/model/production.work	state=request,draft,waiting,assigned,running	id,number,state,planned_date,production,work_center,work_center_category,routing_step,operation,quantity_done,priority,operator,rec_name
+Refresh single WO after an edit	GET	/api/v2/model/production.work/{id}	—	same list
+
+
+⸻
+
+2  Completed-cycle feed (for UPH & “Actual” assignments)
+
+Purpose	HTTP	Endpoint	filter	fields
+All completed cycles	GET	/api/v2/model/work.cycles	state=done	id,operator,production,work_center,work_center_category,routing_step,duration,start_date,end_date
+
+Duration returns seconds; convert to hours (÷ 3600) for the UPH formula.
+
+⸻
+
+3  Manufacturing-Order metadata (to fetch MO quantity & routing)
+
+Purpose	HTTP	Endpoint	filter	fields
+Get MO for each WO’s production id	GET	/api/v2/model/production.order	id IN (<list>)	id,product,quantity,routing,planned_date,state,priority
+
+
+⸻
+
+4  Static reference data
+
+Entity	Endpoint	fields (minimal)	Notes
+Operators (employees)	/api/v2/model/operator	id,name,active,cost_per_hour,max_weekly_hours,schedule_percent	max_weekly_hours & schedule_percent are custom fields you’ll surface in Operator Settings.
+Work-Center catalogue	/api/v2/model/production.work.center	id,name,category	Needed to map each WO to its category (e.g., Assembly).
+Routing–Operation map	/api/v2/model/production.routing.operation	id,name,routing,work_center,work_center_category,sequence,standard_time	Lets you pre-fetch operation meta for tooltips or future optimisation.
+
+
+⸻
+
+5  Mutation calls
+
+Action	HTTP	Endpoint	Payload body
+Manual or AI assign / re-assign operator	PUT	/api/v2/model/production.work/{id}	{ "operator": <operator_id> }
+Lock WO after completion (optional, but keeps grid honest)	PUT	/api/v2/model/production.work/{id}	{ "state": "done" }
+
+(All calls must include the usual Authorization: Token <API_KEY> header.)
+
+⸻
+
+6  Field catalogue (reference)
+
+Below are the ones the UI or logic explicitly touches.  Any field not listed is optional noise and can be omitted from the fields param to minimise payload size.
+
+production.work
+
+id, number, state, planned_date, production,
+work_center, work_center_category, routing_step,
+operation, quantity_done, priority, operator, rec_name
+
+work.cycles
+
+id, operator, production, work_center,
+work_center_category, routing_step, duration,
+start_date, end_date
+
+production.order
+
+id, product, quantity, routing,
+planned_date, state, priority
+
+operator
+
+id, name, active, cost_per_hour,
+max_weekly_hours, schedule_percent
+
+production.work.center
+
+id, name, category
+
+production.routing.operation
+
+id, name, routing, work_center,
+work_center_category, sequence, standard_time
+
+
+⸻
+
+How these end-points map to the app flow
+	1.	Grid load – Call #1 once on page load (and on refresh) to populate all open WOs.
+	2.	UPH engine – Nightly or on-demand job pulls #2 + #3 to recompute operator-routing-center UPH statistics.
+	3.	Assignment dropdowns – For each WO row, the front-end uses Operator list from #4 filtered by UPH table.
+	4.	Manual / AI assign – Front-end issues #5 (PUT production.work/{id}) to set the operator.
+	5.	Actual lock – When a WO finishes, Fulfil automatically creates its Work-Cycle; your polling detects state change to done, then optionally PUT the WO to state=done and disables the dropdown.
+
+These are the only calls you need to satisfy every calculation, display, and assignment rule described in the merged specification.
