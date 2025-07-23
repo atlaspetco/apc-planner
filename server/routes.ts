@@ -3494,15 +3494,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('UPH calculation details request:', { operatorName, workCenter, routing });
 
-      // Use the FIXED UPH calculator details function for authentic MO grouping
-      const { getAccurateMoDetails } = await import("./fixed-uph-calculation.js");
+      // Use the core UPH calculator details function for authentic MO grouping
+      const { getCoreUphDetails } = await import("./uph-core-calculator.js");
       
-      // Get MO-level details using production.id grouping
-      const moDetails = await getAccurateMoDetails(
+      // Get MO-level details using the core calculator
+      const detailsResult = await getCoreUphDetails(
         operatorName as string,
         workCenter as string,
         routing as string
       );
+      
+      // Convert to the expected format
+      const moDetails = detailsResult.moGroupedData.map(mo => ({
+        moNumber: mo.moNumber,
+        moQuantity: mo.moQuantity,
+        totalDurationHours: mo.totalDurationSeconds / 3600,
+        uph: mo.moQuantity / (mo.totalDurationSeconds / 3600),
+        cycleCount: mo.cycleCount
+      }));
 
       // Calculate summary statistics from MO details - BLUE methodology (average of individual MO UPH)
       const totalQuantity = moDetails.reduce((sum, mo) => sum + mo.moQuantity, 0);
