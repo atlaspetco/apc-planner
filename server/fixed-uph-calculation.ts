@@ -51,87 +51,78 @@ function transformWorkCenter(workCenter: string): string {
 }
 
 export async function calculateFixedUPH() {
-  console.log("🎯 FIXED UPH CALCULATION - Using production.id for authentic MO grouping");
+  console.log("🎯 FIXED UPH CALCULATION - Using individual work cycle calculations for authentic performance");
   
   try {
-    // Step 1: Extract work cycles grouped by production_id (authentic MO identifier)
-    const productionOrdersResult = await db.execute(sql`
+    // Step 1: Extract individual work cycles for accurate performance metrics
+    const workCyclesResult = await db.execute(sql`
       SELECT 
         work_production_id as production_id,
         work_production_number as mo_number,
         work_cycles_operator_rec_name as operator_name,
         work_cycles_work_center_rec_name as work_center_name,
         work_production_routing_rec_name as routing_name,
-        work_production_quantity as mo_quantity,
-        SUM(work_cycles_duration) as total_duration_seconds,
-        COUNT(*) as cycle_count,
-        STRING_AGG(DISTINCT work_operation_rec_name, '|') as operations
+        work_cycles_quantity_done as cycle_quantity,
+        work_cycles_duration as total_duration_seconds,
+        work_operation_rec_name as operations,
+        work_cycles_id as cycle_id
       FROM work_cycles 
       WHERE (state = 'done' OR state IS NULL)
         AND work_cycles_operator_rec_name IS NOT NULL 
         AND work_cycles_work_center_rec_name IS NOT NULL
         AND work_production_routing_rec_name IS NOT NULL
-        AND work_cycles_duration > 0
-        AND work_production_quantity > 0
+        AND work_cycles_duration >= 30  -- Minimum 30 seconds to filter corrupted data
+        AND work_cycles_quantity_done > 0
         AND work_production_id IS NOT NULL
-      GROUP BY 
-        work_production_id,
-        work_production_number,
-        work_cycles_operator_rec_name,
-        work_cycles_work_center_rec_name,
-        work_production_routing_rec_name,
-        work_production_quantity
       ORDER BY production_id, operator_name, work_center_name
     `);
 
-    const productionOrderData = productionOrdersResult.rows;
-    console.log(`✅ Found ${productionOrderData.length} production orders with work cycles`);
+    const workCycleData = workCyclesResult.rows;
+    console.log(`✅ Found ${workCycleData.length} individual work cycles`);
 
-    // Step 2: Calculate UPH per production order with minimum duration filter
-    const rawProductionOrderUphs: ProductionOrderUph[] = [];
+    // Step 2: Calculate UPH per individual work cycle
+    const rawWorkCycleUphs: ProductionOrderUph[] = [];
     
-    for (const po of productionOrderData) {
-      const productionId = parseInt(po.production_id?.toString() || '0');
-      const moNumber = po.mo_number?.toString() || '';
-      const operatorName = po.operator_name?.toString() || '';
-      const workCenter = transformWorkCenter(po.work_center_name?.toString() || '');
-      const routing = po.routing_name?.toString() || '';
-      const moQuantity = parseFloat(po.mo_quantity?.toString() || '0');
-      const totalDurationSeconds = parseFloat(po.total_duration_seconds?.toString() || '0');
-      const cycleCount = parseInt(po.cycle_count?.toString() || '0');
-      const operations = (po.operations?.toString() || '').split('|').filter(op => op.trim());
+    for (const cycle of workCycleData) {
+      const productionId = parseInt(cycle.production_id?.toString() || '0');
+      const moNumber = cycle.mo_number?.toString() || '';
+      const operatorName = cycle.operator_name?.toString() || '';
+      const workCenter = transformWorkCenter(cycle.work_center_name?.toString() || '');
+      const routing = cycle.routing_name?.toString() || '';
+      const cycleQuantity = parseFloat(cycle.cycle_quantity?.toString() || '0');
+      const totalDurationSeconds = parseFloat(cycle.total_duration_seconds?.toString() || '0');
+      const operations = [cycle.operations?.toString() || ''].filter(op => op.trim());
 
-      // Filter out entries with too short duration to avoid division by near-zero
-      if (productionId && moQuantity > 0 && totalDurationSeconds >= 30) { // Minimum 30 seconds
+      if (productionId && cycleQuantity > 0 && totalDurationSeconds >= 30) {
         const totalDurationHours = totalDurationSeconds / 3600;
-        const uph = moQuantity / totalDurationHours;
+        const uph = cycleQuantity / totalDurationHours;
 
-        rawProductionOrderUphs.push({
+        rawWorkCycleUphs.push({
           productionId,
           moNumber,
           operatorName,
           workCenter,
           routing,
           operations,
-          moQuantity,
+          moQuantity: cycleQuantity, // Using work cycle quantity for authentic performance
           totalDurationSeconds,
-          cycleCount,
+          cycleCount: 1, // Each entry represents one work cycle
           uph
         });
       }
     }
 
     // Step 2.5: Apply statistical outlier detection by operator+workCenter+routing groups
-    const productionOrderUphs: ProductionOrderUph[] = [];
+    const workCycleUphs: ProductionOrderUph[] = [];
     const groupedByKey = new Map<string, ProductionOrderUph[]>();
     
     // Group by operator+workCenter+routing for outlier detection
-    for (const po of rawProductionOrderUphs) {
-      const key = `${po.operatorName}|${po.workCenter}|${po.routing}`;
+    for (const cycle of rawWorkCycleUphs) {
+      const key = `${cycle.operatorName}|${cycle.workCenter}|${cycle.routing}`;
       if (!groupedByKey.has(key)) {
         groupedByKey.set(key, []);
       }
-      groupedByKey.get(key)!.push(po);
+      groupedByKey.get(key)!.push(cycle);
     }
 
     // Apply outlier filtering within each group
@@ -144,48 +135,48 @@ export async function calculateFixedUPH() {
         const lowerBound = mean - (2 * stdDev);
         const upperBound = mean + (2 * stdDev);
 
-        const filteredGroup = group.filter(po => {
+        const filteredGroup = group.filter(cycle => {
           // Apply absolute UPH bounds first
           const absoluteMaxUph = 1000;
-          const isWithinAbsoluteBounds = po.uph <= absoluteMaxUph && po.uph >= 0.1;
+          const isWithinAbsoluteBounds = cycle.uph <= absoluteMaxUph && cycle.uph >= 0.1;
           
           // Apply statistical bounds
-          const isWithinStatisticalBounds = po.uph >= lowerBound && po.uph <= upperBound;
+          const isWithinStatisticalBounds = cycle.uph >= lowerBound && cycle.uph <= upperBound;
           
           const isValid = isWithinAbsoluteBounds && isWithinStatisticalBounds;
           
           if (!isValid) {
             if (!isWithinAbsoluteBounds) {
-              console.log(`🚫 Filtering corrupted data MO: ${po.moNumber} (${po.operatorName}/${po.workCenter}/${po.routing}) with ${po.uph.toFixed(2)} UPH`);
+              console.log(`🚫 Filtering corrupted data cycle: ${cycle.moNumber} (${cycle.operatorName}/${cycle.workCenter}/${cycle.routing}) with ${cycle.uph.toFixed(2)} UPH`);
             } else {
-              console.log(`🚫 Filtering statistical outlier MO: ${po.moNumber} (${po.operatorName}/${po.workCenter}/${po.routing}) with ${po.uph.toFixed(2)} UPH`);
+              console.log(`🚫 Filtering statistical outlier cycle: ${cycle.moNumber} (${cycle.operatorName}/${cycle.workCenter}/${cycle.routing}) with ${cycle.uph.toFixed(2)} UPH`);
             }
           }
           return isValid;
         });
 
-        console.log(`📊 ${key}: filtered ${group.length - filteredGroup.length} outliers from ${group.length} MOs`);
-        productionOrderUphs.push(...filteredGroup);
+        console.log(`📊 ${key}: filtered ${group.length - filteredGroup.length} outliers from ${group.length} cycles`);
+        workCycleUphs.push(...filteredGroup);
       } else {
         // Keep all if too few data points for meaningful statistics
-        productionOrderUphs.push(...group);
+        workCycleUphs.push(...group);
       }
     }
 
-    console.log(`✅ Calculated UPH for ${productionOrderUphs.length} production orders`);
+    console.log(`✅ Calculated UPH for ${workCycleUphs.length} work cycles`);
 
     // Step 3: Aggregate by Operator + Work Center + Routing
     const operatorWorkCenterMap = new Map<string, OperatorWorkCenterUph>();
 
-    for (const poUph of productionOrderUphs) {
-      const key = `${poUph.operatorName}|${poUph.workCenter}|${poUph.routing}`;
+    for (const cycleUph of workCycleUphs) {
+      const key = `${cycleUph.operatorName}|${cycleUph.workCenter}|${cycleUph.routing}`;
       
       if (!operatorWorkCenterMap.has(key)) {
         operatorWorkCenterMap.set(key, {
-          operatorName: poUph.operatorName,
-          workCenter: poUph.workCenter,
-          routing: poUph.routing,
-          operations: [...poUph.operations],
+          operatorName: cycleUph.operatorName,
+          workCenter: cycleUph.workCenter,
+          routing: cycleUph.routing,
+          operations: [...cycleUph.operations],
           moUphValues: [],
           averageUph: 0,
           totalObservations: 0,
@@ -195,13 +186,13 @@ export async function calculateFixedUPH() {
       }
 
       const group = operatorWorkCenterMap.get(key)!;
-      group.moUphValues.push(poUph.uph);
-      group.totalObservations += poUph.cycleCount;
-      group.totalHours += poUph.totalDurationSeconds / 3600;
-      group.totalQuantity += poUph.moQuantity;
+      group.moUphValues.push(cycleUph.uph);
+      group.totalObservations += cycleUph.cycleCount;
+      group.totalHours += cycleUph.totalDurationSeconds / 3600;
+      group.totalQuantity += cycleUph.moQuantity;
       
       // Merge operations
-      for (const op of poUph.operations) {
+      for (const op of cycleUph.operations) {
         if (!group.operations.includes(op)) {
           group.operations.push(op);
         }
@@ -252,7 +243,7 @@ export async function calculateFixedUPH() {
     
     // Return summary
     return {
-      productionOrders: productionOrderUphs.length,
+      workCycles: workCycleUphs.length,
       operatorWorkCenterCombinations: uphRecords.length,
       totalObservations: uphRecords.reduce((sum, r) => sum + r.observations, 0),
       averageUph: uphRecords.reduce((sum, r) => sum + r.unitsPerHour, 0) / uphRecords.length
@@ -277,20 +268,20 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     workCenterCondition = `work_cycles_work_center_rec_name LIKE '%' || '${workCenter}' || '%'`;
   }
 
-  // CORRECTED APPROACH: Aggregate work cycles by MO to match main calculation methodology
-  // This ensures details modal shows same UPH values as main table
+  // CORRECT APPROACH: Use individual work cycle calculations for authentic performance metrics
+  // Each work cycle represents actual operator performance without artificial aggregation
   const rawCyclesResult = await db.execute(sql`
     SELECT 
       work_production_id as production_id,
       work_production_number as mo_number,
-      work_production_quantity as mo_quantity,
+      work_cycles_quantity_done as cycle_quantity,
       work_production_create_date as create_date,
       work_cycles_work_center_rec_name as actual_work_center,
-      SUM(work_cycles_duration) as total_duration_seconds,
-      COUNT(*) as cycle_count,
-      STRING_AGG(DISTINCT work_operation_rec_name, ' | ') as operations,
-      STRING_AGG(DISTINCT work_cycles_id::text, ', ') as work_order_ids,
-      (work_production_quantity / (SUM(work_cycles_duration) / 3600.0)) as calculated_uph
+      work_cycles_duration as total_duration_seconds,
+      1 as cycle_count,
+      work_operation_rec_name as operations,
+      work_cycles_id::text as work_order_ids,
+      (work_cycles_quantity_done / (work_cycles_duration / 3600.0)) as calculated_uph
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
       AND ${sql.raw(workCenterCondition)}
@@ -298,7 +289,6 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       AND (state = 'done' OR state IS NULL)
       AND work_cycles_duration >= 30  -- Minimum 30 seconds to filter only corrupted data
       AND work_cycles_quantity_done > 0
-    GROUP BY work_production_id, work_production_number, work_production_quantity, work_production_create_date, work_cycles_work_center_rec_name
     ORDER BY work_production_id DESC
   `);
 
@@ -345,10 +335,10 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
   };
 
   const moDetails = moDetailsResult.rows.map(row => {
-    const moQuantity = parseFloat(row.mo_quantity?.toString() || '0');
+    const cycleQuantity = parseFloat(row.cycle_quantity?.toString() || '0');
     const totalDurationSeconds = parseFloat(row.total_duration_seconds?.toString() || '0');
     const totalDurationHours = totalDurationSeconds / 3600;
-    const uph = moQuantity / totalDurationHours;
+    const uph = cycleQuantity / totalDurationHours;
 
     return {
       productionId: row.production_id,
@@ -356,7 +346,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       woNumber: row.work_order_ids?.toString() || 'N/A',
       createDate: row.create_date?.toString() || null,
       actualWorkCenter: row.actual_work_center?.toString() || '',
-      moQuantity: moQuantity, // Now correctly using MO quantity for consistent calculations
+      moQuantity: cycleQuantity, // Using individual work cycle quantity for authentic performance
       totalDurationHours: parseFloat(totalDurationHours.toFixed(4)),
       cycleCount: parseInt(row.cycle_count?.toString() || '0'),
       operations: row.operations?.toString() || '',
