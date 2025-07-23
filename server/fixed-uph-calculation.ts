@@ -102,7 +102,7 @@ export async function calculateFixedUPH() {
       const operations = (po.operations?.toString() || '').split('|').filter(op => op.trim());
 
       // Filter out entries with too short duration to avoid division by near-zero
-      if (productionId && moQuantity > 0 && totalDurationSeconds >= 120) { // Minimum 2 minutes
+      if (productionId && moQuantity > 0 && totalDurationSeconds >= 300) { // Minimum 5 minutes
         const totalDurationHours = totalDurationSeconds / 3600;
         const uph = moQuantity / totalDurationHours;
 
@@ -284,7 +284,7 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       AND ${sql.raw(workCenterCondition)}
       AND work_production_routing_rec_name = ${routing}
       AND (state = 'done' OR state IS NULL)
-      AND work_cycles_duration > 120  -- Minimum 2 minutes to avoid division by near-zero
+      AND work_cycles_duration >= 300  -- Minimum 5 minutes to avoid unrealistic UPH calculations
       AND work_cycles_quantity_done > 0
     ORDER BY work_production_id DESC
   `);
