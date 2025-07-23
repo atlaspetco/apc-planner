@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { FulfilAPIService } from "./fulfil-api";
 import { db } from "./db.js";
-import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData, historicalUph } from "../shared/schema.js";
+import { productionOrders, workOrders, operators, uphData, workCycles, uphCalculationData } from "../shared/schema.js";
 import { sql, eq, desc, or, and, inArray, isNotNull, gt } from "drizzle-orm";
 // Removed unused imports for deleted files
 import { startAutoSync, stopAutoSync, getSyncStatus, syncCompletedData, manualRefreshRecentMOs } from './auto-sync.js';
@@ -1024,19 +1024,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all active operators
       const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
       
-      // Get historical UPH data from database directly
-      const historicalUphData = await db.select().from(historicalUph);
+      // Get current UPH data from the active system
+      const currentUphData = await db.select().from(uphData);
       
-      // Build UPH map from historical data using operator name as key
+      // Build UPH map from current data using operator name as key
       const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
       
-      historicalUphData.forEach(uph => {
-        // Create key using operator name (not ID), work center, and routing
-        const key = `${uph.operator}-${uph.workCenter}-${uph.routing}`;
+      currentUphData.forEach(uph => {
+        // Create key using operator name, work center, and routing
+        const key = `${uph.operatorName}-${uph.workCenter}-${uph.productRouting}`;
         uphMap.set(key, {
-          uph: uph.unitsPerHour,
-          observations: uph.observations,
-          operator: uph.operator || ''
+          uph: uph.uph,
+          observations: uph.observationCount,
+          operator: uph.operatorName || ''
         });
       });
 
@@ -1178,25 +1178,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   });
 
-  // UPH Data
+  // UPH Data - Use current active UPH data system
   app.get("/api/uph-data", async (req, res) => {
     try {
-      // Return data from historical_uph table instead of deprecated uph_data table
+      // Return data from current uphData table
       const data = await db.select({
-        id: historicalUph.id,
-        operatorId: historicalUph.operatorId,
-        operatorName: historicalUph.operator, // Map operator field to operatorName for frontend compatibility
-        workCenter: historicalUph.workCenter,
-        operation: historicalUph.operation,
-        routing: historicalUph.routing, // This field exists in historical_uph but was missing from uph_data
-        productRouting: historicalUph.routing, // Alias for backward compatibility
-        uph: historicalUph.unitsPerHour,
-        observationCount: historicalUph.observations,
-        totalDurationHours: historicalUph.totalHours,
-        totalQuantity: historicalUph.totalQuantity,
-        dataSource: historicalUph.dataSource,
-        lastUpdated: historicalUph.lastCalculated
-      }).from(historicalUph);
+        id: uphData.id,
+        operatorId: uphData.operatorId,
+        operatorName: uphData.operatorName,
+        workCenter: uphData.workCenter,
+        operation: uphData.operation,
+        routing: uphData.routing,
+        productRouting: uphData.routing, // Alias for backward compatibility
+        uph: uphData.uph,
+        observationCount: uphData.observationCount,
+        totalDurationHours: uphData.totalDurationHours,
+        totalQuantity: uphData.totalQuantity,
+        dataSource: uphData.dataSource,
+        lastUpdated: uphData.lastCalculated
+      }).from(uphData);
       
       res.json(data);
     } catch (error) {
@@ -2725,30 +2725,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Calculate UPH from historical completed work orders in Fulfil
-  app.post("/api/uph/calculate-from-fulfil", async (req, res) => {
-    try {
-      if (!process.env.FULFIL_ACCESS_TOKEN) {
-        return res.status(400).json({ message: "FULFIL_ACCESS_TOKEN not configured" });
-      }
-      
-      console.log("Starting historical UPH calculation from Fulfil...");
-      
-      const { calculateHistoricalUphFromFulfil } = await import("./historical-uph.js");
-      const uphCalculations = await calculateHistoricalUphFromFulfil();
-      
-      console.log(`Calculated UPH for ${uphCalculations.length} work center/operation combinations`);
-      
-      res.json({
-        message: "Historical UPH calculation completed",
-        calculations: uphCalculations,
-        count: uphCalculations.length
-      });
-    } catch (error) {
-      console.error("Error calculating historical UPH:", error);
-      res.status(500).json({ message: "Error calculating historical UPH from Fulfil" });
-    }
-  });
+
 
   // Calculate authentic UPH using production schema approach - CORRECT METHOD
   app.post("/api/uph/calculate-authentic", async (req: Request, res: Response) => {
@@ -3089,42 +3066,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get historical UPH data from database
+  // Get current UPH data from active system
   app.get("/api/uph/historical", async (req, res) => {
     try {
-      const { historicalUph } = await import("../shared/schema.js");
-      const { db } = await import("./db.js");
-      const data = await db.select().from(historicalUph).orderBy(historicalUph.routing, historicalUph.unitsPerHour);
+      const data = await db.select().from(uphData).orderBy(uphData.productRouting, uphData.uph);
       
       res.json(data);
     } catch (error) {
-      console.error("Error fetching historical UPH data:", error);
-      res.status(500).json({ message: "Error fetching historical UPH data" });
+      console.error("Error fetching UPH data:", error);
+      res.status(500).json({ message: "Error fetching UPH data" });
     }
   });
 
-  // Calculate historical UPH using routing + operation approach
-  app.post("/api/uph/calculate-routing-historical", async (req, res) => {
-    try {
-      console.log("Starting historical UPH calculation with routing + operation approach...");
-      const { calculateHistoricalUphFromFulfil } = await import("./historical-uph.js");
-      const results = await calculateHistoricalUphFromFulfil();
-      
-      res.json({
-        success: true,
-        calculated: results.length,
-        message: `Successfully calculated historical UPH for ${results.length} routing/operation combinations`,
-        data: results
-      });
-    } catch (error) {
-      console.error("Error calculating historical UPH:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Error calculating historical UPH",
-        error: error.message 
-      });
-    }
-  });
+
 
   // Get authentic production routings from work cycles data
   app.get("/api/routings", async (req, res) => {
@@ -3362,7 +3316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/uph/table-data", async (req, res) => {
     try {
       // Use historical UPH data from the accurate calculation
-      const uphResults = await db.select().from(historicalUph).orderBy(historicalUph.routing);
+      const uphResults = await db.select().from(uphData).orderBy(uphData.productRouting);
       
       const allOperators = await db.select().from(operators);
       
@@ -3520,41 +3474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get individual UPH records for analytics page filtering (use historical_uph table)
-  app.get("/api/uph-data", async (req, res) => {
-    try {
-      // Direct database query to get all UPH records from historical_uph table
-      const uphResults = await db.select().from(historicalUph);
-      
-      if (uphResults.length === 0) {
-        return res.json([]);
-      }
-      
-      // Map historical_uph fields to expected format for operator settings page
-      const formattedResults = uphResults.map(record => ({
-        id: record.id,
-        operatorId: record.operatorId,
-        operatorName: record.operator,
-        workCenter: record.workCenter,
-        operation: record.operation,
-        routing: record.routing, // This is the key field that was missing
-        productRouting: record.routing, // Alias for compatibility
-        unitsPerHour: record.unitsPerHour,
-        uph: record.unitsPerHour,
-        observationCount: record.observations,
-        totalDurationHours: record.totalHours,
-        totalQuantity: record.totalQuantity,
-        dataSource: record.dataSource,
-        createdAt: record.lastCalculated,
-        updatedAt: record.lastCalculated
-      }));
-      
-      res.json(formattedResults);
-    } catch (error) {
-      console.error("Error getting UPH data:", error);
-      res.status(500).json({ message: "Error getting UPH data" });
-    }
-  });
+
 
   // Get detailed work cycles for a specific UPH calculation
   app.get("/api/uph/calculation-details", async (req, res) => {
@@ -3782,16 +3702,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           operatorName = operator[0].name;
           
           // Get UPH data for this operator/work center/routing combination
-          const uphData = await db.select().from(historicalUph)
+          const currentUphData = await db.select().from(uphData)
             .where(and(
-              eq(historicalUph.operatorId, parseInt(operatorId)),
-              eq(historicalUph.workCenter, workCenter),
-              eq(historicalUph.routing, routing)
+              eq(uphData.operatorId, parseInt(operatorId)),
+              eq(uphData.workCenter, workCenter),
+              eq(uphData.productRouting, routing)
             )).limit(1);
             
-          if (uphData.length > 0 && uphData[0].unitsPerHour > 0) {
+          if (currentUphData.length > 0 && currentUphData[0].uph > 0) {
             // Calculate estimated time: Quantity / UPH = Hours
-            estimatedHours = Math.round((quantity / uphData[0].unitsPerHour) * 100) / 100;
+            estimatedHours = Math.round((quantity / currentUphData[0].uph) * 100) / 100;
           }
         }
       }
@@ -5111,7 +5031,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/assignments/smart-bulk", async (req, res) => {
     try {
       const { routing, workCenter, operatorId } = req.body;
-      const { workOrderAssignments, historicalUph } = await import("../shared/schema.js");
+      const { workOrderAssignments } = await import("../shared/schema.js");
       
       if (!routing || !workCenter) {
         return res.status(400).json({ error: "Routing and work center are required" });
@@ -5233,13 +5153,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!wo) continue;
 
         // Get UPH data using operator name (not ID)
-        const uphData = await db
+        const currentUphData = await db
           .select()
-          .from(historicalUph)
+          .from(uphData)
           .where(and(
-            eq(historicalUph.operator, operator.name),
-            eq(historicalUph.workCenter, wo.workCenter),
-            eq(historicalUph.routing, po.routing)
+            eq(uphData.operatorName, operator.name),
+            eq(uphData.workCenter, wo.workCenter),
+            eq(uphData.productRouting, po.routing)
           ))
           .limit(1);
 
@@ -5264,13 +5184,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const { workOrderId, productionOrder, workOrder } of workOrdersToAssign) {
         // Get UPH data for this combination using operator name (not ID)
-        const uphData = await db
+        const currentUphData = await db
           .select()
-          .from(historicalUph)
+          .from(uphData)
           .where(and(
-            eq(historicalUph.operator, operator.name),
-            eq(historicalUph.workCenter, workCenter),
-            eq(historicalUph.routing, routing)
+            eq(uphData.operatorName, operator.name),
+            eq(uphData.workCenter, workCenter),
+            eq(uphData.productRouting, routing)
           ))
           .limit(1);
 

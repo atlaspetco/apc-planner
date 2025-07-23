@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { db } from "./db.js";
-import { workOrders, operators, workOrderAssignments, productionOrders, historicalUph } from "../shared/schema.js";
+import { workOrders, operators, workOrderAssignments, productionOrders, uphData } from "../shared/schema.js";
 import { eq, and, inArray, isNull, isNotNull, gt, sql, desc } from "drizzle-orm";
 
 // Initialize OpenAI client
@@ -87,18 +87,18 @@ async function getOperatorUPH(
     for (const checkRouting of routingsToCheck) {
       const uphResults = await db
         .select()
-        .from(historicalUph)
+        .from(uphData)
         .where(
           and(
-            eq(historicalUph.operatorId, operatorId),
-            eq(historicalUph.workCenter, workCenter),
-            eq(historicalUph.routing, checkRouting)
+            eq(uphData.operatorId, operatorId),
+            eq(uphData.workCenter, workCenter),
+            eq(uphData.productRouting, checkRouting)
           )
         )
         .limit(1);
 
-      if (uphResults.length > 0 && uphResults[0].unitsPerHour) {
-        return uphResults[0].unitsPerHour;
+      if (uphResults.length > 0 && uphResults[0].uph) {
+        return uphResults[0].uph;
       }
 
       // Check alternate work centers
@@ -106,18 +106,18 @@ async function getOperatorUPH(
       for (const altWC of alternateWorkCenters) {
         const altUphResults = await db
           .select()
-          .from(historicalUph)
+          .from(uphData)
           .where(
             and(
-              eq(historicalUph.operatorId, operatorId),
-              eq(historicalUph.workCenter, altWC),
-              eq(historicalUph.routing, checkRouting)
+              eq(uphData.operatorId, operatorId),
+              eq(uphData.workCenter, altWC),
+              eq(uphData.productRouting, checkRouting)
             )
           )
           .limit(1);
 
-        if (altUphResults.length > 0 && altUphResults[0].unitsPerHour) {
-          return altUphResults[0].unitsPerHour;
+        if (altUphResults.length > 0 && altUphResults[0].uph) {
+          return altUphResults[0].uph;
         }
       }
     }
@@ -317,14 +317,14 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       // Get all UPH data for this operator
       const operatorUphData = await db
         .select()
-        .from(historicalUph)
-        .where(eq(historicalUph.operatorId, op.id));
+        .from(uphData)
+        .where(eq(uphData.operatorId, op.id));
       
       for (const uphRecord of operatorUphData) {
-        const key = `${uphRecord.workCenter}-${uphRecord.routing}`;
+        const key = `${uphRecord.workCenter}-${uphRecord.productRouting}`;
         uphData.set(key, {
-          uph: uphRecord.unitsPerHour || 0,
-          observations: uphRecord.observations || 0
+          uph: uphRecord.uph || 0,
+          observations: uphRecord.observationCount || 0
         });
       }
       

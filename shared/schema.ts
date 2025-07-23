@@ -212,21 +212,7 @@ export const fulfilOperators = pgTable("fulfil_operators", {
   lastUpdated: timestamp("last_updated").defaultNow(),
 });
 
-// Historical UPH calculations from completed work orders
-export const historicalUph = pgTable("historical_uph", {
-  id: serial("id").primaryKey(),
-  operatorId: integer("operator_id"), // Operator ID for consistent matching
-  routing: text("routing").notNull(), // Template/Routing name from MO
-  operation: text("operation").notNull(),
-  operator: text("operator"), // Operator name (nullable for routing-only calculations)
-  workCenter: text("work_center"), // Work center name
-  totalQuantity: integer("total_quantity").notNull(),
-  totalHours: real("total_hours").notNull(),
-  unitsPerHour: real("units_per_hour").notNull(),
-  observations: integer("observations").notNull(),
-  dataSource: text("data_source").default("database"), // database, fulfil_historical, current_cycles
-  lastCalculated: timestamp("last_calculated").defaultNow(),
-});
+
 
 // Aggregated UPH calculation table - merges multiple work cycles per MO
 export const uphCalculationData = pgTable("uph_calculation_data", {
@@ -285,10 +271,7 @@ export const insertWorkCycleSchema = createInsertSchema(workCycles).omit({
   createdAt: true,
 });
 
-export const insertHistoricalUphSchema = createInsertSchema(historicalUph).omit({
-  id: true,
-  lastCalculated: true,
-});
+
 
 export const insertUphCalculationDataSchema = createInsertSchema(uphCalculationData).omit({
   id: true,
@@ -318,8 +301,7 @@ export type Batch = typeof batches.$inferSelect;
 export type InsertBatch = z.infer<typeof insertBatchSchema>;
 export type WorkCycle = typeof workCycles.$inferSelect;
 export type InsertWorkCycle = z.infer<typeof insertWorkCycleSchema>;
-export type HistoricalUph = typeof historicalUph.$inferSelect;
-export type InsertHistoricalUph = z.infer<typeof insertHistoricalUphSchema>;
+
 export type UphCalculationData = typeof uphCalculationData.$inferSelect;
 export type InsertUphCalculationData = z.infer<typeof insertUphCalculationDataSchema>;
 
