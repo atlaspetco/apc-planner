@@ -229,9 +229,19 @@ export async function calculateCoreUph(
       console.log(`🔍 MO ${moData.moNumber}: Quantity=${moData.moQuantity}, Duration=${durationHours.toFixed(2)}hrs, UPH=${uphPerMo.toFixed(2)}`);
     }
     
-    // Apply stricter UPH upper limit (catch extreme outliers like 252.3 UPH)
-    if (uphPerMo > 100) {
-      console.log(`🚫 EXTREME OUTLIER FILTERED: MO ${moData.moNumber} - ${uphPerMo.toFixed(2)} UPH (${moData.operatorName}/${moData.workCenter}/${moData.routing})`);
+    // Apply work center-specific UPH limits
+    const getUphLimit = (workCenter: string): number => {
+      switch (workCenter.toLowerCase()) {
+        case 'assembly': return 100; // Assembly is more manual, limited to 100 UPH
+        case 'cutting': return 500;  // Cutting can be much faster with machines
+        case 'packaging': return 300; // Packaging can be fast but not as fast as cutting
+        default: return 200; // Default conservative limit
+      }
+    };
+    
+    const uphLimit = getUphLimit(moData.workCenter);
+    if (uphPerMo > uphLimit) {
+      console.log(`🚫 EXTREME OUTLIER FILTERED: MO ${moData.moNumber} - ${uphPerMo.toFixed(2)} UPH exceeds ${uphLimit} limit for ${moData.workCenter} (${moData.operatorName}/${moData.workCenter}/${moData.routing})`);
       return;
     }
     
