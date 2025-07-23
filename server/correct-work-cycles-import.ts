@@ -201,7 +201,7 @@ async function importAuthenticWorkCycles(csvFilePath: string): Promise<number> {
           'done',
           FALSE
         )
-        ON CONFLICT (work_cycles_id) DO UPDATE SET
+        ON CONFLICT DO NOTHING
           work_cycles_duration = EXCLUDED.work_cycles_duration,
           work_cycles_rec_name = EXCLUDED.work_cycles_rec_name,
           work_cycles_operator_rec_name = EXCLUDED.work_cycles_operator_rec_name,
