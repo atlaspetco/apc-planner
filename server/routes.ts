@@ -2878,9 +2878,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: Date.now()
       });
 
-      // Use FIXED UPH calculator that properly groups by production.id
-      const { calculateFixedUPH } = await import("./fixed-uph-calculation.js");
-      const result = await calculateFixedUPH();
+      // Use CORE UPH calculator that properly aggregates durations across all operations
+      const { calculateCoreUph } = await import("./uph-core-calculator.js");
+      const result = await calculateCoreUph();
       
       // Clear calculating status
       (global as any).updateImportStatus({
