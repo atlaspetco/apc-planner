@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 import { workCycles, productionOrders, operators } from "../shared/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, or, isNull } from "drizzle-orm";
 
 export interface UphCalculationResult {
   operatorName: string;
@@ -47,12 +47,17 @@ export async function calculateCoreUph(
 ): Promise<UphCalculationResult[]> {
   console.log('=== CORE UPH CALCULATOR STARTED ===', filters);
   
-  // Fetch all necessary data
-  const allCycles = await db.select().from(workCycles);
+  // Fetch all necessary data - EXCLUDE CORRUPTED RECORDS
+  const allCycles = await db.select().from(workCycles).where(
+    or(
+      eq(workCycles.data_corrupted, false),
+      isNull(workCycles.data_corrupted)
+    )
+  );
   const allProductionOrders = await db.select().from(productionOrders);
   const allOperators = await db.select().from(operators);
   
-  console.log(`Loaded ${allCycles.length} work cycles and ${allProductionOrders.length} production orders`);
+  console.log(`Loaded ${allCycles.length} CLEAN work cycles and ${allProductionOrders.length} production orders`);
   
   // Create operator time window map
   const operatorTimeWindows = new Map<string, number>();
