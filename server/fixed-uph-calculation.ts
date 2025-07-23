@@ -215,8 +215,7 @@ export async function calculateFixedUPH() {
 export async function getAccurateMoDetails(operator: string, workCenter: string, routing: string) {
   console.log(`🔍 Getting MO details for ${operator} + ${workCenter} + ${routing}`);
   
-  // CRITICAL FIX: Calculate total duration across ALL work centers for each MO
-  // Step 1: Get all MOs where this operator worked in the specified work center/routing
+  // Handle Assembly work center mapping - includes Rope and Sewing
   let workCenterCondition = '';
   if (workCenter === 'Assembly') {
     workCenterCondition = `(work_cycles_work_center_rec_name LIKE '%Assembly%' OR 
@@ -226,9 +225,17 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     workCenterCondition = `work_cycles_work_center_rec_name LIKE '%' || '${workCenter}' || '%'`;
   }
 
-  // Get list of production IDs where operator worked in this work center/routing
-  const relevantMosResult = await db.execute(sql`
-    SELECT DISTINCT work_production_id
+  const moDetailsResult = await db.execute(sql`
+    SELECT 
+      work_production_id as production_id,
+      work_production_number as mo_number,
+      work_production_quantity as mo_quantity,
+      work_production_create_date as create_date,
+      work_cycles_work_center_rec_name as actual_work_center,
+      SUM(work_cycles_duration) as total_duration_seconds,
+      COUNT(*) as cycle_count,
+      STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations,
+      STRING_AGG(DISTINCT work_cycles_id::text, ', ') as work_order_ids
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
       AND ${sql.raw(workCenterCondition)}
@@ -236,59 +243,13 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       AND (state = 'done' OR state IS NULL)
       AND work_cycles_duration > 0
       AND work_production_quantity > 0
-  `);
-
-  const productionIds = relevantMosResult.rows.map(row => row.work_production_id);
-  
-  if (productionIds.length === 0) {
-    return [];
-  }
-
-  // Step 2: For each MO, calculate total duration across ALL work centers and operators
-  const moDetailsResult = await db.execute(sql`
-    WITH mo_totals AS (
-      SELECT 
-        work_production_id,
-        work_production_number,
-        work_production_quantity,
-        work_production_create_date,
-        SUM(work_cycles_duration) as total_duration_seconds_all_operators,
-        COUNT(*) as total_cycle_count_all_operators
-      FROM work_cycles 
-      WHERE work_production_id = ANY(${productionIds})
-        AND (state = 'done' OR state IS NULL)
-        AND work_cycles_duration > 0
-      GROUP BY work_production_id, work_production_number, work_production_quantity, work_production_create_date
-    ),
-    operator_work_center_details AS (
-      SELECT 
-        work_production_id,
-        work_cycles_work_center_rec_name as actual_work_center,
-        STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations,
-        STRING_AGG(DISTINCT work_cycles_id::text, ', ') as work_order_ids,
-        COUNT(*) as operator_cycle_count
-      FROM work_cycles 
-      WHERE work_cycles_operator_rec_name = ${operator}
-        AND ${sql.raw(workCenterCondition)}
-        AND work_production_routing_rec_name = ${routing}
-        AND work_production_id = ANY(${productionIds})
-        AND (state = 'done' OR state IS NULL)
-        AND work_cycles_duration > 0
-      GROUP BY work_production_id, work_cycles_work_center_rec_name
-    )
-    SELECT 
-      mt.work_production_id as production_id,
-      mt.work_production_number as mo_number,
-      mt.work_production_quantity as mo_quantity,
-      mt.work_production_create_date as create_date,
-      owd.actual_work_center,
-      mt.total_duration_seconds_all_operators as total_duration_seconds,
-      owd.operator_cycle_count as cycle_count,
-      owd.operations,
-      owd.work_order_ids
-    FROM mo_totals mt
-    JOIN operator_work_center_details owd ON mt.work_production_id = owd.work_production_id
-    ORDER BY mt.work_production_id DESC
+    GROUP BY 
+      work_production_id,
+      work_production_number,
+      work_production_quantity,
+      work_production_create_date,
+      work_cycles_work_center_rec_name
+    ORDER BY production_id DESC
   `);
 
   const moDetails = moDetailsResult.rows.map(row => {
