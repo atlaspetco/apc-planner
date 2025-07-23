@@ -173,7 +173,7 @@ export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
-  const [windowDays, setWindowDays] = useState<7 | 30 | 90 | 180 | 365 | 'all'>('all');
+  // UPH Analytics always shows ALL data - no time filtering
   const [selectedUphDetails, setSelectedUphDetails] = useState<{
     operatorName: string;
     workCenter: string;

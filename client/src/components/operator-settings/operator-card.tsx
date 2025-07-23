@@ -201,14 +201,16 @@ export default function OperatorCard({
                 <SelectValue placeholder="Select time window" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="60">Last 60 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
-                <SelectItem value="180">Last 180 days</SelectItem>
+                <SelectItem value="7">1 Week</SelectItem>
+                <SelectItem value="30">1 Month</SelectItem>
+                <SelectItem value="90">3 Months</SelectItem>
+                <SelectItem value="180">6 Months</SelectItem>
+                <SelectItem value="365">12 Months</SelectItem>
+                <SelectItem value="999999">All Time</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-gray-500">
-              Historical data used for UPH calculations
+              Time window for planning UPH calculations (individual operator setting)
             </p>
           </div>
         </div>
