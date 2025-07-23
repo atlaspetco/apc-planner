@@ -348,20 +348,7 @@ export default function UphAnalytics() {
         </div>
         
         <div className="flex items-center gap-4">
-          {/* Time Filter Selector */}
-          <Select value={windowDays.toString()} onValueChange={(value) => setWindowDays(value === 'all' ? 'all' : parseInt(value) as 7 | 30 | 90 | 180 | 365)}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">1 Week</SelectItem>
-              <SelectItem value="30">1 Month</SelectItem>
-              <SelectItem value="90">3 Months</SelectItem>
-              <SelectItem value="180">6 Months</SelectItem>
-              <SelectItem value="365">12 Months</SelectItem>
-              <SelectItem value="all">All</SelectItem>
-            </SelectContent>
-          </Select>
+
           
           {/* AI Optimized Toggle */}
           <div className="flex items-center space-x-2">

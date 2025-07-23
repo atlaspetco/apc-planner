@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, User, Users, Grid, List } from "lucide-react";
 import OperatorCard from "@/components/operator-settings/operator-card";
 
@@ -24,6 +25,7 @@ export default function OperatorSettings() {
   const { toast } = useToast();
   const [selectedOperatorId, setSelectedOperatorId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
+  const [timeWindow, setTimeWindow] = useState<7 | 30 | 90 | 180 | 365 | 'all'>('all');
 
   // Fetch operators
   const { data: operators = [], refetch: refetchOperators, isLoading } = useQuery({
@@ -223,6 +225,20 @@ export default function OperatorSettings() {
           <p className="text-gray-600">Manage operator profiles and work assignments</p>
         </div>
         <div className="flex items-center space-x-3">
+          {/* Time Filter Dropdown for Planning Dashboard */}
+          <Select value={timeWindow.toString()} onValueChange={(value) => setTimeWindow(value === 'all' ? 'all' : parseInt(value) as 7 | 30 | 90 | 180 | 365)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7">1 Week</SelectItem>
+              <SelectItem value="30">1 Month</SelectItem>
+              <SelectItem value="90">3 Months</SelectItem>
+              <SelectItem value="180">6 Months</SelectItem>
+              <SelectItem value="365">12 Months</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="flex items-center border rounded-lg p-1">
             <Button
               variant={viewMode === "list" ? "default" : "ghost"}
