@@ -225,17 +225,10 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     workCenterCondition = `work_cycles_work_center_rec_name LIKE '%' || '${workCenter}' || '%'`;
   }
 
-  const moDetailsResult = await db.execute(sql`
-    SELECT 
-      work_production_id as production_id,
-      work_production_number as mo_number,
-      work_production_quantity as mo_quantity,
-      work_production_create_date as create_date,
-      work_cycles_work_center_rec_name as actual_work_center,
-      SUM(work_cycles_duration) as total_duration_seconds,
-      COUNT(*) as cycle_count,
-      STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations,
-      STRING_AGG(DISTINCT work_cycles_id::text, ', ') as work_order_ids
+  // CRITICAL FIX: Calculate total duration across ALL work centers for each MO
+  // Step 1: Get MOs where operator worked in specified work center/routing
+  const relevantMosResult = await db.execute(sql`
+    SELECT DISTINCT work_production_id
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
       AND ${sql.raw(workCenterCondition)}
@@ -243,13 +236,59 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       AND (state = 'done' OR state IS NULL)
       AND work_cycles_duration > 0
       AND work_production_quantity > 0
-    GROUP BY 
-      work_production_id,
-      work_production_number,
-      work_production_quantity,
-      work_production_create_date,
-      work_cycles_work_center_rec_name
-    ORDER BY production_id DESC
+  `);
+
+  const productionIds = relevantMosResult.rows.map(row => row.work_production_id);
+  
+  if (productionIds.length === 0) {
+    return [];
+  }
+
+  // Step 2: For each MO, calculate TOTAL duration across ALL work centers and operators
+  const moDetailsResult = await db.execute(sql`
+    WITH mo_totals AS (
+      SELECT 
+        work_production_id,
+        work_production_number,
+        work_production_quantity,
+        work_production_create_date,
+        SUM(work_cycles_duration) as total_duration_seconds_all,
+        COUNT(*) as total_cycle_count_all
+      FROM work_cycles 
+      WHERE work_production_id IN (${sql.join(productionIds, sql`, `)})
+        AND (state = 'done' OR state IS NULL)
+        AND work_cycles_duration > 0
+      GROUP BY work_production_id, work_production_number, work_production_quantity, work_production_create_date
+    ),
+    operator_details AS (
+      SELECT 
+        work_production_id,
+        STRING_AGG(DISTINCT work_cycles_work_center_rec_name, ', ') as actual_work_center,
+        STRING_AGG(DISTINCT work_operation_rec_name, ', ') as operations,
+        STRING_AGG(DISTINCT work_cycles_id::text, ', ') as work_order_ids,
+        COUNT(*) as operator_cycle_count
+      FROM work_cycles 
+      WHERE work_cycles_operator_rec_name = ${operator}
+        AND ${sql.raw(workCenterCondition)}
+        AND work_production_routing_rec_name = ${routing}
+        AND work_production_id IN (${sql.join(productionIds, sql`, `)})
+        AND (state = 'done' OR state IS NULL)
+        AND work_cycles_duration > 0
+      GROUP BY work_production_id
+    )
+    SELECT 
+      mt.work_production_id as production_id,
+      mt.work_production_number as mo_number,
+      mt.work_production_quantity as mo_quantity,
+      mt.work_production_create_date as create_date,
+      od.actual_work_center,
+      mt.total_duration_seconds_all as total_duration_seconds,
+      od.operator_cycle_count as cycle_count,
+      od.operations,
+      od.work_order_ids
+    FROM mo_totals mt
+    JOIN operator_details od ON mt.work_production_id = od.work_production_id
+    ORDER BY mt.work_production_id DESC
   `);
 
   const moDetails = moDetailsResult.rows.map(row => {
