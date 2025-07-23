@@ -87,8 +87,8 @@ export async function calculateFixedUPH() {
     const productionOrderData = productionOrdersResult.rows;
     console.log(`✅ Found ${productionOrderData.length} production orders with work cycles`);
 
-    // Step 2: Calculate UPH per production order
-    const productionOrderUphs: ProductionOrderUph[] = [];
+    // Step 2: Calculate UPH per production order with minimum duration filter
+    const rawProductionOrderUphs: ProductionOrderUph[] = [];
     
     for (const po of productionOrderData) {
       const productionId = parseInt(po.production_id?.toString() || '0');
@@ -101,11 +101,12 @@ export async function calculateFixedUPH() {
       const cycleCount = parseInt(po.cycle_count?.toString() || '0');
       const operations = (po.operations?.toString() || '').split('|').filter(op => op.trim());
 
-      if (productionId && moQuantity > 0 && totalDurationSeconds > 0) {
+      // Filter out entries with too short duration to avoid division by near-zero
+      if (productionId && moQuantity > 0 && totalDurationSeconds >= 120) { // Minimum 2 minutes
         const totalDurationHours = totalDurationSeconds / 3600;
         const uph = moQuantity / totalDurationHours;
 
-        productionOrderUphs.push({
+        rawProductionOrderUphs.push({
           productionId,
           moNumber,
           operatorName,
@@ -117,6 +118,45 @@ export async function calculateFixedUPH() {
           cycleCount,
           uph
         });
+      }
+    }
+
+    // Step 2.5: Apply statistical outlier detection by operator+workCenter+routing groups
+    const productionOrderUphs: ProductionOrderUph[] = [];
+    const groupedByKey = new Map<string, ProductionOrderUph[]>();
+    
+    // Group by operator+workCenter+routing for outlier detection
+    for (const po of rawProductionOrderUphs) {
+      const key = `${po.operatorName}|${po.workCenter}|${po.routing}`;
+      if (!groupedByKey.has(key)) {
+        groupedByKey.set(key, []);
+      }
+      groupedByKey.get(key)!.push(po);
+    }
+
+    // Apply outlier filtering within each group
+    for (const [key, group] of groupedByKey.entries()) {
+      if (group.length >= 3) { // Need at least 3 points for meaningful stats
+        const uphValues = group.map(po => po.uph);
+        const mean = uphValues.reduce((sum, uph) => sum + uph, 0) / uphValues.length;
+        const variance = uphValues.reduce((sum, uph) => sum + Math.pow(uph - mean, 2), 0) / uphValues.length;
+        const stdDev = Math.sqrt(variance);
+        const lowerBound = mean - (2 * stdDev);
+        const upperBound = mean + (2 * stdDev);
+
+        const filteredGroup = group.filter(po => {
+          const isValid = po.uph >= lowerBound && po.uph <= upperBound;
+          if (!isValid) {
+            console.log(`🚫 Filtering outlier MO: ${po.moNumber} (${po.operatorName}/${po.workCenter}/${po.routing}) with ${po.uph.toFixed(2)} UPH`);
+          }
+          return isValid;
+        });
+
+        console.log(`📊 ${key}: filtered ${group.length - filteredGroup.length} outliers from ${group.length} MOs`);
+        productionOrderUphs.push(...filteredGroup);
+      } else {
+        // Keep all if too few data points for meaningful statistics
+        productionOrderUphs.push(...group);
       }
     }
 
@@ -225,9 +265,9 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
     workCenterCondition = `work_cycles_work_center_rec_name LIKE '%' || '${workCenter}' || '%'`;
   }
 
-  // CORRECT APPROACH: Calculate UPH per individual work cycle (work order completion)
+  // CORRECT APPROACH: Calculate UPH per individual work cycle with outlier filtering
   // Each work cycle represents a completed work order with its own quantity_done and duration
-  const moDetailsResult = await db.execute(sql`
+  const rawCyclesResult = await db.execute(sql`
     SELECT 
       work_production_id as production_id,
       work_production_number as mo_number,
@@ -237,16 +277,46 @@ export async function getAccurateMoDetails(operator: string, workCenter: string,
       work_cycles_duration as total_duration_seconds,
       1 as cycle_count,
       work_operation_rec_name as operations,
-      work_cycles_id::text as work_order_ids
+      work_cycles_id::text as work_order_ids,
+      (work_cycles_quantity_done / (work_cycles_duration / 3600.0)) as calculated_uph
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name = ${operator}
       AND ${sql.raw(workCenterCondition)}
       AND work_production_routing_rec_name = ${routing}
       AND (state = 'done' OR state IS NULL)
-      AND work_cycles_duration > 0
+      AND work_cycles_duration > 120  -- Minimum 2 minutes to avoid division by near-zero
       AND work_cycles_quantity_done > 0
     ORDER BY work_production_id DESC
   `);
+
+  // Step 1: Calculate mean and standard deviation for outlier detection
+  const uphValues = rawCyclesResult.rows.map(row => 
+    parseFloat(row.calculated_uph?.toString() || '0')
+  );
+  
+  if (uphValues.length === 0) {
+    return [];
+  }
+
+  const mean = uphValues.reduce((sum, uph) => sum + uph, 0) / uphValues.length;
+  const variance = uphValues.reduce((sum, uph) => sum + Math.pow(uph - mean, 2), 0) / uphValues.length;
+  const stdDev = Math.sqrt(variance);
+  const lowerBound = mean - (2 * stdDev);
+  const upperBound = mean + (2 * stdDev);
+
+  console.log(`📊 Outlier detection: mean=${mean.toFixed(2)}, stdDev=${stdDev.toFixed(2)}, bounds=[${lowerBound.toFixed(2)}, ${upperBound.toFixed(2)}]`);
+
+  // Step 2: Filter out outliers (more than 2 standard deviations from mean)
+  const moDetailsResult = {
+    rows: rawCyclesResult.rows.filter(row => {
+      const uph = parseFloat(row.calculated_uph?.toString() || '0');
+      const isValid = uph >= lowerBound && uph <= upperBound;
+      if (!isValid) {
+        console.log(`🚫 Filtering outlier: MO${row.mo_number} with ${uph.toFixed(2)} UPH (outside bounds)`);
+      }
+      return isValid;
+    })
+  };
 
   const moDetails = moDetailsResult.rows.map(row => {
     const woQuantity = parseFloat(row.wo_quantity?.toString() || '0');
