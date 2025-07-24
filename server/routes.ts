@@ -1178,60 +1178,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   });
 
-  // UPH Data - Use new operator_uph table
+  // UPH Data - Use clean uphData table instead of corrupted operator_uph
   app.get("/api/uph-data", async (req, res) => {
     try {
-      console.log("Fetching UPH data from operator_uph table...");
+      console.log("Fetching UPH data from clean uphData table...");
       
-      // Use raw SQL to query from the new operator_uph table
-      const result = await db.execute(sql`
-        SELECT * FROM operator_uph 
-        ORDER BY uph DESC
-      `);
-      const data = result.rows;
+      // Use the clean uphData table that excludes corrupted work cycles
+      const data = await db.select().from(uphData).orderBy(uphData.uph);
       
-      console.log(`Retrieved ${data.length} UPH records from operator_uph table`);
+      console.log(`Retrieved ${data.length} clean UPH records from uphData table`);
       
       // Transform data to match expected frontend format
       const transformedData = data.map((record: any) => {
-        // Parse operator+operation+work_center to extract individual parts
-        // Format is "Operation | Operator | Work Center"
-        const parts = record.operator_operation_workcenter?.split(' | ') || [];
-        
-        // Validate we have all 3 parts
-        if (parts.length !== 3) {
-          console.warn(`Invalid operator_operation_workcenter format: ${record.operator_operation_workcenter}`);
-          return null; // Skip malformed records
-        }
-        
-        const operation = parts[0] || '';
-        const operatorName = parts[1] || '';
-        let workCenter = parts[2] || '';
-        
-        // Skip records where operator name looks like a work center (common data issue)
-        if (['Cutting', 'Assembly', 'Packaging', 'Sewing', 'Rope'].includes(operatorName)) {
-          console.warn(`Skipping record with work center as operator name: ${operatorName}`);
-          return null;
-        }
-        
-        // Consolidate Rope and Sewing into Assembly
-        if (workCenter === 'Rope' || workCenter === 'Sewing') {
-          workCenter = 'Assembly';
-        }
-        
         return {
           id: record.id,
-          operatorId: record.operator_id || 0, // We don't have operator ID in new table
-          operatorName: operatorName,
-          workCenter: workCenter,
-          operation: operation,
-          routing: record.routing_name || '',
-          uph: record.uph,
-          observationCount: record.observation_count,
-          totalDurationHours: record.total_duration_hours,
-          totalQuantity: record.total_quantity,
-          dataSource: 'consolidated_work_cycles',
-          lastUpdated: record.updated_at || record.created_at
+          operatorId: record.operatorId || 0,
+          operatorName: record.operatorName || record.operator,
+          workCenter: record.workCenter,
+          operation: record.operation || 'Assembly', // Fallback for clean data
+          routing: record.productRouting || record.routing,
+          uph: record.uph || record.unitsPerHour,
+          observationCount: record.observationCount || record.observations,
+          totalDurationHours: record.totalDurationHours || 0,
+          totalQuantity: record.totalQuantity || 0,
+          dataSource: 'work_cycles', // Mark as clean data source
+          lastUpdated: record.updatedAt || record.createdAt
         };
       }).filter(record => record !== null); // Remove null records
       
@@ -3512,16 +3483,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Build the routing data structure from historical UPH data
       uphResults.forEach(row => {
+        // Use productRouting field (newer schema) or routing field (legacy)
+        const routing = row.productRouting || row.routing;
+        
         // Skip rows without proper data
-        if (!row.operatorId || !row.routing || !row.workCenter) {
+        if (!row.operatorId || !routing || !row.workCenter) {
           console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
           return;
         }
         
-        if (!routingData.has(row.routing)) {
-          routingData.set(row.routing, new Map());
+        if (!routingData.has(routing)) {
+          routingData.set(routing, new Map());
         }
-        const routingOperators = routingData.get(row.routing)!;
+        const routingOperators = routingData.get(routing)!;
         
         if (!routingOperators.has(row.operatorId)) {
           routingOperators.set(row.operatorId, {});
@@ -3530,8 +3504,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Use the historical UPH data directly 
         operatorData[row.workCenter] = {
-          uph: row.unitsPerHour,
-          observations: row.observations
+          uph: row.uph || row.unitsPerHour, // Handle both field names
+          observations: row.observationCount || row.observations // Handle both field names
         };
       });
       
@@ -3539,7 +3513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
           // Get operator name from map or historical data
-          const operatorRecord = uphResults.find(r => r.operatorId === operatorId && r.routing === routingName);
+          const operatorRecord = uphResults.find(r => r.operatorId === operatorId && (r.productRouting === routingName || r.routing === routingName));
           const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
@@ -3609,7 +3583,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           uniqueOperators.add(row.operatorId);
         }
         const existing = workCenterUph.get(row.workCenter) || [];
-        existing.push(row.unitsPerHour);
+        const uphValue = row.uph || row.unitsPerHour || 0; // Handle both field names
+        existing.push(uphValue);
         workCenterUph.set(row.workCenter, existing);
       });
 
