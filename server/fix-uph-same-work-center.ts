@@ -80,9 +80,19 @@ async function calculateCorrectUphSameWorkCenter(): Promise<WorkCenterUph[]> {
       
       // Only include realistic UPH values
       if (uph > 0.5 && uph < 1000) {
+        // Consolidate work centers for frontend display
+        let consolidatedWorkCenter = workCenter;
+        if (workCenter.includes('Assembly') || workCenter.includes('Sewing') || workCenter.includes('Rope')) {
+          consolidatedWorkCenter = 'Assembly';
+        } else if (workCenter.includes('Cutting')) {
+          consolidatedWorkCenter = 'Cutting';
+        } else if (workCenter.includes('Packaging')) {
+          consolidatedWorkCenter = 'Packaging';
+        }
+        
         uphCalculations.push({
           operatorName,
-          workCenter,
+          workCenter: consolidatedWorkCenter,
           routing,
           operation,
           quantity,
