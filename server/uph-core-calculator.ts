@@ -409,18 +409,18 @@ export async function getCoreUphDetails(
     return true;
   });
   
-  // STEP 1: Calculate total duration for each MO across ALL operations
-  const allCyclesForMos = await db.select().from(workCycles);
-  const moTotalDurations = new Map<string, number>();
+  // STEP 1: Calculate total duration for each MO FOR THIS SPECIFIC OPERATOR
+  // CRITICAL: Only include time from the specific operator we're calculating for
+  const moOperatorTotalDurations = new Map<string, number>();
   
-  allCyclesForMos.forEach(cycle => {
+  filteredCycles.forEach(cycle => {
     if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
       return;
     }
     
     const moNumber = cycle.work_production_number;
-    const currentTotal = moTotalDurations.get(moNumber) || 0;
-    moTotalDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
+    const currentTotal = moOperatorTotalDurations.get(moNumber) || 0;
+    moOperatorTotalDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
   });
   
   // STEP 2: Group by MO using TOTAL MO duration
@@ -434,8 +434,8 @@ export async function getCoreUphDetails(
     const moNumber = cycle.work_production_number;
     
     if (!moGroupedMap.has(moNumber)) {
-      // CRITICAL FIX: Use total MO duration instead of work center specific duration
-      const totalMoDuration = moTotalDurations.get(moNumber) || 0;
+      // CRITICAL FIX: Use total MO duration FOR THIS SPECIFIC OPERATOR
+      const totalMoDuration = moOperatorTotalDurations.get(moNumber) || 0;
       
       moGroupedMap.set(moNumber, {
         operatorName,

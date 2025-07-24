@@ -1,5 +1,5 @@
-import { storage } from "./storage.js";
-import { workCycles, productionOrders, uphData } from "../shared/schema.js";
+import { db } from "./db.js";
+import { workCycles, productionOrders, uphData, operators } from "../shared/schema.js";
 import { eq, and, gte, sql } from "drizzle-orm";
 
 interface WorkCycleData {
@@ -36,7 +36,7 @@ export async function calculateCanonicalUph(windowDays: number = 30) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - windowDays);
     
-    const cycles = await storage.db
+    const cycles = await db
       .select({
         work_cycles_id: workCycles.work_cycles_id,
         work_production_number: workCycles.work_production_number,
@@ -60,7 +60,7 @@ export async function calculateCanonicalUph(windowDays: number = 30) {
 
     // Get production order quantities
     const moQuantities = new Map<string, number>();
-    const productionOrdersData = await storage.db
+    const productionOrdersData = await db
       .select({
         moNumber: productionOrders.moNumber,
         quantity: productionOrders.quantity,
@@ -162,7 +162,7 @@ export async function calculateCanonicalUph(windowDays: number = 30) {
     };
 
     // Clear existing data
-    await storage.db.delete(uphData);
+    await db.delete(uphData);
 
     // Step 6 - Historical Average & Cache
     const results: any[] = [];
