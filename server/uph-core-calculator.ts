@@ -429,8 +429,11 @@ export async function getCoreUphDetails(
     
     const group = moGroupedMap.get(moNumber)!;
     group.cycleCount++;
-    // CRITICAL FIX: Add only THIS operator's work center duration, not total MO duration
-    group.totalDurationSeconds += cycle.work_cycles_duration;
+    // CRITICAL FIX: For parallel operations within same work center, use MAX duration, not SUM
+    // Operations like "Assembly - Webbing" and "Sewing" happen in parallel, not sequentially
+    if (cycle.work_cycles_duration > group.totalDurationSeconds) {
+      group.totalDurationSeconds = cycle.work_cycles_duration;
+    }
     
     // Get MO quantity
     const moQuantity = moQuantityMap.get(moNumber) || 
