@@ -5745,6 +5745,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============= CONSOLIDATED UPH REBUILD API =============
+  app.post("/api/uph/consolidated-rebuild", async (req, res) => {
+    try {
+      console.log('🚀 Starting database-driven UPH consolidation...');
+      
+      const { executeSimplifiedConsolidation } = await import("./workflows/simplified-consolidation.js");
+      const result = await executeSimplifiedConsolidation();
+      
+      res.json({
+        success: result.success,
+        message: result.message,
+        stats: result.stats,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Database consolidation failed:', error);
+      res.status(500).json({
+        success: false,
+        message: `Database consolidation failed: ${error?.message || 'Unknown error'}`,
+        error: error?.message
+      });
+    }
+  });
+
   // Helper function to update import status
   global.updateImportStatus = (update: any) => {
     importStatus = { ...importStatus, ...update, lastUpdate: new Date() };
