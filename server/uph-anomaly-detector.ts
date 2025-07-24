@@ -31,7 +31,7 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
   const cycles = await db
     .select({
       work_cycles_id: workCycles.work_cycles_id,
-      work_cycles_work_id: workCycles.work_cycles_work_id,
+      work_id: workCycles.work_id,
       work_production_number: workCycles.work_production_number,
       work_cycles_operator_rec_name: workCycles.work_cycles_operator_rec_name,
       work_cycles_work_center_rec_name: workCycles.work_cycles_work_center_rec_name,
@@ -130,7 +130,7 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
         quantity: quantity,
         durationHours: durationHours,
         calculatedUph: calculatedUph,
-        fulfilUrl: getFulfilWorkOrderUrl(cycle.work_cycles_work_id),
+        fulfilUrl: getFulfilWorkOrderUrl(cycle.work_id || 0),
         anomalyType: anomalyType,
         reason: reason
       });
