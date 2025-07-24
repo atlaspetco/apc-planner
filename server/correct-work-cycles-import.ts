@@ -202,25 +202,6 @@ async function importAuthenticWorkCycles(csvFilePath: string): Promise<number> {
           FALSE
         )
         ON CONFLICT DO NOTHING
-          work_cycles_duration = EXCLUDED.work_cycles_duration,
-          work_cycles_rec_name = EXCLUDED.work_cycles_rec_name,
-          work_cycles_operator_rec_name = EXCLUDED.work_cycles_operator_rec_name,
-          work_cycles_operator_write_date = EXCLUDED.work_cycles_operator_write_date,
-          work_cycles_work_center_rec_name = EXCLUDED.work_cycles_work_center_rec_name,
-          work_cycles_quantity_done = EXCLUDED.work_cycles_quantity_done,
-          work_production_id = EXCLUDED.work_production_id,
-          work_production_number = EXCLUDED.work_production_number,
-          work_production_product_code = EXCLUDED.work_production_product_code,
-          work_production_routing_rec_name = EXCLUDED.work_production_routing_rec_name,
-          work_rec_name = EXCLUDED.work_rec_name,
-          work_operation_rec_name = EXCLUDED.work_operation_rec_name,
-          work_operation_id = EXCLUDED.work_operation_id,
-          work_id = EXCLUDED.work_id,
-          work_operator_id = EXCLUDED.work_operator_id,
-          work_center_id = EXCLUDED.work_center_id,
-          state = EXCLUDED.state,
-          data_corrupted = FALSE,
-          updated_at = NOW()
       `);
       
       importedCount++;

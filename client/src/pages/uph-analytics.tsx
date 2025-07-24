@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
 
@@ -350,6 +350,31 @@ export default function UphAnalytics() {
         <div className="flex items-center gap-4">
 
           
+          {/* Calculate Proper UPH Button */}
+          <Button
+            onClick={async () => {
+              try {
+                const response = await fetch('/api/uph/calculate-proper', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                console.log('Proper UPH calculation result:', result);
+                if (result.success) {
+                  queryClient.invalidateQueries({ queryKey: ["/api/uph-data"] });
+                }
+              } catch (error) {
+                console.error('Error calculating proper UPH:', error);
+              }
+            }}
+            disabled={isAnyOperationRunning}
+            variant="default"
+            size="default"
+          >
+            <Calculator className="w-4 h-4 mr-2" />
+            Calculate Proper UPH
+          </Button>
+          
           {/* AI Optimized Toggle */}
           <div className="flex items-center space-x-2">
             <Switch
@@ -364,7 +389,7 @@ export default function UphAnalytics() {
           <Button
             onClick={handleRefresh}
             disabled={isRefetching}
-            variant="default"
+            variant="outline"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />
             Refresh

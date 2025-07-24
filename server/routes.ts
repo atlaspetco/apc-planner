@@ -2863,6 +2863,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
 
+  // Calculate proper UPH following exact business logic
+  app.post("/api/uph/calculate-proper", async (req: Request, res: Response) => {
+    try {
+      console.log("Starting proper UPH calculation...");
+      
+      // Import the calculation function
+      const { calculateProperUPH } = await import('./uph-proper-calculator.js');
+      
+      // Run the calculation
+      const results = await calculateProperUPH();
+      
+      // Save to database
+      await db.execute(sql`DELETE FROM uph_data WHERE data_source = 'work_cycles'`);
+      
+      // Get operator IDs
+      const existingOperators = await db.select().from(operators);
+      const operatorMap = new Map(existingOperators.map(op => [op.name, op.id]));
+      
+      let savedCount = 0;
+      
+      for (const result of results) {
+        const operatorId = operatorMap.get(result.operatorName);
+        if (!operatorId) continue;
+        
+        await db.execute(sql`
+          INSERT INTO uph_data (
+            operator_id,
+            operator_name,
+            work_center,
+            operation,
+            product_routing,
+            uph,
+            observation_count,
+            total_duration_hours,
+            total_quantity,
+            data_source,
+            calculation_period
+          ) VALUES (
+            ${operatorId},
+            ${result.operatorName},
+            ${result.workCenterCategory},
+            ${result.operation},
+            ${result.routing},
+            ${result.averageUPH},
+            ${result.observationCount},
+            ${result.totalHours},
+            ${result.totalQuantity},
+            'work_cycles',
+            30
+          )
+        `);
+        
+        savedCount++;
+      }
+      
+      console.log(`Saved ${savedCount} UPH records`);
+      
+      res.json({ 
+        success: true, 
+        message: `Calculated and saved ${savedCount} UPH records`,
+        totalResults: results.length
+      });
+      
+    } catch (error) {
+      console.error("Error calculating proper UPH:", error);
+      res.status(500).json({ error: "Failed to calculate UPH" });
+    }
+  });
+
   // Calculate authentic UPH using production schema approach - CORRECT METHOD
   app.post("/api/uph/calculate-authentic", async (req: Request, res: Response) => {
     try {
