@@ -12,6 +12,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
 import { useToast } from "@/hooks/use-toast";
+import { AnomalyNotification } from "@/components/uph/anomaly-notification";
 
 interface UphTableData {
   routings: Array<{
@@ -483,6 +484,9 @@ export default function UphAnalytics() {
           </Card>
         </div>
       )}
+
+      {/* Anomaly Notification */}
+      <AnomalyNotification />
 
       {/* UPH Table by Product Routing */}
       <Card>

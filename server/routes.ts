@@ -3110,6 +3110,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Detect UPH anomalies
+  app.get("/api/uph/anomalies", async (req, res) => {
+    try {
+      const { detectUphAnomalies } = await import("./uph-anomaly-detector.js");
+      const anomalies = await detectUphAnomalies();
+      
+      res.json({
+        success: true,
+        anomalies: anomalies,
+        count: anomalies.length
+      });
+    } catch (error) {
+      console.error("Error detecting anomalies:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Error detecting anomalies",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Get anomaly statistics
+  app.get("/api/uph/anomaly-stats", async (req, res) => {
+    try {
+      const { getAnomalyStatistics } = await import("./uph-anomaly-detector.js");
+      const stats = await getAnomalyStatistics();
+      
+      res.json({
+        success: true,
+        ...stats
+      });
+    } catch (error) {
+      console.error("Error getting anomaly statistics:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Error getting anomaly statistics" 
+      });
+    }
+  });
+
 
 
   // Get authentic production routings from work cycles data
