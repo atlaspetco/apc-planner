@@ -91,69 +91,56 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
       routingData.operators.set(record.operatorId, {
         operatorId: record.operatorId,
         operatorName: record.operatorName,
-        workCenterPerformance: {
-          Cutting: null,
-          Assembly: null,
-          Packaging: null
-        },
-        workCenterUphValues: {
-          Cutting: [],
-          Assembly: [],
-          Packaging: []
-        },
+        workCenterPerformance: {},
+        workCenterUphValues: {},
         totalObservations: 0
       });
     }
     
     const operatorData = routingData.operators.get(record.operatorId)!;
     
-    // Collect all UPH values for proper averaging
-    if (!operatorData.workCenterUphValues) {
-      operatorData.workCenterUphValues = {
-        Cutting: [],
-        Assembly: [],
-        Packaging: []
-      };
+    // Initialize work center arrays if they don't exist
+    if (!operatorData.workCenterUphValues[record.workCenter]) {
+      operatorData.workCenterUphValues[record.workCenter] = [];
+      operatorData.workCenterPerformance[record.workCenter] = null;
     }
     
-    operatorData.workCenterUphValues[record.workCenter].push(record.uph);
-    operatorData.totalObservations += record.observationCount;
+    // Skip empty work centers
+    if (record.workCenter) {
+      operatorData.workCenterUphValues[record.workCenter].push(record.uph);
+      operatorData.totalObservations += record.observationCount;
+    }
   });
+  
+  // Get all unique work centers from the data
+  const allWorkCenters = new Set<string>();
+  rawData.forEach(record => {
+    if (record.workCenter) {
+      allWorkCenters.add(record.workCenter);
+    }
+  });
+  const workCenters = Array.from(allWorkCenters).sort();
   
   // Convert to array format and calculate averages
   const routings = Array.from(routingMap.values()).map(routing => {
     const operators = Array.from(routing.operators.values()).map(operator => {
-      // Calculate averages for each work center
-      const workCenterPerformance: Record<string, number | null> = {
-        Cutting: null,
-        Assembly: null,
-        Packaging: null
-      };
-      
-      ['Cutting', 'Assembly', 'Packaging'].forEach(wc => {
-        const uphValues = operator.workCenterUphValues?.[wc];
-        if (uphValues && uphValues.length > 0) {
-          const average = uphValues.reduce((sum: number, uph: number) => sum + uph, 0) / uphValues.length;
-          workCenterPerformance[wc] = Math.round(average * 100) / 100;
+      // Calculate averages for each work center from collected UPH values
+      Object.entries(operator.workCenterUphValues || {}).forEach(([wc, values]) => {
+        if (values && values.length > 0) {
+          const average = values.reduce((sum: number, uph: number) => sum + uph, 0) / values.length;
+          operator.workCenterPerformance[wc] = Math.round(average * 100) / 100;
         }
       });
       
-      return {
-        ...operator,
-        workCenterPerformance
-      };
+      return operator;
     });
     
     // Calculate routing averages
-    const routingAverages: Record<string, number | null> = {
-      Cutting: null,
-      Assembly: null,
-      Packaging: null
-    };
+    const routingAverages: Record<string, number | null> = {};
     
-    ['Cutting', 'Assembly', 'Packaging'].forEach(wc => {
+    workCenters.forEach(wc => {
       const operatorsWithData = operators.filter(op => 
-        op.workCenterPerformance[wc] !== null
+        op.workCenterPerformance[wc] !== null && op.workCenterPerformance[wc] !== undefined
       );
       
       if (operatorsWithData.length > 0) {
@@ -161,6 +148,8 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
           acc + (op.workCenterPerformance[wc] || 0), 0
         );
         routingAverages[wc] = Math.round((sum / operatorsWithData.length) * 100) / 100;
+      } else {
+        routingAverages[wc] = null;
       }
     });
     
@@ -198,7 +187,7 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
       totalRoutings: routings.length,
       avgUphByCeter: avgUphByCenter
     },
-    workCenters: ['Cutting', 'Assembly', 'Packaging']
+    workCenters: workCenters
   };
 }
 
