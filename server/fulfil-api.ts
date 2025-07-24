@@ -161,6 +161,64 @@ export class FulfilAPIService {
     }
   }
 
+  /**
+   * Get completed work cycles data using the updated search_read endpoint
+   * This matches the exact API structure provided by the user
+   */
+  async getCompletedWorkCycles(limit = 1000): Promise<any[]> {
+    try {
+      if (!this.apiKey) return [];
+
+      const endpoint = `${this.baseUrl}/api/v2/model/production.work/search_read`;
+      
+      const requestBody = {
+        "filters": [
+          ['state', 'in', ['done', 'finished']]
+        ],
+        "fields": [
+          'id',
+          'operator_rec_name',
+          'rec_name',
+          'production',
+          'work_center_category',
+          'work_operation_rec_name',
+          'production_work_cycles_duration', 
+          'work_cycles_work_center_rec_name',
+          'state',
+          'production_routing_rec_name',
+          'production_quantity',
+          'create_date',
+          'production_planned_date',
+          'production_priority'
+        ],
+        "limit": limit
+      };
+
+      console.log(`Fetching completed work cycles with limit ${limit}`);
+      
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: this.headers,
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (response.status !== 200) {
+        const errorText = await response.text();
+        console.error(`Error fetching completed work cycles: ${response.status} - ${errorText}`);
+        return [];
+      }
+
+      const result = await response.json();
+      console.log(`Successfully fetched ${result.length || 0} completed work cycles`);
+      
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error("Error fetching completed work cycles:", error);
+      return [];
+    }
+  }
+
   async getRecentManufacturingOrders(
     daysBack = 30, 
     limit = 500
