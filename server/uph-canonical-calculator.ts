@@ -33,8 +33,18 @@ export async function calculateCanonicalUph(windowDays: number = 30) {
   
   try {
     // Step 1 - Gather Cycles
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - windowDays);
+    let whereCondition;
+    if (windowDays > 0) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - windowDays);
+      whereCondition = and(
+        gte(workCycles.work_production_create_date, cutoffDate),
+        sql`${workCycles.work_cycles_duration} > 0`
+      );
+    } else {
+      // No date filtering if windowDays is 0
+      whereCondition = sql`${workCycles.work_cycles_duration} > 0`;
+    }
     
     const cycles = await db
       .select({
@@ -49,12 +59,7 @@ export async function calculateCanonicalUph(windowDays: number = 30) {
         work_id: workCycles.work_id,
       })
       .from(workCycles)
-      .where(
-        and(
-          gte(workCycles.work_production_create_date, cutoffDate),
-          sql`${workCycles.work_cycles_duration} > 0`
-        )
-      );
+      .where(whereCondition);
 
     console.log(`Loaded ${cycles.length} work cycles from last ${windowDays} days`);
 
@@ -185,6 +190,7 @@ export async function calculateCanonicalUph(windowDays: number = 30) {
       results.push({
         operatorName: operator,
         workCenter: category,
+        operation: 'Unknown', // Default value for operation
         productRouting: routing,
         uph: parseFloat(avgUph.toFixed(2)),
         observationCount: uphValues.length,

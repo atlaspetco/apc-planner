@@ -2880,7 +2880,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Use canonical UPH calculator following the exact specification
       const { calculateCanonicalUph } = await import("./uph-canonical-calculator.js");
-      const result = await calculateCanonicalUph(30); // Default 30 days
+      const result = await calculateCanonicalUph(0); // 0 means no date filtering
       
       // Clear calculating status
       (global as any).updateImportStatus({
