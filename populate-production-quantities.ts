@@ -1,68 +1,78 @@
-import { db } from "./server/db";
-import { workCycles, productionOrders } from "./shared/schema";
-import { sql } from "drizzle-orm";
+import { db } from './server/db';
+import { workCycles, productionOrders } from './shared/schema';
+import { eq, sql } from 'drizzle-orm';
 
 async function populateProductionQuantities() {
   try {
-    console.log("Starting to populate work_production_quantity field...");
+    console.log("🔧 Populating production quantities in work_cycles...");
     
-    // Get all unique production order numbers from work cycles
-    const uniqueMoNumbers = await db
-      .selectDistinct({ moNumber: workCycles.work_production_number })
-      .from(workCycles)
-      .where(sql`${workCycles.work_production_number} IS NOT NULL`);
+    // Update work_cycles with production quantity from production_orders
+    const result = await db.execute(sql`
+      UPDATE work_cycles wc
+      SET work_production_quantity = po.quantity
+      FROM production_orders po
+      WHERE wc.work_production_number = po.mo_number
+      AND wc.work_production_quantity IS NULL
+    `);
     
-    console.log(`Found ${uniqueMoNumbers.length} unique production orders in work cycles`);
+    console.log("✅ Updated work_cycles with production quantities");
     
-    // Get production quantities from production orders table
-    const moQuantities = await db
-      .select({
-        moNumber: productionOrders.moNumber,
-        quantity: productionOrders.quantity
-      })
-      .from(productionOrders);
+    // Check how many records were updated
+    const checkResult = await db.select({
+      total: sql`COUNT(*)`,
+      withQuantity: sql`COUNT(CASE WHEN work_production_quantity IS NOT NULL THEN 1 END)`,
+      nullQuantity: sql`COUNT(CASE WHEN work_production_quantity IS NULL THEN 1 END)`
+    }).from(workCycles);
     
-    // Create a map for quick lookup
-    const quantityMap = new Map<string, number>();
-    moQuantities.forEach(mo => {
-      if (mo.moNumber && mo.quantity) {
-        quantityMap.set(mo.moNumber, mo.quantity);
-      }
-    });
+    console.log("📊 Work cycles status:");
+    console.log(`  Total records: ${checkResult[0].total}`);
+    console.log(`  With quantity: ${checkResult[0].withQuantity}`);
+    console.log(`  Missing quantity: ${checkResult[0].nullQuantity}`);
     
-    console.log(`Found quantities for ${quantityMap.size} production orders`);
-    
-    // Update work cycles with production quantities
-    let updatedCount = 0;
-    for (const { moNumber } of uniqueMoNumbers) {
-      if (moNumber && quantityMap.has(moNumber)) {
-        const quantity = quantityMap.get(moNumber)!;
-        
-        const result = await db
-          .update(workCycles)
-          .set({ work_production_quantity: quantity })
-          .where(sql`${workCycles.work_production_number} = ${moNumber}`);
-        
-        updatedCount++;
-        console.log(`Updated ${moNumber} with quantity ${quantity}`);
-      }
+    // If we still have nulls, check if production orders exist
+    if (Number(checkResult[0].nullQuantity) > 0) {
+      console.log("\n🔍 Checking for missing production orders...");
+      
+      const missingMOs = await db.execute(sql`
+        SELECT DISTINCT work_production_number, COUNT(*) as cycle_count
+        FROM work_cycles
+        WHERE work_production_quantity IS NULL
+        AND work_production_number IS NOT NULL
+        GROUP BY work_production_number
+        LIMIT 10
+      `);
+      
+      console.log("Sample MOs with missing quantities:", missingMOs.rows);
+      
+      // Try to get quantities from CSV data pattern (some records might have quantity_done)
+      console.log("\n🔧 Attempting fallback quantity population from work_cycles_quantity_done...");
+      
+      const fallbackResult = await db.execute(sql`
+        UPDATE work_cycles
+        SET work_production_quantity = work_cycles_quantity_done::INTEGER
+        WHERE work_production_quantity IS NULL
+        AND work_cycles_quantity_done IS NOT NULL
+        AND work_cycles_quantity_done ~ '^[0-9]+$'
+      `);
+      
+      console.log("✅ Applied fallback quantity population");
+      
+      // Final check
+      const finalCheck = await db.select({
+        total: sql`COUNT(*)`,
+        withQuantity: sql`COUNT(CASE WHEN work_production_quantity IS NOT NULL THEN 1 END)`
+      }).from(workCycles);
+      
+      console.log("\n📊 Final status:");
+      console.log(`  Total records: ${finalCheck[0].total}`);
+      console.log(`  With quantity: ${finalCheck[0].withQuantity} (${(Number(finalCheck[0].withQuantity) / Number(finalCheck[0].total) * 100).toFixed(1)}%)`);
     }
     
-    console.log(`\nSuccessfully updated ${updatedCount} production orders with quantities`);
-    
-    // Verify the update
-    const verifyCount = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(workCycles)
-      .where(sql`${workCycles.work_production_quantity} IS NOT NULL`);
-    
-    console.log(`Verification: ${verifyCount[0].count} work cycles now have production quantities`);
-    
   } catch (error) {
-    console.error("Error populating production quantities:", error);
-  } finally {
-    process.exit(0);
+    console.error("❌ Error populating quantities:", error);
   }
+  
+  process.exit(0);
 }
 
 populateProductionQuantities();
