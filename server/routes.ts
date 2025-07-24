@@ -1199,7 +1199,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const parts = record.operator_operation_workcenter?.split(' | ') || [];
         const operation = parts[0] || '';
         const operatorName = parts[1] || '';
-        const workCenter = parts[2] || '';
+        let workCenter = parts[2] || '';
+        
+        // Consolidate Rope and Sewing into Assembly
+        if (workCenter === 'Rope' || workCenter === 'Sewing') {
+          workCenter = 'Assembly';
+        }
         
         return {
           id: record.id,

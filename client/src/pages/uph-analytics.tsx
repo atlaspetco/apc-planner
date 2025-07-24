@@ -72,7 +72,7 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   // Group by routing
   const routingMap = new Map<string, {
     routingName: string;
-    operators: Map<number, OperatorPerformance>;
+    operators: Map<string, OperatorPerformance>;
   }>();
   
   // Process each record
@@ -87,8 +87,9 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
     
     const routingData = routingMap.get(routing)!;
     
-    if (!routingData.operators.has(record.operatorId)) {
-      routingData.operators.set(record.operatorId, {
+    // Use operator name as key since all IDs are 0
+    if (!routingData.operators.has(record.operatorName)) {
+      routingData.operators.set(record.operatorName, {
         operatorId: record.operatorId,
         operatorName: record.operatorName,
         workCenterPerformance: {},
@@ -97,7 +98,7 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
       });
     }
     
-    const operatorData = routingData.operators.get(record.operatorId)!;
+    const operatorData = routingData.operators.get(record.operatorName)!;
     
     // Initialize work center arrays if they don't exist
     if (!operatorData.workCenterUphValues[record.workCenter]) {
