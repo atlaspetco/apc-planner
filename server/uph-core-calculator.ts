@@ -435,13 +435,9 @@ export async function getCoreUphDetails(
     const group = moGroupedMap.get(moNumber)!;
     group.cycleCount++;
     
-    // Get MO quantity
-    const moQuantity = moQuantityMap.get(moNumber) || 
-                      cycle.work_production_quantity || 
-                      0;
-    if (moQuantity > 0) {
-      group.moQuantity = moQuantity;
-    }
+    // CRITICAL FIX: Sum work_cycles_quantity_done instead of using production order quantity
+    const cycleQuantityDone = cycle.work_cycles_quantity_done || 0;
+    group.moQuantity += cycleQuantityDone;
   });
   
   const moGroupedData = Array.from(moGroupedMap.values());
