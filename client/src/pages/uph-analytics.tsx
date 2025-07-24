@@ -346,18 +346,7 @@ export default function UphAnalytics() {
             <h1 className="text-2xl font-bold text-gray-900">UPH Analytics</h1>
             <p className="text-gray-600">Units Per Hour performance metrics organized by product routing</p>
             
-            {/* PRD Section 4.5: Anomaly Banner */}
-            {uphData?.summary?.anomaliesExcluded && uphData.summary.anomaliesExcluded > 0 && (
-              <Alert className="mt-3 border-orange-200 bg-orange-50">
-                <AlertTriangle className="h-4 w-4 text-orange-600" />
-                <AlertDescription className="text-orange-800">
-                  ⚠️ {uphData.summary.anomaliesExcluded} anomalies excluded from averages. 
-                  <Button variant="link" className="h-auto p-0 ml-1 text-orange-600 hover:text-orange-800">
-                    Review in Fulfil
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            )}
+
             
             {/* Unified Status Indicator */}
             {isAnyOperationRunning && (
