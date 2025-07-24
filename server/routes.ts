@@ -5490,10 +5490,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!wo) continue;
 
         // Use operator_uph table instead of deprecated uphData table
+        // Handle routing name variations (e.g., "LLA" vs "Lifetime Lite Leash")
+        const poRouting = po.routing || po.routingName;
+        const routingVariations = [poRouting];
+        if (poRouting === 'LLA') {
+          routingVariations.push('Lifetime Lite Leash');
+        } else if (poRouting === 'Lifetime Lite Leash') {
+          routingVariations.push('LLA');
+        }
+        
         const currentUphData = await db.execute(sql`
           SELECT uph FROM operator_uph 
           WHERE operator_operation_workcenter LIKE ${`%${operator.name}%${wo.workCenter}%`}
-          AND routing_name = ${po.routing || po.routingName}
+          AND routing_name IN (${sql.join(routingVariations.map(r => sql`${r}`), sql`, `)})
           LIMIT 1
         `);
 
@@ -5521,10 +5530,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const { workOrderId, productionOrder, workOrder } of workOrdersToAssign) {
         // Get UPH data using operator_uph table
+        // Handle routing name variations (e.g., "LLA" vs "Lifetime Lite Leash")
+        const routingVariations = [routing];
+        if (routing === 'LLA') {
+          routingVariations.push('Lifetime Lite Leash');
+        } else if (routing === 'Lifetime Lite Leash') {
+          routingVariations.push('LLA');
+        }
+        
         const currentUphData = await db.execute(sql`
           SELECT uph FROM operator_uph 
           WHERE operator_operation_workcenter LIKE ${`%${operator.name}%${workCenter}%`}
-          AND routing_name = ${routing}
+          AND routing_name IN (${sql.join(routingVariations.map(r => sql`${r}`), sql`, `)})
           LIMIT 1
         `);
 
