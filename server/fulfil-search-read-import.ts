@@ -59,8 +59,8 @@ export async function importAllWorkCyclesFromFulfil() {
     while (hasMore) {
       console.log(`Fetching work cycles with offset=${offset}, limit=${limit}...`);
       
-      // Make search_read request to production.work endpoint
-      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work/search_read`, {
+      // Make search_read request to work.cycles endpoint
+      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/work.cycles/search_read`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -73,13 +73,19 @@ export async function importAllWorkCyclesFromFulfil() {
           fields: [
             "id",
             "rec_name",
-            "production",
-            "production.number",
-            "production.quantity",
-            "production.routing.rec_name",
-            "operation.rec_name",
+            "operator.rec_name",
             "work_center.rec_name",
-            "work_cycles",
+            "work.production.number",
+            "work.production.id",
+            "work.production.quantity",
+            "work.production.routing.rec_name",
+            "work.operation.rec_name",
+            "work.rec_name",
+            "work.id",
+            "quantity_done",
+            "duration",
+            "create_date",
+            "write_date",
             "state"
           ],
           offset,
@@ -93,35 +99,33 @@ export async function importAllWorkCyclesFromFulfil() {
         throw new Error(`Fulfil API error: ${response.status} - ${errorText}`);
       }
 
-      const workOrders: any[] = await response.json();
-      console.log(`Received ${workOrders.length} work orders`);
+      const workCycles: any[] = await response.json();
+      console.log(`Received ${workCycles.length} work cycles`);
 
-      if (workOrders.length === 0) {
+      if (workCycles.length === 0) {
         hasMore = false;
         break;
       }
 
-      // Process each work order and its nested cycles
-      for (const workOrder of workOrders) {
-        // Get work order data
-        const workId = workOrder.id;
-        const workRecName = workOrder.rec_name;
-        const productionId = workOrder.production;
-        const productionNumber = workOrder['production.number'];
-        const routing = workOrder['production.routing.rec_name'];
-        const productionQuantity = workOrder['production.quantity'];
-        const operationName = workOrder['operation.rec_name'];
-        const workCenterName = workOrder['work_center.rec_name'];
+      // Process each work cycle
+      for (const cycle of workCycles) {
+        // Get work order data from the work reference
+        const workId = cycle['work.id'] || cycle.work;
+        const workRecName = cycle['work.rec_name'];
+        const productionId = cycle['work.production.id'];
+        const productionNumber = cycle['work.production.number'];
+        const routing = cycle['work.production.routing.rec_name'];
+        const productionQuantity = cycle['work.production.quantity'];
+        const operationName = cycle['work.operation.rec_name'];
+        const workCenterName = cycle['work_center.rec_name'];
         
-        // Process nested work cycles
-        if (workOrder.work_cycles && Array.isArray(workOrder.work_cycles)) {
-          for (const cycle of workOrder.work_cycles) {
-            const operatorName = cycle.operator?.rec_name || cycle.operator?.name || "Unknown";
-            const cycleId = cycle.id;
-            const quantityDone = cycle.quantity_done;
-            const duration = cycle.duration;
-            const createDate = cycle.create_date;
-            const writeDate = cycle.write_date;
+        // Get cycle-specific data
+        const operatorName = cycle['operator.rec_name'] || "Unknown";
+        const cycleId = cycle.id;
+        const quantityDone = cycle.quantity_done;
+        const duration = cycle.duration;
+        const createDate = cycle.create_date;
+        const writeDate = cycle.write_date;
             
             // Create operator if doesn't exist
             if (operatorName && !operatorMap.has(operatorName)) {
@@ -158,14 +162,12 @@ export async function importAllWorkCyclesFromFulfil() {
                 state: "done",
               });
               totalImported++;
-            } catch (err: any) {
-              // Skip duplicates
-              if (err?.message?.includes("duplicate key")) {
-                continue;
-              }
-              console.error(`Error inserting cycle ${cycleId}:`, err);
-            }
+        } catch (err: any) {
+          // Skip duplicates
+          if (err?.message?.includes("duplicate key")) {
+            continue;
           }
+          console.error(`Error inserting cycle ${cycleId}:`, err);
         }
       }
 
