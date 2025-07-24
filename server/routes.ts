@@ -3011,7 +3011,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Use CORE UPH calculator that properly aggregates durations across all operations
       const { calculateCoreUph } = await import("./uph-core-calculator.js");
-      const result = await calculateCoreUph();
+      const results = await calculateCoreUph();
+      
+      // Clear all existing UPH data first
+      await db.delete(uphData);
+      console.log("Cleared existing UPH data");
+      
+      // Insert new UPH calculations
+      let insertedCount = 0;
+      for (const result of results) {
+        if (result.unitsPerHour > 0) {
+          await db.insert(uphData).values({
+            operatorName: result.operatorName,
+            workCenter: result.workCenter,
+            operation: result.operation || 'General', // Provide default if no operation extracted
+            productRouting: result.routing,
+            uph: Math.round(result.unitsPerHour * 100) / 100,
+            observationCount: result.observations,
+            totalDurationHours: null,
+            totalQuantity: null,
+            dataSource: 'calculated',
+            calculationPeriod: 30
+          });
+          insertedCount++;
+        }
+      }
       
       // Clear calculating status
       (global as any).updateImportStatus({
@@ -3022,13 +3046,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         success: true,
-        message: `Fixed UPH calculation complete: ${result.operatorWorkCenterCombinations} combinations from ${result.productionOrders} production orders`,
-        productionOrders: result.productionOrders,
-        operatorWorkCenterCombinations: result.operatorWorkCenterCombinations,
-        totalObservations: result.totalObservations,
-        averageUph: result.averageUph,
-        method: "Fixed UPH using production.id grouping",
-        note: "Groups by production_id to ensure authentic MO totals"
+        message: `Fixed UPH calculation complete: ${insertedCount} UPH values calculated and stored`,
+        totalCalculations: insertedCount,
+        method: "Core UPH Calculator with duplicate import handling",
+        note: "Handles one-to-many relationships from multiple CSV imports correctly"
       });
     } catch (error) {
       console.error("Error calculating accurate UPH:", error);
