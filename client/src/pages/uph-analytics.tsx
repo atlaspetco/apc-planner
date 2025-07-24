@@ -229,42 +229,59 @@ export default function UphAnalytics() {
     
     // Apply anomaly filtering if enabled
     if (filterAnomalies && dataArray.length > 0) {
-      // Calculate statistics for each work center category
-      const workCenterStats = new Map<string, { mean: number; stdDev: number; values: number[] }>();
+      // Use IQR (Interquartile Range) method for robust outlier detection
+      const workCenterStats = new Map<string, { q1: number; q3: number; iqr: number; values: number[] }>();
       
       // Group by work center to calculate statistics
       dataArray.forEach(record => {
         const wc = record.workCenter;
         if (!workCenterStats.has(wc)) {
-          workCenterStats.set(wc, { mean: 0, stdDev: 0, values: [] });
+          workCenterStats.set(wc, { q1: 0, q3: 0, iqr: 0, values: [] });
         }
         workCenterStats.get(wc)!.values.push(record.uph);
       });
       
-      // Calculate mean and standard deviation for each work center
+      // Calculate IQR for each work center
       workCenterStats.forEach((stats, wc) => {
-        const values = stats.values;
-        const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-        const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-        const stdDev = Math.sqrt(variance);
+        const values = [...stats.values].sort((a, b) => a - b);
+        const n = values.length;
         
-        stats.mean = mean;
-        stats.stdDev = stdDev;
+        if (n < 4) {
+          // Not enough data for IQR, use simple bounds
+          stats.q1 = values[0];
+          stats.q3 = values[n-1];
+          stats.iqr = stats.q3 - stats.q1;
+        } else {
+          // Calculate quartiles
+          const q1Index = Math.floor(n * 0.25);
+          const q3Index = Math.floor(n * 0.75);
+          stats.q1 = values[q1Index];
+          stats.q3 = values[q3Index];
+          stats.iqr = stats.q3 - stats.q1;
+        }
         
-        console.log(`Work Center ${wc} - Mean: ${mean.toFixed(2)}, StdDev: ${stdDev.toFixed(2)}`);
+        console.log(`Work Center ${wc} - Q1: ${stats.q1.toFixed(2)}, Q3: ${stats.q3.toFixed(2)}, IQR: ${stats.iqr.toFixed(2)}`);
       });
       
-      // Filter out anomalies (values beyond 2 standard deviations)
+      // Filter out anomalies using IQR method
       const filteredData = dataArray.filter(record => {
         const stats = workCenterStats.get(record.workCenter);
-        if (!stats) return true;
+        if (!stats || stats.values.length < 4) return true;
         
-        const lowerBound = stats.mean - (2 * stats.stdDev);
-        const upperBound = stats.mean + (2 * stats.stdDev);
+        // Use 1.5 * IQR for outlier bounds (standard box plot method)
+        const lowerBound = stats.q1 - (1.5 * stats.iqr);
+        const upperBound = stats.q3 + (1.5 * stats.iqr);
         
-        const isAnomaly = record.uph < lowerBound || record.uph > upperBound;
+        // Also apply absolute maximum thresholds per work center
+        const absoluteMax = {
+          'Assembly': 500,
+          'Cutting': 1000,
+          'Packaging': 1500
+        }[record.workCenter] || 2000;
+        
+        const isAnomaly = record.uph < lowerBound || record.uph > upperBound || record.uph > absoluteMax;
         if (isAnomaly) {
-          console.log(`Filtering anomaly: ${record.operatorName} - ${record.workCenter} - ${record.routing}: ${record.uph} UPH (outside ${lowerBound.toFixed(2)} - ${upperBound.toFixed(2)})`);
+          console.log(`Filtering anomaly: ${record.operatorName} - ${record.workCenter} - ${record.routing}: ${record.uph} UPH (IQR bounds: ${lowerBound.toFixed(2)} - ${upperBound.toFixed(2)}, absolute max: ${absoluteMax})`);
         }
         return !isAnomaly;
       });

@@ -1197,9 +1197,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Parse operator+operation+work_center to extract individual parts
         // Format is "Operation | Operator | Work Center"
         const parts = record.operator_operation_workcenter?.split(' | ') || [];
+        
+        // Validate we have all 3 parts
+        if (parts.length !== 3) {
+          console.warn(`Invalid operator_operation_workcenter format: ${record.operator_operation_workcenter}`);
+          return null; // Skip malformed records
+        }
+        
         const operation = parts[0] || '';
         const operatorName = parts[1] || '';
         let workCenter = parts[2] || '';
+        
+        // Skip records where operator name looks like a work center (common data issue)
+        if (['Cutting', 'Assembly', 'Packaging', 'Sewing', 'Rope'].includes(operatorName)) {
+          console.warn(`Skipping record with work center as operator name: ${operatorName}`);
+          return null;
+        }
         
         // Consolidate Rope and Sewing into Assembly
         if (workCenter === 'Rope' || workCenter === 'Sewing') {
@@ -1220,7 +1233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           dataSource: 'consolidated_work_cycles',
           lastUpdated: record.updated_at || record.created_at
         };
-      });
+      }).filter(record => record !== null); // Remove null records
       
       res.json(transformedData);
     } catch (error) {
