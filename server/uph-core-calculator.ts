@@ -131,21 +131,22 @@ export async function calculateCoreUph(
     console.log(`Date filtering bypassed: ${filteredCycles.length} cycles included`);
   }
   
-  // STEP 1: First aggregate ALL operations within the same MO to get total MO duration
-  const moTotalDurations = new Map<string, number>();
+  // STEP 1: First aggregate ALL operations within the same MO PER OPERATOR to get total MO duration
+  // CRITICAL FIX: Group by MO + Operator, not just MO
+  const moOperatorTotalDurations = new Map<string, number>();
   
-  // Calculate total duration for each MO across ALL work centers and operations
+  // Calculate total duration for each MO + Operator combination across ALL work centers and operations
   filteredCycles.forEach(cycle => {
-    if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
+    if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0 || !cycle.work_cycles_operator_rec_name) {
       return;
     }
     
-    const moNumber = cycle.work_production_number;
-    const currentTotal = moTotalDurations.get(moNumber) || 0;
-    moTotalDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
+    const moOperatorKey = `${cycle.work_production_number}|${cycle.work_cycles_operator_rec_name}`;
+    const currentTotal = moOperatorTotalDurations.get(moOperatorKey) || 0;
+    moOperatorTotalDurations.set(moOperatorKey, currentTotal + cycle.work_cycles_duration);
   });
   
-  console.log(`📊 Calculated total durations for ${moTotalDurations.size} MOs`);
+  console.log(`📊 Calculated total durations for ${moOperatorTotalDurations.size} MO+Operator combinations`);
   
   // STEP 2: Now group by Operator + Work Center + Routing + MO using TOTAL MO duration
   const moGroupedData = new Map<string, MoGroupData>();
@@ -169,24 +170,24 @@ export async function calculateCoreUph(
     const groupKey = `${cycle.work_cycles_operator_rec_name}|${consolidatedWC}|${routing}|${cycle.work_production_number}`;
     
     if (!moGroupedData.has(groupKey)) {
-      // CRITICAL FIX: Use total MO duration instead of work center specific duration
-      const totalMoDuration = moTotalDurations.get(cycle.work_production_number) || 0;
+      // CRITICAL FIX: Use total MO duration FOR THIS SPECIFIC OPERATOR
+      const moOperatorKey = `${cycle.work_production_number}|${cycle.work_cycles_operator_rec_name}`;
+      const totalMoDuration = moOperatorTotalDurations.get(moOperatorKey) || 0;
       
       moGroupedData.set(groupKey, {
         operatorName: cycle.work_cycles_operator_rec_name,
         workCenter: consolidatedWC,
         routing,
         moNumber: cycle.work_production_number,
-        totalDurationSeconds: totalMoDuration, // Use TOTAL MO duration, not individual work center duration
+        totalDurationSeconds: totalMoDuration, // Use TOTAL MO duration for THIS OPERATOR ONLY
         moQuantity: 0,
         cycleCount: 0
       });
       
       // Debug specific case
-      if (cycle.work_cycles_operator_rec_name === 'Dani Mayta' && 
-          consolidatedWC === 'Assembly' && 
-          routing === 'Lifetime Pouch') {
-        console.log(`\n🔍 DEBUG MO ${cycle.work_production_number}: Work center duration would be ${cycle.work_cycles_duration}s, but using TOTAL MO duration: ${totalMoDuration}s`);
+      if (cycle.work_cycles_operator_rec_name === 'Courtney Banh' && 
+          cycle.work_production_number === 'MO24717') {
+        console.log(`\n🔍 DEBUG MO ${cycle.work_production_number} for ${cycle.work_cycles_operator_rec_name}: Work center duration would be ${cycle.work_cycles_duration}s, but using TOTAL MO duration for this operator: ${totalMoDuration}s`);
       }
     }
     
