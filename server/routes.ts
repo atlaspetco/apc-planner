@@ -1032,7 +1032,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       currentUphData.forEach(uph => {
         // Create key using operator name, work center, and routing
-        const key = `${uph.operatorName}-${uph.workCenter}-${uph.productRouting}`;
+        // Use routing field (from CSV import) or fall back to productRouting field  
+        const routingValue = uph.routing || uph.productRouting;
+        const key = `${uph.operatorName}-${uph.workCenter}-${routingValue}`;
         uphMap.set(key, {
           uph: uph.uph,
           observations: uph.observationCount,
