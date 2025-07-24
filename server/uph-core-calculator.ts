@@ -349,8 +349,13 @@ export async function getCoreUphDetails(
   moGroupedData: MoGroupData[];
   averageUph: number;
 }> {
-  // Fetch all necessary data
-  const allCycles = await db.select().from(workCycles);
+  // Fetch all necessary data - EXCLUDE CORRUPTED RECORDS
+  const allCycles = await db.select().from(workCycles).where(
+    or(
+      eq(workCycles.data_corrupted, false),
+      isNull(workCycles.data_corrupted)
+    )
+  );
   const allProductionOrders = await db.select().from(productionOrders);
   
   // Create MO quantity map
