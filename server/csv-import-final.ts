@@ -2,29 +2,39 @@ import { db } from "./db.js";
 import { workCycles } from "../shared/schema.js";
 import { eq, and } from "drizzle-orm";
 
-// Exact CSV structure based on the actual file
+// Dynamic row structure that accepts both slash and underscore formats
 interface WorkCyclesCSVRow {
-  'work/cycles/duration': string;
-  'work/cycles/rec_name': string;
-  'work/cycles/operator/rec_name': string;
-  'work/cycles/operator/write_date': string;
-  'work/cycles/work_center/rec_name': string;
-  'work/cycles/quantity_done': string;
-  'work/production/number': string;
-  'work/production/product/code': string;
-  'work/production/routing/rec_name': string;
-  'work/rec_name': string;
-  'work/operation/rec_name': string;
-  'work/operation/id': string;
-  'work/id': string;
-  'work/operator/id': string;
-  'work_center/id': string;
-  'work/production/id': string;
-  'id': string;
+  [key: string]: string;
 }
 
 interface ProgressCallback {
   (current: number, total: number, message: string): void;
+}
+
+/**
+ * Transform CSV headers from Fulfil API format (with slashes) to database format (with underscores)
+ * e.g., "work/cycles/duration" -> "work_cycles_duration"
+ */
+function transformHeader(header: string): string {
+  return header.replace(/\//g, '_');
+}
+
+/**
+ * Transform all headers in CSV data to match database schema
+ */
+function transformCSVHeaders(csvData: any[]): WorkCyclesCSVRow[] {
+  if (!csvData || csvData.length === 0) return [];
+  
+  return csvData.map(row => {
+    const transformedRow: WorkCyclesCSVRow = {};
+    
+    for (const [key, value] of Object.entries(row)) {
+      const transformedKey = transformHeader(key);
+      transformedRow[transformedKey] = value as string;
+    }
+    
+    return transformedRow;
+  });
 }
 
 /**
@@ -48,7 +58,7 @@ function parseDurationToSeconds(duration: string): number {
  * Final CSV import with unique ID checking (one-to-many safe)
  */
 export async function importWorkCyclesFinal(
-  csvData: WorkCyclesCSVRow[],
+  csvData: any[],
   progressCallback?: ProgressCallback
 ): Promise<{
   imported: number;
@@ -56,15 +66,20 @@ export async function importWorkCyclesFinal(
   errors: string[];
 }> {
   console.log(`Starting final CSV import for ${csvData.length} records...`);
+  console.log(`Sample original headers:`, Object.keys(csvData[0] || {}));
+  
+  // Transform CSV headers to match database schema
+  const transformedData = transformCSVHeaders(csvData);
+  console.log(`Sample transformed headers:`, Object.keys(transformedData[0] || {}));
   
   let imported = 0;
   let skipped = 0;
   const errors: string[] = [];
   const batchSize = 50;
   
-  for (let batchStart = 0; batchStart < csvData.length; batchStart += batchSize) {
-    const batchEnd = Math.min(batchStart + batchSize, csvData.length);
-    const batch = csvData.slice(batchStart, batchEnd);
+  for (let batchStart = 0; batchStart < transformedData.length; batchStart += batchSize) {
+    const batchEnd = Math.min(batchStart + batchSize, transformedData.length);
+    const batch = transformedData.slice(batchStart, batchEnd);
     
     for (let i = 0; i < batch.length; i++) {
       const row = batch[i];
@@ -104,11 +119,11 @@ export async function importWorkCyclesFinal(
         }
 
         // Parse data for composite key checking
-        const durationSeconds = parseDurationToSeconds(row['work/cycles/duration']);
-        const quantityDone = parseFloat(row['work/cycles/quantity_done']) || 0;
-        const workId = parseInt(row['work/id']) || null;
-        const operatorName = row['work/cycles/operator/rec_name'] || null;
-        const productionId = parseInt(row['work/production/id']) || null;
+        const durationSeconds = parseDurationToSeconds(row['work_cycles_duration']);
+        const quantityDone = parseFloat(row['work_cycles_quantity_done']) || 0;
+        const workId = parseInt(row['work_id']) || null;
+        const operatorName = row['work_cycles_operator_rec_name'] || null;
+        const productionId = parseInt(row['work_production_id']) || null;
 
         // Second check: composite key (workOrderId, operatorId, timestamp, quantity) per ChatGPT recommendations
         if (workId && operatorName && durationSeconds > 0) {
@@ -137,28 +152,28 @@ export async function importWorkCyclesFinal(
         await db.insert(workCycles).values({
           work_cycles_id: csvId, // Store CSV ID in dedicated field
           work_cycles_duration: durationSeconds,
-          work_cycles_rec_name: row['work/cycles/rec_name'] || null,
+          work_cycles_rec_name: row['work_cycles_rec_name'] || null,
           work_cycles_operator_rec_name: operatorName,
-          work_cycles_operator_write_date: row['work/cycles/operator/write_date'] ? new Date(row['work/cycles/operator/write_date']) : null,
-          work_cycles_work_center_rec_name: row['work/cycles/work_center/rec_name'] || null,
+          work_cycles_operator_write_date: row['work_cycles_operator_write_date'] ? new Date(row['work_cycles_operator_write_date']) : null,
+          work_cycles_work_center_rec_name: row['work_cycles_work_center_rec_name'] || null,
           work_cycles_quantity_done: quantityDone,
           work_production_id: productionId,
-          work_production_number: row['work/production/number'] || null,
-          work_production_product_code: row['work/production/product/code'] || null,
-          work_production_routing_rec_name: row['work/production/routing/rec_name'] || null,
-          work_rec_name: row['work/rec_name'] || null,
-          work_operation_rec_name: row['work/operation/rec_name'] || null,
-          work_operation_id: parseInt(row['work/operation/id']) || null,
+          work_production_number: row['work_production_number'] || null,
+          work_production_product_code: row['work_production_product_code'] || null,
+          work_production_routing_rec_name: row['work_production_routing_rec_name'] || null,
+          work_rec_name: row['work_rec_name'] || null,
+          work_operation_rec_name: row['work_operation_rec_name'] || null,
+          work_operation_id: parseInt(row['work_operation_id']) || null,
           work_id: workId,
-          work_operator_id: parseInt(row['work/operator/id']) || null,
-          work_center_id: parseInt(row['work_center/id']) || null,
-          work_cycles_operator_id: parseInt(row['work/operator/id']) || null,
+          work_operator_id: parseInt(row['work_operator_id']) || null,
+          work_center_id: parseInt(row['work_center_id']) || null,
+          work_cycles_operator_id: parseInt(row['work_operator_id']) || null,
         });
 
         imported++;
         
         if (progressCallback && globalIndex % 50 === 0) {
-          progressCallback(globalIndex, csvData.length, `Imported ${imported} work cycles...`);
+          progressCallback(globalIndex, transformedData.length, `Imported ${imported} work cycles...`);
         }
         
       } catch (error) {
@@ -176,7 +191,7 @@ export async function importWorkCyclesFinal(
   
   // Enhanced import summary per ChatGPT recommendations
   console.log(`\n=== CSV Import Summary ===`);
-  console.log(`Total processed: ${csvData.length} records`);
+  console.log(`Total processed: ${transformedData.length} records`);
   console.log(`✅ Imported: ${imported} work cycles`);
   console.log(`⏭️  Skipped: ${skipped} records`);
   console.log(`❌ Errors: ${errors.length} records`);
