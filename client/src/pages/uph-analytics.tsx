@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search, Download } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
+import { useToast } from "@/hooks/use-toast";
 
 interface UphTableData {
   routings: Array<{
@@ -171,6 +172,7 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
 
 export default function UphAnalytics() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
   // UPH Analytics always shows ALL data - no time filtering
@@ -359,6 +361,48 @@ export default function UphAnalytics() {
             />
             <Label htmlFor="ai-optimized" className="text-sm">AI Optimized</Label>
           </div>
+          
+          {/* Import Work Cycles Button */}
+          <Button
+            onClick={async () => {
+              if (!confirm("This will import all ~32,000 work cycles from Fulfil. This may take several minutes. Continue?")) {
+                return;
+              }
+              
+              try {
+                const response = await fetch("/api/fulfil/import-all-work-cycles", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                  toast({
+                    title: "Import Complete",
+                    description: `Imported ${result.totalImported} work cycles from Fulfil`,
+                  });
+                  refetch(); // Refresh UPH data
+                } else {
+                  toast({
+                    title: "Import Failed",
+                    description: result.error || "Failed to import work cycles",
+                    variant: "destructive",
+                  });
+                }
+              } catch (error) {
+                toast({
+                  title: "Import Error",
+                  description: error instanceof Error ? error.message : "Failed to import work cycles",
+                  variant: "destructive",
+                });
+              }
+            }}
+            variant="outline"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Import All Work Cycles
+          </Button>
           
           {/* Refresh Button */}
           <Button

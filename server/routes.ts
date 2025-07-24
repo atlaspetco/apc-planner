@@ -2916,26 +2916,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fetch newer work cycles from Fulfil API
-  app.post("/api/fulfil/fetch-newer-work-cycles", async (req: Request, res: Response) => {
+  // Import all work cycles using search_read with pagination
+  app.post("/api/fulfil/import-all-work-cycles", async (req: Request, res: Response) => {
     try {
-      const { fetchNewerWorkCycles } = await import("./fetch-newer-work-cycles.js");
+      // Set importing status
+      (global as any).updateImportStatus({
+        isImporting: true,
+        currentOperation: 'Starting comprehensive work cycles import',
+        startTime: Date.now()
+      });
+
+      const { importAllWorkCyclesFromFulfil } = await import("./fulfil-search-read-import.js");
+      const result = await importAllWorkCyclesFromFulfil();
       
-      console.log("Fetching newer work cycles from Fulfil API...");
-      const result = await fetchNewerWorkCycles();
+      // Clear importing status
+      (global as any).updateImportStatus({
+        isImporting: false,
+        currentOperation: 'Import complete',
+        startTime: null
+      });
       
       res.json({
-        success: result.success,
-        message: result.message,
-        cyclesImported: result.cyclesImported,
-        newOperators: result.newOperators,
-        totalNewOperators: result.newOperators.length
+        success: true,
+        message: `Imported ${result.totalImported} work cycles`,
+        totalImported: result.totalImported,
+        operatorCount: result.operatorCount,
       });
     } catch (error) {
-      console.error("Error fetching newer work cycles:", error);
+      console.error("Import error:", error);
+      
+      // Clear importing status on error
+      (global as any).updateImportStatus({
+        isImporting: false,
+        currentOperation: 'Import failed',
+        lastError: error instanceof Error ? error.message : "Unknown error",
+        startTime: null
+      });
+      
       res.status(500).json({
         success: false,
-        message: "Failed to fetch newer work cycles",
+        message: "Failed to import work cycles",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
