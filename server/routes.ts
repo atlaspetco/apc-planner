@@ -1941,135 +1941,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // API endpoint to completely rebuild all work cycles from Fulfil API
-  app.post("/api/work-cycles/complete-rebuild", async (req, res) => {
-    try {
-      console.log("🚀 Starting complete work cycles rebuild from API...");
-      
-      // Import rebuild functions
-      const { fetchAllWorkCycles, insertAllWorkCycles, verifyCompleteDataIntegrity } = 
-        await import("./complete-work-cycles-rebuild.js");
-      
-      // Fetch all work cycles from API
-      const allCycles = await fetchAllWorkCycles();
-      
-      if (allCycles.length === 0) {
-        return res.json({
-          success: false,
-          message: "No work cycles retrieved from Fulfil API",
-          rebuiltCount: 0
-        });
-      }
-      
-      // Insert all cycles into database
-      const insertedCount = await insertAllWorkCycles(allCycles);
-      
-      // Verify data integrity
-      await verifyCompleteDataIntegrity();
-      
-      console.log(`✅ Complete rebuild: ${insertedCount} work cycles imported`);
-      
-      res.json({
-        success: true,
-        message: `Successfully rebuilt complete work cycles dataset with ${insertedCount} authentic records`,
-        cyclesFetched: allCycles.length,
-        cyclesInserted: insertedCount,
-        successRate: Math.round((insertedCount / allCycles.length) * 100)
-      });
-      
-    } catch (error) {
-      console.error("❌ Error during complete rebuild:", error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to complete work cycles rebuild",
-        details: error instanceof Error ? error.message : String(error)
-      });
-    }
-  });
-
-  // API endpoint to rebuild corrupted work cycles data from Fulfil API
-  app.post("/api/work-cycles/rebuild-corrupted", async (req, res) => {
-    try {
-      console.log("🚀 Starting corrupted work cycles rebuild from API...");
-      
-      // Import rebuild functions
-      const { getCorruptedCyclesList, batchFetchCyclesFromAPI, updateDatabaseWithAuthenticData } = 
-        await import("./rebuild-corrupted-data-from-api.js");
-      
-      // Get corrupted cycles list
-      const corruptedCycles = await getCorruptedCyclesList();
-      
-      if (corruptedCycles.length === 0) {
-        return res.json({
-          success: true,
-          message: "No corrupted cycles found - data is already clean",
-          rebuiltCount: 0
-        });
-      }
-      
-      // Extract unique cycle IDs
-      const cycleIds = [...new Set(corruptedCycles.map(c => c.work_cycles_id))].filter(id => id);
-      
-      // Fetch authentic data from API (smaller batches for reliability)
-      const cycleDataMap = await batchFetchCyclesFromAPI(cycleIds, 5);
-      
-      // Update database with authentic data
-      const updatedCount = await updateDatabaseWithAuthenticData(cycleDataMap);
-      
-      console.log(`✅ Rebuilt ${updatedCount} work cycles with authentic API data`);
-      
-      res.json({
-        success: true,
-        message: `Successfully rebuilt ${updatedCount} corrupted work cycles with authentic API data`,
-        corruptedFound: corruptedCycles.length,
-        uniqueCycleIds: cycleIds.length,
-        apiDataFetched: cycleDataMap.size,
-        databaseUpdated: updatedCount
-      });
-      
-    } catch (error) {
-      console.error("❌ Error rebuilding corrupted data:", error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to rebuild corrupted work cycles data",
-        details: error instanceof Error ? error.message : String(error)
-      });
-    }
-  });
-
-  // API endpoint to check corruption status
-  app.get("/api/work-cycles/corruption-status", async (req, res) => {
-    try {
-      const corruptionStats = await db.execute(sql`
-        SELECT 
-          COUNT(*) as total_cycles,
-          COUNT(CASE WHEN data_corrupted = TRUE THEN 1 END) as corrupted_cycles,
-          COUNT(CASE WHEN data_corrupted = FALSE OR data_corrupted IS NULL THEN 1 END) as clean_cycles,
-          ROUND(AVG(work_cycles_duration), 2) as avg_duration_seconds
-        FROM work_cycles 
-        WHERE work_cycles_duration IS NOT NULL
-      `);
-      
-      const stats = corruptionStats.rows[0];
-      
-      res.json({
-        success: true,
-        totalCycles: parseInt(stats.total_cycles),
-        corruptedCycles: parseInt(stats.corrupted_cycles),
-        cleanCycles: parseInt(stats.clean_cycles),
-        averageDurationSeconds: parseFloat(stats.avg_duration_seconds),
-        corruptionPercentage: Math.round((stats.corrupted_cycles / stats.total_cycles) * 100)
-      });
-      
-    } catch (error) {
-      console.error("❌ Error checking corruption status:", error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to check corruption status"
-      });
-    }
-  });
-
   // Get all work centers and their operations from authentic work cycles data
   app.get("/api/work-centers-operations", async (req, res) => {
     try {
@@ -2862,75 +2733,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
-
-  // Calculate proper UPH following exact business logic
-  app.post("/api/uph/calculate-proper", async (req: Request, res: Response) => {
-    try {
-      console.log("Starting proper UPH calculation...");
-      
-      // Import the calculation function
-      const { calculateProperUPH } = await import('./uph-proper-calculator.js');
-      
-      // Run the calculation
-      const results = await calculateProperUPH();
-      
-      // Save to database
-      await db.execute(sql`DELETE FROM uph_data WHERE data_source = 'work_cycles'`);
-      
-      // Get operator IDs
-      const existingOperators = await db.select().from(operators);
-      const operatorMap = new Map(existingOperators.map(op => [op.name, op.id]));
-      
-      let savedCount = 0;
-      
-      for (const result of results) {
-        const operatorId = operatorMap.get(result.operatorName);
-        if (!operatorId) continue;
-        
-        await db.execute(sql`
-          INSERT INTO uph_data (
-            operator_id,
-            operator_name,
-            work_center,
-            operation,
-            product_routing,
-            uph,
-            observation_count,
-            total_duration_hours,
-            total_quantity,
-            data_source,
-            calculation_period
-          ) VALUES (
-            ${operatorId},
-            ${result.operatorName},
-            ${result.workCenterCategory},
-            ${result.operation},
-            ${result.routing},
-            ${result.averageUPH},
-            ${result.observationCount},
-            ${result.totalHours},
-            ${result.totalQuantity},
-            'work_cycles',
-            30
-          )
-        `);
-        
-        savedCount++;
-      }
-      
-      console.log(`Saved ${savedCount} UPH records`);
-      
-      res.json({ 
-        success: true, 
-        message: `Calculated and saved ${savedCount} UPH records`,
-        totalResults: results.length
-      });
-      
-    } catch (error) {
-      console.error("Error calculating proper UPH:", error);
-      res.status(500).json({ error: "Failed to calculate UPH" });
-    }
-  });
 
   // Calculate authentic UPH using production schema approach - CORRECT METHOD
   app.post("/api/uph/calculate-authentic", async (req: Request, res: Response) => {
@@ -5537,8 +5339,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ))
           .limit(1);
 
-        if (currentUphData.length > 0 && currentUphData[0].uph > 0) {
-          currentWorkloadHours += po.quantity / currentUphData[0].uph;
+        if (uphData.length > 0 && uphData[0].unitsPerHour > 0) {
+          currentWorkloadHours += po.quantity / uphData[0].unitsPerHour;
         }
       }
 
@@ -5568,7 +5370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ))
           .limit(1);
 
-        if (currentUphData.length === 0 || currentUphData[0].uph === 0) {
+        if (uphData.length === 0 || uphData[0].unitsPerHour === 0) {
           assignmentDetails.push({
             workOrderId,
             quantity: productionOrder.quantity,
@@ -5580,14 +5382,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        const estimatedHours = productionOrder.quantity / currentUphData[0].uph;
+        const estimatedHours = productionOrder.quantity / uphData[0].unitsPerHour;
         totalNewHours += estimatedHours;
         
         assignmentDetails.push({
           workOrderId,
           quantity: productionOrder.quantity,
           estimatedHours,
-          uph: currentUphData[0].uph,
+          uph: uphData[0].unitsPerHour,
           skip: false
         });
       }
