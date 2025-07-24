@@ -2868,51 +2868,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Single UPH calculation from work cycles - ACCURATE VERSION
+  // Single UPH calculation from work cycles - CANONICAL VERSION
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Rebuilding UPH using production.id grouping',
+        currentOperation: 'Calculating UPH using canonical algorithm',
         startTime: Date.now()
       });
 
-      // Use CORE UPH calculator that properly aggregates durations across all operations
-      const { calculateCoreUph } = await import("./uph-core-calculator.js");
-      const result = await calculateCoreUph();
+      // Use canonical UPH calculator following the exact specification
+      const { calculateCanonicalUph } = await import("./uph-canonical-calculator.js");
+      const result = await calculateCanonicalUph(30); // Default 30 days
       
       // Clear calculating status
       (global as any).updateImportStatus({
         isCalculating: false,
-        currentOperation: 'Fixed UPH calculation completed',
+        currentOperation: 'Canonical UPH calculation completed',
         startTime: null
       });
       
       res.json({
         success: true,
-        message: `Fixed UPH calculation complete: ${result.operatorWorkCenterCombinations} combinations from ${result.productionOrders} production orders`,
-        productionOrders: result.productionOrders,
-        operatorWorkCenterCombinations: result.operatorWorkCenterCombinations,
-        totalObservations: result.totalObservations,
-        averageUph: result.averageUph,
-        method: "Fixed UPH using production.id grouping",
-        note: "Groups by production_id to ensure authentic MO totals"
+        message: `Canonical UPH calculation complete: ${result.calculatedCount} calculations`,
+        calculatedCount: result.calculatedCount,
+        windowDays: result.windowDays,
+        method: "Canonical UPH Algorithm",
+        note: "Following exact specification: WO → MO/WC → UPH → Average"
       });
     } catch (error) {
-      console.error("Error calculating accurate UPH:", error);
+      console.error("Error calculating canonical UPH:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
         isCalculating: false,
-        currentOperation: 'UPH calculation failed',
+        currentOperation: 'Canonical UPH calculation failed',
         lastError: error instanceof Error ? error.message : "Unknown error",
         startTime: null
       });
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate accurate UPH",
+        message: "Failed to calculate canonical UPH",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
