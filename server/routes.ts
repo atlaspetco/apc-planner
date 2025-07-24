@@ -4980,6 +4980,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // API endpoint to import work cycles using search_read API
+  app.post("/api/fulfil/import", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { limit = 100 } = req.body;
+      const { importAllWorkCyclesFromFulfil } = await import("./fulfil-search-read-import.js");
+      
+      const result = await importAllWorkCyclesFromFulfil();
+      
+      res.json({
+        success: true,
+        message: `Successfully imported ${result.totalImported} work cycles`,
+        imported: result.totalImported,
+        operatorsCreated: result.operatorsCreated,
+        totalProcessed: result.totalProcessed
+      });
+    } catch (error) {
+      console.error("Error importing work cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to import work cycles",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Comprehensive refresh endpoints for UPH workflow
   app.post("/api/fulfil/import-work-cycles", async (req: Request, res: Response) => {
     try {
@@ -5003,6 +5035,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error importing work cycles:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to import work cycles",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // New endpoint using updated import logic with production quantities
+  app.post("/api/fulfil/import", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { importAllWorkCyclesFromFulfil } = await import("./fulfil-search-read-import.js");
+      
+      // Set import status
+      res.locals.importStatus = {
+        isImporting: true,
+        isCalculating: false,
+        currentOperation: "Importing work cycles from Fulfil API",
+        progress: 0,
+        totalItems: 0,
+        processedItems: 0,
+        errors: [],
+        lastError: null,
+        startTime: new Date(),
+        lastUpdate: new Date(),
+      };
+      
+      const result = await importAllWorkCyclesFromFulfil();
+      
+      // Update import status
+      res.locals.importStatus.isImporting = false;
+      res.locals.importStatus.currentOperation = "";
+      
+      res.json({
+        success: true,
+        message: `Imported ${result.totalImported} work cycles with production quantities`,
+        imported: result.totalImported,
+        skipped: 0,
+        operators: result.operatorCount
+      });
+    } catch (error) {
+      console.error("Error importing work cycles with production quantities:", error);
       res.status(500).json({
         success: false,
         message: "Failed to import work cycles",

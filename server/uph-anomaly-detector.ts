@@ -16,10 +16,10 @@ interface UphAnomaly {
   reason: string;
 }
 
-// Generate Fulfil URL for a work cycle
-function getFulfilWorkCycleUrl(workCycleId: number): string {
-  // Fulfil URL pattern for work cycles
-  return `https://apc.fulfil.io/#/model/production.work.cycles/${workCycleId}`;
+// Generate Fulfil URL for a work order
+function getFulfilWorkOrderUrl(workOrderId: number): string {
+  // Fulfil URL pattern for production work orders
+  return `https://apc.fulfil.io/client/#/model/production.work/${workOrderId}`;
 }
 
 // Detect anomalies in UPH calculations
@@ -31,6 +31,7 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
   const cycles = await db
     .select({
       work_cycles_id: workCycles.work_cycles_id,
+      work_cycles_work_id: workCycles.work_cycles_work_id,
       work_production_number: workCycles.work_production_number,
       work_cycles_operator_rec_name: workCycles.work_cycles_operator_rec_name,
       work_cycles_work_center_rec_name: workCycles.work_cycles_work_center_rec_name,
@@ -129,7 +130,7 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
         quantity: quantity,
         durationHours: durationHours,
         calculatedUph: calculatedUph,
-        fulfilUrl: getFulfilWorkCycleUrl(cycle.work_cycles_id),
+        fulfilUrl: getFulfilWorkOrderUrl(cycle.work_cycles_work_id),
         anomalyType: anomalyType,
         reason: reason
       });

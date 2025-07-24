@@ -59,33 +59,32 @@ export async function importAllWorkCyclesFromFulfil() {
     while (hasMore) {
       console.log(`Fetching work cycles with offset=${offset}, limit=${limit}...`);
       
-      // Make search_read request as specified in PRD
-      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work.cycles/search_read`, {
+      // Make search_read request to production.work endpoint
+      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work/search_read`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "X-API-KEY": FULFIL_ACCESS_TOKEN,
         },
         body: JSON.stringify({
-          filters: [["state", "=", "done"]],
+          filters: [
+            ["state", "=", "done"]
+          ],
           fields: [
             "id",
-            "work.id",
-            "work.production.id",
-            "work.production.number",
-            "work.production.routing.rec_name",
-            "work.production.quantity",
-            "work.operation.rec_name",
-            "work.work_center.rec_name",
-            "operator.rec_name",
-            "quantity_done",
-            "duration",
-            "create_date",
-            "write_date"
+            "rec_name",
+            "production",
+            "production.number",
+            "production.quantity",
+            "production.routing.rec_name",
+            "operation.rec_name",
+            "work_center.rec_name",
+            "work_cycles",
+            "state"
           ],
           offset,
           limit,
-          order: [["create_date", "ASC"]]
+          order: [["id", "ASC"]]
         }),
       });
 
@@ -94,7 +93,7 @@ export async function importAllWorkCyclesFromFulfil() {
         throw new Error(`Fulfil API error: ${response.status} - ${errorText}`);
       }
 
-      const workOrders: FulfilWorkCycle[] = await response.json();
+      const workOrders: any[] = await response.json();
       console.log(`Received ${workOrders.length} work orders`);
 
       if (workOrders.length === 0) {
@@ -102,12 +101,27 @@ export async function importAllWorkCyclesFromFulfil() {
         break;
       }
 
-      // Process each work order and its cycles
-      for (const wo of workOrders) {
-        // Extract work cycles from the work order
-        if (wo.work_cycles && Array.isArray(wo.work_cycles)) {
-          for (const cycle of wo.work_cycles) {
-            const operatorName = cycle.operator?.rec_name;
+      // Process each work order and its nested cycles
+      for (const workOrder of workOrders) {
+        // Get work order data
+        const workId = workOrder.id;
+        const workRecName = workOrder.rec_name;
+        const productionId = workOrder.production;
+        const productionNumber = workOrder['production.number'];
+        const routing = workOrder['production.routing.rec_name'];
+        const productionQuantity = workOrder['production.quantity'];
+        const operationName = workOrder['operation.rec_name'];
+        const workCenterName = workOrder['work_center.rec_name'];
+        
+        // Process nested work cycles
+        if (workOrder.work_cycles && Array.isArray(workOrder.work_cycles)) {
+          for (const cycle of workOrder.work_cycles) {
+            const operatorName = cycle.operator?.rec_name || cycle.operator?.name || "Unknown";
+            const cycleId = cycle.id;
+            const quantityDone = cycle.quantity_done;
+            const duration = cycle.duration;
+            const createDate = cycle.create_date;
+            const writeDate = cycle.write_date;
             
             // Create operator if doesn't exist
             if (operatorName && !operatorMap.has(operatorName)) {
@@ -124,41 +138,32 @@ export async function importAllWorkCyclesFromFulfil() {
               console.log(`Created new operator: ${operatorName}`);
             }
 
-            // Parse fields from nested objects
-            const productionNumber = wo.production?.number || wo.production?.rec_name?.match(/MO\d+/)?.[0];
-            const routing = wo.production?.routing?.rec_name;
-            const productCode = wo.production?.product?.code;
-            const workCenterName = cycle.work_center?.rec_name || wo.work_center?.rec_name;
-            const operationName = wo.operation?.rec_name || wo.work_operation?.rec_name;
-
-            // Insert work cycle
+            // Insert work cycle with proper API field mapping
             try {
               await db.insert(workCycles).values({
-                work_cycles_id: cycle.id,
-                work_id: wo.id,
-                work_cycles_duration: cycle.duration || 0,
-                work_cycles_quantity_done: cycle.quantity_done || 0,
+                work_cycles_id: cycleId,
+                work_id: workId,
+                work_cycles_duration: duration || 0,
+                work_cycles_quantity_done: quantityDone || 0,
                 work_cycles_operator_rec_name: operatorName || "Unknown",
                 work_cycles_operator_id: operatorName ? operatorMap.get(operatorName) : null,
                 work_cycles_work_center_rec_name: workCenterName || "Unknown",
                 work_production_number: productionNumber,
-                work_production_id: wo.production?.id,
+                work_production_id: productionId,
                 work_production_routing_rec_name: routing,
-                work_production_product_code: productCode,
-                work_production_quantity: wo.production?.quantity,
-                work_production_create_date: wo.production?.create_date ? new Date(wo.production.create_date) : null,
-                work_rec_name: wo.rec_name,
+                work_production_quantity: productionQuantity,
+                work_production_create_date: createDate ? new Date(createDate) : null,
                 work_operation_rec_name: operationName,
-                work_operation_id: wo.operation?.id,
-                work_cycles_rec_name: `${wo.rec_name} | ${operatorName} | ${workCenterName}`,
+                work_rec_name: workRecName,
+                state: "done",
               });
               totalImported++;
-            } catch (err) {
+            } catch (err: any) {
               // Skip duplicates
               if (err?.message?.includes("duplicate key")) {
                 continue;
               }
-              console.error(`Error inserting cycle ${cycle.id}:`, err);
+              console.error(`Error inserting cycle ${cycleId}:`, err);
             }
           }
         }
