@@ -182,9 +182,10 @@ export async function calculateCoreUph(
     // CRITICAL FIX: Add duration ONLY within the same work center for this operator
     group.totalDurationSeconds += cycle.work_cycles_duration;
     
-    // CRITICAL FIX: Sum work_cycles_quantity_done instead of using production order quantity
-    const cycleQuantityDone = cycle.work_cycles_quantity_done || 0;
-    group.moQuantity += cycleQuantityDone;
+    // Use work_production_quantity (total MO quantity from CSV)
+    if (group.moQuantity === 0 && cycle.work_production_quantity) {
+      group.moQuantity = cycle.work_production_quantity;
+    }
   });
   
   // Calculate UPH per MO then average by operator/workCenter/routing
@@ -435,9 +436,10 @@ export async function getCoreUphDetails(
     const group = moGroupedMap.get(moNumber)!;
     group.cycleCount++;
     
-    // CRITICAL FIX: Sum work_cycles_quantity_done instead of using production order quantity
-    const cycleQuantityDone = cycle.work_cycles_quantity_done || 0;
-    group.moQuantity += cycleQuantityDone;
+    // Use work_production_quantity (total MO quantity from CSV)
+    if (group.moQuantity === 0 && cycle.work_production_quantity) {
+      group.moQuantity = cycle.work_production_quantity;
+    }
   });
   
   const moGroupedData = Array.from(moGroupedMap.values());
