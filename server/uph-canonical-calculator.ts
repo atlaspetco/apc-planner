@@ -141,6 +141,11 @@ export async function calculateCanonicalUph(windowDays: number = 30) {
         return; // Skip if no duration
       }
       
+      // Filter out anomalies - durations less than 1 minute or more than 24 hours
+      if (durationSeconds < 60 || durationSeconds > 86400) {
+        return; // Skip anomalous durations
+      }
+      
       const uphMo = moQuantity / durationHours;
       
       // Group by operator|workCenter|routing for averaging

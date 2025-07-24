@@ -25,6 +25,7 @@ function getFulfilWorkCycleUrl(workCycleId: number): string {
 // Detect anomalies in UPH calculations
 export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdLow: number = 1): Promise<UphAnomaly[]> {
   console.log("🔍 Starting UPH anomaly detection...");
+  console.log(`Thresholds: High=${thresholdHigh}, Low=${thresholdLow}`);
   
   // Get all work cycles with calculated UPH
   const cycles = await db
@@ -35,6 +36,7 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
       work_cycles_work_center_rec_name: workCycles.work_cycles_work_center_rec_name,
       work_production_routing_rec_name: workCycles.work_production_routing_rec_name,
       work_production_quantity: workCycles.work_production_quantity,
+      work_cycles_quantity_done: workCycles.work_cycles_quantity_done,
       work_cycles_duration: workCycles.work_cycles_duration,
     })
     .from(workCycles)
@@ -46,11 +48,16 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
   const workCenterData = new Map<string, number[]>();
   
   cycles.forEach(cycle => {
-    if (!cycle.work_cycles_duration || !cycle.work_production_quantity) return;
+    if (!cycle.work_cycles_duration) return;
     
+    // Use work_cycles_quantity_done since work_production_quantity is NULL
+    const quantity = cycle.work_cycles_quantity_done || cycle.work_production_quantity;
+    if (!quantity) return;
+    
+    // Duration is in seconds, convert to hours
     const durationHours = cycle.work_cycles_duration / 3600;
     if (durationHours > 0) {
-      const uph = cycle.work_production_quantity / durationHours;
+      const uph = quantity / durationHours;
       const wc = cycle.work_cycles_work_center_rec_name || 'Unknown';
       
       if (!workCenterData.has(wc)) {
@@ -74,10 +81,15 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
   
   // Analyze each cycle for anomalies
   cycles.forEach(cycle => {
-    if (!cycle.work_production_quantity || !cycle.work_cycles_duration) return;
+    if (!cycle.work_cycles_duration) return;
     
+    // Use work_cycles_quantity_done since work_production_quantity is NULL
+    const quantity = cycle.work_cycles_quantity_done || cycle.work_production_quantity;
+    if (!quantity) return;
+    
+    // Duration is in seconds, convert to hours
     const durationHours = cycle.work_cycles_duration / 3600;
-    const calculatedUph = cycle.work_production_quantity / durationHours;
+    const calculatedUph = quantity / durationHours;
     const workCenter = cycle.work_cycles_work_center_rec_name || 'Unknown';
     
     let anomalyType: UphAnomaly['anomalyType'] | null = null;
@@ -114,7 +126,7 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
         operatorName: cycle.work_cycles_operator_rec_name || 'Unknown',
         workCenter: workCenter,
         routing: cycle.work_production_routing_rec_name || 'Unknown',
-        quantity: cycle.work_production_quantity,
+        quantity: quantity,
         durationHours: durationHours,
         calculatedUph: calculatedUph,
         fulfilUrl: getFulfilWorkCycleUrl(cycle.work_cycles_id),
@@ -124,7 +136,16 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
     }
   });
   
+  // Debug: Check for any extremely high UPH values
+  const extremeUph = cycles.filter(cycle => {
+    const quantity = cycle.work_cycles_quantity_done || cycle.work_production_quantity;
+    if (!quantity || !cycle.work_cycles_duration) return false;
+    const uph = quantity / (cycle.work_cycles_duration / 3600);
+    return uph > 10000;
+  });
+  
   console.log(`🚨 Found ${anomalies.length} anomalies out of ${cycles.length} work cycles`);
+  console.log(`📊 Found ${extremeUph.length} cycles with UPH > 10,000`);
   
   // Sort by UPH descending to show worst anomalies first
   anomalies.sort((a, b) => b.calculatedUph - a.calculatedUph);
