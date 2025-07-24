@@ -88,9 +88,9 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   
   // Process each record
   rawData.forEach(record => {
-    // Skip records without operator ID
-    if (!record.operatorId) {
-      console.log(`Skipping UPH row with null operatorId:`, record);
+    // Skip records without operator name
+    if (!record.operatorName) {
+      console.log(`Skipping UPH row with null operatorName:`, record);
       return;
     }
     
@@ -109,9 +109,11 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
     
     const routingData = routingMap.get(routing)!;
     
-    if (!routingData.operators.has(record.operatorId)) {
-      routingData.operators.set(record.operatorId, {
-        operatorId: record.operatorId,
+    // Create unique key using operatorName (since operatorId may be null)
+    const operatorKey = record.operatorName;
+    if (!routingData.operators.has(operatorKey)) {
+      routingData.operators.set(operatorKey, {
+        operatorId: record.operatorId || 0, // Use 0 as fallback
         operatorName: record.operatorName,
         workCenterPerformance: {
           Cutting: null,
@@ -122,7 +124,7 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
       });
     }
     
-    const operatorData = routingData.operators.get(record.operatorId)!;
+    const operatorData = routingData.operators.get(operatorKey)!;
     operatorData.workCenterPerformance[record.workCenter] = record.uph;
     operatorData.totalObservations += record.observationCount;
   });

@@ -3441,14 +3441,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
       const allRoutings = Array.from(new Set(uphResults.map(row => row.routing))).sort();
       
-      // Group UPH data by routing, then by operator
-      const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
+      // Group UPH data by routing, then by operator name
+      const routingData = new Map<string, Map<string, Record<string, { uph: number; observations: number }>>>();
       
       // Build the routing data structure from historical UPH data
       uphResults.forEach(row => {
         // Skip rows without proper data
-        if (!row.operatorId || !row.routing || !row.workCenter) {
-          console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
+        if (!row.operatorName || !row.routing || !row.workCenter) {
+          console.warn('Skipping UPH row with null operatorName, routing, or workCenter:', row);
           return;
         }
         
@@ -3457,10 +3457,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const routingOperators = routingData.get(row.routing)!;
         
-        if (!routingOperators.has(row.operatorId)) {
-          routingOperators.set(row.operatorId, {});
+        if (!routingOperators.has(row.operatorName)) {
+          routingOperators.set(row.operatorName, {});
         }
-        const operatorData = routingOperators.get(row.operatorId)!;
+        const operatorData = routingOperators.get(row.operatorName)!;
         
         // Use the historical UPH data directly 
         operatorData[row.workCenter] = {
@@ -3471,10 +3471,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
-        const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          // Get operator name from map or historical data
-          const operatorRecord = uphResults.find(r => r.operatorId === operatorId && r.routing === routingName);
-          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
+        const operators = Array.from(routingOperators.entries()).map(([operatorName, workCenterData]) => {
+          // Find operator ID from database for consistency
+          const operator = allOperators.find(op => op.name === operatorName);
+          const operatorId = operator?.id || Math.abs(operatorName.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)); // Fallback hash if no ID found
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
