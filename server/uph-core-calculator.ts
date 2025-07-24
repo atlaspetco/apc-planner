@@ -407,10 +407,19 @@ export async function getCoreUphDetails(
   
   // STEP 1: Group by MO using OPERATOR-SPECIFIC work center duration only
   const moGroupedMap = new Map<string, MoGroupData>();
+  const seenCycleIds = new Set<number>(); // Track unique work_cycles_id to avoid duplicates
   
   filteredCycles.forEach(cycle => {
     if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
       return;
+    }
+    
+    // CRITICAL FIX: Skip duplicate work_cycles_id entries
+    if (cycle.work_cycles_id && seenCycleIds.has(cycle.work_cycles_id)) {
+      return;
+    }
+    if (cycle.work_cycles_id) {
+      seenCycleIds.add(cycle.work_cycles_id);
     }
     
     const moNumber = cycle.work_production_number;
@@ -429,11 +438,8 @@ export async function getCoreUphDetails(
     
     const group = moGroupedMap.get(moNumber)!;
     group.cycleCount++;
-    // CRITICAL FIX: For parallel operations within same work center, use MAX duration, not SUM
-    // Operations like "Assembly - Webbing" and "Sewing" happen in parallel, not sequentially
-    if (cycle.work_cycles_duration > group.totalDurationSeconds) {
-      group.totalDurationSeconds = cycle.work_cycles_duration;
-    }
+    // Add only THIS operator's work center duration
+    group.totalDurationSeconds += cycle.work_cycles_duration;
     
     // Get MO quantity
     const moQuantity = moQuantityMap.get(moNumber) || 
