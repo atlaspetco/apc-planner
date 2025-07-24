@@ -11,6 +11,9 @@ interface QualifiedOperator {
   averageUph: number;
   observations: number;
   hasPerformanceData: boolean;
+  isEstimated?: boolean;
+  estimatedFrom?: string;
+  estimatedReason?: string;
 }
 
 interface OperatorDropdownProps {
@@ -255,12 +258,12 @@ export function OperatorDropdown({
                             {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
                               <div className="flex items-center space-x-1">
                                 {quantity > 0 && (
-                                  <span className="text-green-700 font-normal">
-                                    {calculateEstimatedTime(operatorDetails.averageUph)}
+                                  <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                                    {operatorDetails.isEstimated ? '~' : ''}{calculateEstimatedTime(operatorDetails.averageUph)}
                                   </span>
                                 )}
-                                <span className="text-green-700 font-normal">
-                                  {operatorDetails.averageUph.toFixed(1)} UPH
+                                <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                                  {operatorDetails.isEstimated ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
                                 </span>
                               </div>
                             ) : (
@@ -290,12 +293,12 @@ export function OperatorDropdown({
                       {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
                         <div className="flex items-center space-x-1">
                           {quantity > 0 && (
-                            <span className="text-green-700 font-normal">
-                              {calculateEstimatedTime(currentOperator.averageUph)}
+                            <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                              {currentOperator.isEstimated ? '~' : ''}{calculateEstimatedTime(currentOperator.averageUph)}
                             </span>
                           )}
-                          <span className="text-green-700 font-normal">
-                            {currentOperator.averageUph.toFixed(1)} UPH
+                          <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                            {currentOperator.isEstimated ? '~' : ''}{currentOperator.averageUph.toFixed(1)} UPH
                           </span>
                         </div>
                       ) : (
@@ -342,16 +345,23 @@ export function OperatorDropdown({
             .map(operator => (
               <SelectItem key={operator.id} value={operator.id.toString()}>
                 <div className="flex items-center justify-between w-full">
-                  <span className="truncate">{formatOperatorName(operator.name)}</span>
+                  <div className="flex items-center space-x-1">
+                    <span className="truncate">{formatOperatorName(operator.name)}</span>
+                    {operator.isEstimated && (
+                      <Badge variant="outline" className="text-xs px-1 py-0 bg-orange-50 text-orange-600 border-orange-200">
+                        Est
+                      </Badge>
+                    )}
+                  </div>
                   <div className="flex items-center space-x-2 ml-2">
                     {operator.observations > 0 && operator.averageUph > 0 ? (
                       <>
-                        <span className="text-xs text-muted-foreground">
-                          {operator.averageUph.toFixed(1)} UPH
+                        <span className={`text-xs ${operator.isEstimated ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                          {operator.isEstimated ? '~' : ''}{operator.averageUph.toFixed(1)} UPH
                         </span>
                         {quantity > 0 && (
-                          <span className="text-xs text-muted-foreground">
-                            • {calculateEstimatedTime(operator.averageUph)}
+                          <span className={`text-xs ${operator.isEstimated ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                            • {operator.isEstimated ? '~' : ''}{calculateEstimatedTime(operator.averageUph)}
                           </span>
                         )}
                       </>
@@ -362,6 +372,11 @@ export function OperatorDropdown({
                     )}
                   </div>
                 </div>
+                {operator.isEstimated && operator.estimatedFrom && (
+                  <div className="text-xs text-orange-500 mt-1 px-1">
+                    Based on {operator.estimatedFrom}
+                  </div>
+                )}
               </SelectItem>
             ))}
         </SelectContent>

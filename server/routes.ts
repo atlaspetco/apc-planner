@@ -1122,11 +1122,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Qualified operators for ${workCenter}/${routing}${operation ? '/' + operation : ''}: ${qualifiedOperators.length} operators`, 
         qualifiedOperators.map(op => `${op.name}(${op.averageUph}UPH)`));
       
-      // Remove debug logging once operation categorization is confirmed working
+      // NEW FEATURE: "Next Closest Operator" Estimation
+      // If no operators have exact UPH data, find operators with similar data as estimates
+      let estimatedOperators: any[] = [];
+      
+      if (qualifiedOperators.length === 0) {
+        console.log(`🔍 No direct UPH data found for ${workCenter}/${routing}, searching for estimates...`);
+        
+        // Debug: Log available UPH data
+        console.log(`📊 Available UPH data:`, currentUphData.map(u => `${u.operatorName}-${u.workCenter}-${u.productRouting}`));
+        
+        // Strategy 1: Same work center, different routing
+        const sameWorkCenterOperators = allOperators
+          .filter(op => {
+            // Check if operator has UPH data for same work center but different routing
+            const hasWorkCenterEnabled = op.workCenters?.includes(workCenter as string) ||
+              (workCenter === 'Assembly' && op.workCenters?.some(wc => ['Assembly', 'Sewing', 'Rope'].includes(wc)));
+            
+            if (!hasWorkCenterEnabled) return false;
+            
+            // Find any UPH data for this operator + work center combination
+            const operatorUphForWorkCenter = currentUphData.filter(uph => 
+              uph.operatorName === op.name && uph.workCenter === workCenter
+            );
+            
+            console.log(`🔍 Checking ${op.name} for ${workCenter}: found ${operatorUphForWorkCenter.length} UPH records`);
+            if (operatorUphForWorkCenter.length > 0) {
+              console.log(`  - Records: ${operatorUphForWorkCenter.map(u => u.productRouting).join(', ')}`);
+            }
+            
+            return operatorUphForWorkCenter.length > 0;
+          })
+          .map(op => {
+            // Find the best UPH data for this operator + work center (highest observations)
+            const operatorUphForWorkCenter = currentUphData.filter(uph => 
+              uph.operatorName === op.name && uph.workCenter === workCenter
+            );
+            
+            // Sort by observation count, then by UPH
+            const bestUph = operatorUphForWorkCenter.sort((a, b) => 
+              (b.observationCount || 0) - (a.observationCount || 0) || b.uph - a.uph
+            )[0];
+            
+            return {
+              id: op.id,
+              name: op.name,
+              isActive: op.isActive,
+              averageUph: bestUph.uph,
+              observations: bestUph.observationCount,
+              isEstimated: true,
+              estimatedFrom: `${bestUph.productRouting} (same work center)`,
+              estimatedReason: `Based on ${op.name}'s performance in ${bestUph.productRouting}`,
+              estimatedHoursFor: (quantity: number) => {
+                if (bestUph.uph && bestUph.uph > 0) {
+                  return Number((quantity / bestUph.uph).toFixed(2));
+                }
+                return null;
+              }
+            };
+          });
+        
+        estimatedOperators = sameWorkCenterOperators;
+        console.log(`📊 Found ${estimatedOperators.length} operators with same work center estimates`);
+        
+        // Strategy 2: If still no estimates, try related work centers
+        if (estimatedOperators.length === 0) {
+          const relatedWorkCenters = getRelatedWorkCenters(workCenter as string);
+          
+          for (const relatedWC of relatedWorkCenters) {
+            const relatedOperators = allOperators
+              .filter(op => {
+                const hasRelatedWorkCenter = op.workCenters?.includes(relatedWC);
+                if (!hasRelatedWorkCenter) return false;
+                
+                const operatorUphForRelated = currentUphData.filter(uph => 
+                  uph.operatorName === op.name && uph.workCenter === relatedWC
+                );
+                
+                return operatorUphForRelated.length > 0;
+              })
+              .map(op => {
+                const operatorUphForRelated = currentUphData.filter(uph => 
+                  uph.operatorName === op.name && uph.workCenter === relatedWC
+                );
+                
+                const bestUph = operatorUphForRelated.sort((a, b) => 
+                  (b.observationCount || 0) - (a.observationCount || 0) || b.uph - a.uph
+                )[0];
+                
+                return {
+                  id: op.id,
+                  name: op.name,
+                  isActive: op.isActive,
+                  averageUph: bestUph.uph * 0.8, // Apply 20% penalty for cross-work-center estimate
+                  observations: bestUph.observationCount,
+                  isEstimated: true,
+                  estimatedFrom: `${relatedWC}/${bestUph.productRouting}`,
+                  estimatedReason: `Based on ${op.name}'s performance in related work center (${relatedWC})`,
+                  estimatedHoursFor: (quantity: number) => {
+                    const adjustedUph = bestUph.uph * 0.8;
+                    if (adjustedUph && adjustedUph > 0) {
+                      return Number((quantity / adjustedUph).toFixed(2));
+                    }
+                    return null;
+                  }
+                };
+              });
+            
+            if (relatedOperators.length > 0) {
+              estimatedOperators = relatedOperators;
+              console.log(`📊 Found ${estimatedOperators.length} operators with related work center estimates (${relatedWC})`);
+              break;
+            }
+          }
+        }
+      }
+      
+      // Combine qualified and estimated operators
+      const allOperatorsForResponse = [...qualifiedOperators, ...estimatedOperators]
+        .sort((a, b) => {
+          // Prioritize non-estimated over estimated
+          if (a.isEstimated && !b.isEstimated) return 1;
+          if (!a.isEstimated && b.isEstimated) return -1;
+          // Then sort by UPH
+          return b.averageUph - a.averageUph;
+        });
 
       res.json({
-        operators: qualifiedOperators,
+        operators: allOperatorsForResponse,
         totalQualified: qualifiedOperators.length,
+        totalEstimated: estimatedOperators.length,
         filters: { workCenter, routing, operation }
       });
     } catch (error) {
@@ -1137,6 +1262,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // Helper function to get related work centers for estimation
+  function getRelatedWorkCenters(workCenter: string): string[] {
+    const relationships = {
+      'Assembly': ['Sewing', 'Rope'],
+      'Sewing': ['Assembly', 'Rope'],
+      'Rope': ['Assembly', 'Sewing'],
+      'Cutting': ['Laser', 'Webbing Cutter'],
+      'Packaging': ['Assembly'], // Packaging workers often help with Assembly
+      'Laser': ['Cutting'],
+      'Webbing Cutter': ['Cutting']
+    };
+    
+    return relationships[workCenter] || [];
+  }
 
   app.get("/api/operators/:id", async (req, res) => {
     const id = parseInt(req.params.id);
