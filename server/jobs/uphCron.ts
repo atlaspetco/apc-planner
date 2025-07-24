@@ -3,7 +3,7 @@
  * Periodically calculates and caches UPH data for all combinations
  */
 
-import { calculateStandardizedUph, type AggregatedUphResult } from "../services/uphService.js";
+import { calculateCoreUph } from "../uph-core-calculator.js";
 import { db } from "../db.js";
 import { operators } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
@@ -30,13 +30,12 @@ export async function runUphCalculationJob(): Promise<void> {
   console.log(`Starting UPH calculation job at ${startTime.toISOString()}`);
   
   try {
-    // Get all active operators
-    const activeOperators = await db
+    // Get all operators (not just active ones - active status is only for auto-assign)
+    const allOperators = await db
       .select()
-      .from(operators)
-      .where(eq(operators.isActive, true));
+      .from(operators);
     
-    console.log(`Found ${activeOperators.length} active operators`);
+    console.log(`Found ${allOperators.length} total operators`);
     
     // Get all work center categories
     const categories = getAllCategories();
@@ -51,30 +50,15 @@ export async function runUphCalculationJob(): Promise<void> {
     for (const window of windows) {
       try {
         // Calculate global UPH for all products/operators/categories
-        const globalResults = await calculateStandardizedUph({ windowDays: window });
+        const globalResults = await calculateCoreUph({ 
+          timeWindowDays: window,
+          bypassDateFilter: false 
+        });
         totalCalculations += globalResults.length;
         
         console.log(`Calculated ${globalResults.length} UPH entries for ${window}-day window`);
         
-        // Also calculate specific combinations for commonly used queries
-        for (const operator of activeOperators) {
-          for (const category of categories) {
-            try {
-              const operatorCategoryResults = await calculateStandardizedUph({
-                operatorId: operator.id,
-                workCenterCategory: category,
-                windowDays: window
-              });
-              
-              totalCalculations += operatorCategoryResults.length;
-              
-            } catch (error) {
-              const errorMsg = `Error calculating UPH for operator ${operator.name}, category ${category}, window ${window}: ${error}`;
-              console.error(errorMsg);
-              errors.push(errorMsg);
-            }
-          }
-        }
+        // Core calculator handles all operators internally, no need for additional loops
       } catch (error) {
         const errorMsg = `Error calculating global UPH for window ${window}: ${error}`;
         console.error(errorMsg);

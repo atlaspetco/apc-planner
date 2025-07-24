@@ -303,7 +303,6 @@ export async function calculateCoreUph(
   // Save corrected UPH results to database
   const { db: database } = await import("./db.js");
   const { uphData } = await import("../shared/schema.js");
-  const { eq } = await import("drizzle-orm");
   
   // Clear existing UPH data
   await database.delete(uphData);

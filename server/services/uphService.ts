@@ -74,7 +74,7 @@ export async function calculateStandardizedUph(
     const dateThreshold = new Date();
     dateThreshold.setDate(dateThreshold.getDate() - window);
     
-    // Step 1: Get all done work cycles within window with production order info
+    // Step 1: Get all work cycles within window (no state filter since all are NULL)
     const cyclesQuery = db
       .select({
         cycleId: workCycles.work_cycles_id,
@@ -86,24 +86,20 @@ export async function calculateStandardizedUph(
         startDate: workCycles.work_cycles_operator_write_date, // Using write date as cycle date
         productionOrderNumber: workCycles.work_production_number,
         workOrderId: workCycles.work_id,
-        // Get production order details
-        moQuantity: productionOrders.quantity,
-        productName: productionOrders.productName,
-        moId: productionOrders.fulfilId,
-        moNumber: productionOrders.moNumber,
+        // Use work_production_quantity from work_cycles (all data is in CSV)
+        moQuantity: workCycles.work_production_quantity,
+        productName: workCycles.work_production_routing_rec_name, // Using routing as product name
+        moId: workCycles.work_production_id,
+        moNumber: workCycles.work_production_number,
       })
       .from(workCycles)
-      .leftJoin(
-        productionOrders,
-        eq(workCycles.work_production_number, productionOrders.moNumber)
-      )
       .where(
         and(
-          eq(workCycles.state, 'done'),
           gte(workCycles.work_cycles_operator_write_date, dateThreshold),
           // Only include cycles with valid data
           sql`${workCycles.work_cycles_duration} > 0`,
-          sql`${workCycles.work_cycles_operator_id} IS NOT NULL`
+          sql`${workCycles.work_cycles_operator_id} IS NOT NULL`,
+          sql`${workCycles.work_production_quantity} IS NOT NULL`
         )
       );
     
