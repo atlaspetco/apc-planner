@@ -60,32 +60,28 @@ export async function importAllWorkCyclesFromFulfil() {
       console.log(`Fetching work cycles with offset=${offset}, limit=${limit}...`);
       
       // Make search_read request as specified in PRD
-      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work/search_read`, {
+      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work.cycles/search_read`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "X-API-KEY": FULFIL_ACCESS_TOKEN,
         },
         body: JSON.stringify({
-          filters: [["state", "in", ["done", "finished"]]],
+          filters: [["state", "=", "done"]],
           fields: [
             "id",
+            "work.id",
+            "work.production.id",
+            "work.production.number",
+            "work.production.routing.rec_name",
+            "work.production.quantity",
+            "work.operation.rec_name",
+            "work.work_center.rec_name",
             "operator.rec_name",
-            "rec_name",
-            "production",
-            "work_center_category",
-            "work_operation.rec_name",
-            "work_cycles",
-            "state",
-            "production.routing.rec_name",
-            "production.quantity",
+            "quantity_done",
+            "duration",
             "create_date",
-            "production.planned_date",
-            "production.priority",
-            "production.number",
-            "production.rec_name",
-            "operation.rec_name",
-            "work_center.rec_name"
+            "write_date"
           ],
           offset,
           limit,
