@@ -1,163 +1,114 @@
 import { db } from "./server/db";
 import { workCycles } from "./shared/schema";
-import { eq, gt, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
-// Fulfil API configuration
-const FULFIL_API_URL = "https://apc.fulfil.io/api/v2";
-const FULFIL_ACCESS_TOKEN = process.env.FULFIL_ACCESS_TOKEN;
-
-if (!FULFIL_ACCESS_TOKEN) {
-  console.error("❌ FULFIL_ACCESS_TOKEN not found in environment");
-  process.exit(1);
-}
-
-interface FulfilWorkCycle {
-  id: number;
-  work: {
-    id: number;
-    production: {
-      number: string;
-    };
-  };
-  operator: {
-    rec_name: string;
-  };
-  work_center: {
-    rec_name: string;
-  };
-  duration: number; // In seconds
-  quantity_done: number;
-  state: string;
-}
-
-async function fetchWorkCyclesFromFulfil(workId: number): Promise<FulfilWorkCycle[]> {
-  try {
-    const response = await fetch(`${FULFIL_API_URL}/model/production.work.cycle`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-KEY": FULFIL_ACCESS_TOKEN!,
-      },
-      body: JSON.stringify({
-        method: "search_read",
-        params: [
-          [["work", "=", workId]], // Filter by work ID
-          [
-            "id",
-            "work.id",
-            "work.production.number",
-            "operator.rec_name",
-            "work_center.rec_name",
-            "duration",
-            "quantity_done",
-            "state"
-          ],
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`❌ Failed to fetch cycles for work ${workId}: ${response.status}`);
-      return [];
-    }
-
-    const data = await response.json();
-    return data.result || [];
-  } catch (error) {
-    console.error(`❌ Error fetching cycles for work ${workId}:`, error);
-    return [];
-  }
-}
+// This script fixes the fundamental data structure issue where CSV export
+// from Fulfil's one-to-many relationship created repeated total values
+// instead of individual cycle values
 
 async function fixWorkCycleDurations() {
-  console.log("🔍 Finding work cycles with suspicious durations (>8 hours)...");
+  console.log("🔍 Analyzing work cycle data structure issue...");
   
-  // Get all work cycles with durations over 8 hours
+  // Get all work cycles with suspicious durations (over 8 hours = 28800 seconds)
   const suspiciousCycles = await db
-    .select()
+    .select({
+      id: workCycles.id,
+      work_cycles_id: workCycles.work_cycles_id,
+      work_production_number: workCycles.work_production_number,
+      work_cycles_operator_rec_name: workCycles.work_cycles_operator_rec_name,
+      work_cycles_work_center_rec_name: workCycles.work_cycles_work_center_rec_name,
+      duration_sec: workCycles.duration_sec,
+      work_cycles_quantity_done: workCycles.work_cycles_quantity_done
+    })
     .from(workCycles)
-    .where(
-      and(
-        gt(workCycles.duration_sec, 28800), // More than 8 hours
-        eq(workCycles.data_corrupted, false)
-      )
-    )
-    .limit(10); // Start with just 10 to test
+    .where(sql`duration_sec > 28800`); // Over 8 hours
   
-  console.log(`Found ${suspiciousCycles.length} suspicious cycles to check`);
+  console.log(`📊 Found ${suspiciousCycles.length} work cycles with suspicious durations (>8 hours)`);
   
-  // Group by work ID to minimize API calls
-  const workIdMap = new Map<number, typeof suspiciousCycles>();
+  // Group by MO to see the pattern
+  const moGroups = new Map<string, typeof suspiciousCycles>();
   
-  for (const cycle of suspiciousCycles) {
-    if (!cycle.work_cycles_id) continue;
-    
-    const workId = parseInt(cycle.work_cycles_id.toString());
-    if (!workIdMap.has(workId)) {
-      workIdMap.set(workId, []);
+  suspiciousCycles.forEach(cycle => {
+    const moNumber = cycle.work_production_number;
+    if (!moGroups.has(moNumber)) {
+      moGroups.set(moNumber, []);
     }
-    workIdMap.get(workId)!.push(cycle);
+    moGroups.get(moNumber)!.push(cycle);
+  });
+  
+  console.log(`📈 These affect ${moGroups.size} Manufacturing Orders`);
+  
+  // Show examples of the pattern
+  console.log("\n🔍 Examples of repeated duration pattern:");
+  let exampleCount = 0;
+  for (const [moNumber, cycles] of moGroups) {
+    if (exampleCount >= 3) break;
+    
+    console.log(`\n   ${moNumber} (${cycles.length} cycles):`);
+    cycles.forEach((cycle, index) => {
+      console.log(`     Cycle ${index + 1}: ${(cycle.duration_sec! / 3600).toFixed(2)}h, Qty: ${cycle.work_cycles_quantity_done}`);
+    });
+    
+    // Check if all durations are identical (indicating the one-to-many problem)
+    const firstDuration = cycles[0].duration_sec;
+    const allSame = cycles.every(c => c.duration_sec === firstDuration);
+    console.log(`     ❗ All durations identical: ${allSame ? 'YES (One-to-Many issue)' : 'NO'}`);
+    
+    exampleCount++;
   }
   
-  console.log(`\n📊 Checking ${workIdMap.size} unique work orders...`);
+  // Count how many MOs have this pattern
+  let affectedMOs = 0;
+  let totalAffectedCycles = 0;
   
-  let fixedCount = 0;
-  
-  for (const [workId, localCycles] of workIdMap) {
-    console.log(`\n🔄 Fetching work cycles for work ID ${workId}...`);
+  for (const [moNumber, cycles] of moGroups) {
+    const firstDuration = cycles[0].duration_sec;
+    const allSame = cycles.every(c => c.duration_sec === firstDuration);
     
-    const fulfilCycles = await fetchWorkCyclesFromFulfil(workId);
-    
-    if (fulfilCycles.length === 0) {
-      console.log(`⚠️  No cycles found in Fulfil for work ${workId}`);
-      continue;
+    if (allSame) {
+      affectedMOs++;
+      totalAffectedCycles += cycles.length;
     }
-    
-    // Calculate total duration from Fulfil
-    const fulfilTotalDuration = fulfilCycles.reduce((sum, cycle) => sum + cycle.duration, 0);
-    
-    // Get our total duration
-    const localTotalDuration = localCycles.reduce((sum, cycle) => sum + (cycle.duration_sec || 0), 0);
-    
-    console.log(`📊 Work ${workId} (${localCycles[0].work_production_number}):`);
-    console.log(`   Local duration: ${(localTotalDuration / 3600).toFixed(2)} hours`);
-    console.log(`   Fulfil duration: ${(fulfilTotalDuration / 3600).toFixed(2)} hours`);
-    console.log(`   Difference: ${((localTotalDuration - fulfilTotalDuration) / 3600).toFixed(2)} hours`);
-    
-    // If there's a significant difference, update our data
-    if (Math.abs(localTotalDuration - fulfilTotalDuration) > 300) { // More than 5 minutes difference
-      console.log(`   ✅ Updating duration from ${localTotalDuration}s to ${fulfilTotalDuration}s`);
-      
-      // For now, we'll update the single consolidated cycle
-      // In a real scenario, we might want to recreate individual cycles
-      for (const localCycle of localCycles) {
-        await db
-          .update(workCycles)
-          .set({
-            duration_sec: fulfilTotalDuration, // Use total from Fulfil
-            updated_at: new Date()
-          })
-          .where(eq(workCycles.id, localCycle.id));
-        
-        fixedCount++;
-      }
-    }
-    
-    // Rate limiting
-    await new Promise(resolve => setTimeout(resolve, 1000));
   }
   
-  console.log(`\n✅ Fixed ${fixedCount} work cycle durations`);
-  console.log("🔄 Run the UPH recalculation to update the UPH values with corrected durations");
+  console.log(`\n📊 SUMMARY:`);
+  console.log(`   Manufacturing Orders with repeated duration pattern: ${affectedMOs}`);
+  console.log(`   Total work cycles affected: ${totalAffectedCycles}`);
+  console.log(`   These need to be fixed by using only ONE cycle per MO`);
+  console.log(`   Current system incorrectly sums ${totalAffectedCycles} repeated values`);
+  
+  console.log(`\n💡 SOLUTION:`);
+  console.log(`   For each MO with repeated durations:`);
+  console.log(`   1. Keep only the first work cycle (it contains the correct total)`);
+  console.log(`   2. Delete the duplicate cycles (they're just repeated data)`);
+  console.log(`   3. This will fix the inflated duration calculations`);
+  
+  // Optional: Show specific recommendations for top affected MOs
+  const sortedMOs = Array.from(moGroups.entries())
+    .filter(([_, cycles]) => {
+      const firstDuration = cycles[0].duration_sec;
+      return cycles.every(c => c.duration_sec === firstDuration);
+    })
+    .sort(([_, a], [__, b]) => b.length - a.length)
+    .slice(0, 10);
+  
+  console.log(`\n🎯 TOP 10 Most Affected MOs:`);
+  sortedMOs.forEach(([moNumber, cycles], index) => {
+    const hours = (cycles[0].duration_sec! / 3600).toFixed(2);
+    console.log(`   ${index + 1}. ${moNumber}: ${cycles.length} duplicate cycles x ${hours}h each = ${(cycles.length * parseFloat(hours)).toFixed(2)}h total inflation`);
+  });
 }
 
-// Run the fix
+// Import necessary SQL function
+import { sql } from "drizzle-orm";
+
+// Run the analysis
 fixWorkCycleDurations()
   .then(() => {
-    console.log("✅ Duration fix complete");
+    console.log("\n✅ Analysis complete");
     process.exit(0);
   })
   .catch((error) => {
-    console.error("❌ Error fixing durations:", error);
+    console.error("❌ Error:", error);
     process.exit(1);
   });
