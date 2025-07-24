@@ -143,8 +143,8 @@ export async function calculateCoreUph(
     if (!cycle.work_cycles_operator_rec_name || 
         !cycle.work_cycles_work_center_rec_name || 
         !cycle.work_production_number ||
-        !cycle.work_cycles_duration ||
-        cycle.work_cycles_duration <= 0) {
+        !cycle.duration_sec ||
+        cycle.duration_sec <= 0) {
       return;
     }
     
@@ -180,7 +180,7 @@ export async function calculateCoreUph(
     group.cycleCount++;
     
     // CRITICAL FIX: Add duration ONLY within the same work center for this operator
-    group.totalDurationSeconds += cycle.work_cycles_duration;
+    group.totalDurationSeconds += cycle.duration_sec;
     
     // Use work_production_quantity (total MO quantity from CSV)
     if (group.moQuantity === 0 && cycle.work_production_quantity) {

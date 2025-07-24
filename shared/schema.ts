@@ -139,7 +139,8 @@ export const batches = pgTable("batches", {
 export const workCycles = pgTable("work_cycles", {
   id: serial("id").primaryKey(),
   // Authentic Fulfil API fields - exact endpoint names
-  work_cycles_duration: real("work_cycles_duration"), // work/cycles/duration
+  work_cycles_duration: real("work_cycles_duration"), // work/cycles/duration (hh:mm:ss format - potentially corrupted)
+  duration_sec: integer("duration_sec"), // work/cycles/duration_sec from CSV column K - accurate duration in seconds
   work_cycles_id: integer("work_cycles_id"), // work/cycles/id
   work_cycles_rec_name: text("work_cycles_rec_name"), // work/cycles/rec_name
   work_cycles_operator_rec_name: text("work_cycles_operator_rec_name"), // work/cycles/operator/rec_name

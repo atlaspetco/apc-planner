@@ -55,7 +55,7 @@ async function consolidateAndImportCycles() {
   console.log("✅ Cleared work_cycles table");
   
   // Step 2: Read and parse CSV
-  const csvPath = path.join(process.cwd(), "attached_assets/cycles-appended - tmpuv6ll63e_1753383185435.csv");
+  const csvPath = path.join(process.cwd(), "attached_assets/cycles-appended_1753386052631.csv");
   console.log(`📁 Reading CSV from: ${csvPath}`);
   
   const csvContent = readFileSync(csvPath, 'utf-8');
@@ -146,7 +146,8 @@ async function consolidateAndImportCycles() {
     try {
       batch.push({
         work_cycles_id: Math.floor(Math.random() * 1000000), // Generate unique ID
-        work_cycles_duration: consolidated.duration_sec,
+        work_cycles_duration: consolidated.duration_sec, // This will be replaced with proper hh:mm:ss parsing
+        duration_sec: consolidated.duration_sec, // New field with accurate duration in seconds
         work_cycles_quantity_done: consolidated.quantity_done,
         work_cycles_rec_name: consolidated.work_cycles_rec_name,
         work_cycles_operator_rec_name: consolidated.operator_name,
