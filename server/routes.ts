@@ -3150,6 +3150,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Canonical Work Cycle Pull (PRD Section 4.1)
+  app.post("/api/fulfil/canonical-pull", async (req, res) => {
+    try {
+      const { fullCanonicalImport } = await import("./fulfil-canonical-data-pull.js");
+      const result = await fullCanonicalImport();
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error in canonical data pull:", error);
+      res.status(500).json({
+        success: false,
+        totalImported: 0,
+        message: `Canonical import failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      });
+    }
+  });
+
 
 
   // Get authentic production routings from work cycles data
@@ -3384,11 +3401,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current UPH table data for dashboard display
+  // Get current UPH table data for dashboard display with anomaly information
   app.get("/api/uph/table-data", async (req, res) => {
     try {
       // Use historical UPH data from the accurate calculation
       const uphResults = await db.select().from(uphData).orderBy(uphData.productRouting);
+      
+      // Get anomaly data for highlighting (PRD Section 4.5)
+      const { detectUphAnomalies } = await import("./uph-anomaly-detector.js");
+      const anomalies = await detectUphAnomalies();
+      
+      // Create anomaly lookup map for UPH values
+      const anomalyMap = new Map<string, boolean>();
+      anomalies.forEach(anomaly => {
+        const key = `${anomaly.operatorName}|${anomaly.workCenter}|${anomaly.routing}`;
+        anomalyMap.set(key, true);
+      });
       
       const allOperators = await db.select().from(operators);
       
@@ -3532,9 +3560,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalOperators: uniqueOperators.size,
           totalCombinations: uphResults.length,
           totalRoutings: allRoutings.length,
-          avgUphByCeter: avgUphByCenter
+          avgUphByCeter: avgUphByCenter,
+          // PRD Section 4.5: Include anomaly statistics in response
+          anomaliesCount: anomalies.length,
+          anomaliesExcluded: anomalies.filter(a => a.anomalyType === 'statistical_outlier').length
         },
-        workCenters: allWorkCenters
+        workCenters: allWorkCenters,
+        // PRD Section 4.5: Include anomaly map for red-pill highlighting
+        anomalyMap: Object.fromEntries(anomalyMap)
       });
     } catch (error) {
       console.error("Error getting UPH table data:", error);

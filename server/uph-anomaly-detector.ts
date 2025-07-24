@@ -68,16 +68,51 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
     }
   });
   
-  // Calculate statistics per work center
-  const workCenterStats = new Map<string, { mean: number; stdDev: number; max: number }>();
+  // PRD Section 4.5: Median + IQR per cohort (fallback z-score >3)
+  const workCenterStats = new Map<string, { 
+    median: number; 
+    q1: number; 
+    q3: number; 
+    iqr: number; 
+    lowerBound: number; 
+    upperBound: number; 
+    mean: number; 
+    stdDev: number; 
+    max: number 
+  }>();
   
   workCenterData.forEach((uphValues, workCenter) => {
+    // Sort values for percentile calculations
+    const sortedValues = [...uphValues].sort((a, b) => a - b);
+    const n = sortedValues.length;
+    
+    // Calculate median
+    const median = n % 2 === 0 
+      ? (sortedValues[n / 2 - 1] + sortedValues[n / 2]) / 2
+      : sortedValues[Math.floor(n / 2)];
+    
+    // Calculate Q1 and Q3 (using standard method)
+    const q1Index = Math.floor(n * 0.25);
+    const q3Index = Math.floor(n * 0.75);
+    const q1 = sortedValues[q1Index];
+    const q3 = sortedValues[q3Index];
+    const iqr = q3 - q1;
+    
+    // IQR-based outlier bounds (1.5 * IQR rule)
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+    
+    // Fallback statistics for z-score >3
     const mean = uphValues.reduce((sum, val) => sum + val, 0) / uphValues.length;
     const variance = uphValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / uphValues.length;
     const stdDev = Math.sqrt(variance);
     const max = Math.max(...uphValues);
     
-    workCenterStats.set(workCenter, { mean, stdDev, max });
+    workCenterStats.set(workCenter, { 
+      median, q1, q3, iqr, lowerBound, upperBound, mean, stdDev, max 
+    });
+    
+    console.log(`📊 ${workCenter} cohort: Median=${median.toFixed(1)}, IQR=${iqr.toFixed(1)}, Bounds=[${lowerBound.toFixed(1)}, ${upperBound.toFixed(1)}], n=${n}`);
   });
   
   // Analyze each cycle for anomalies
@@ -111,12 +146,22 @@ export async function detectUphAnomalies(thresholdHigh: number = 500, thresholdL
       anomalyType = 'extreme_low';
       reason = `UPH ${calculatedUph.toFixed(1)} below threshold of ${thresholdLow}`;
     }
-    // Check for statistical outliers (3 standard deviations)
+    // PRD Section 4.5: Check for IQR-based outliers with z-score fallback
     else if (workCenterStats.has(workCenter)) {
       const stats = workCenterStats.get(workCenter)!;
-      if (calculatedUph > stats.mean + 3 * stats.stdDev) {
+      
+      // Primary detection: IQR-based outliers (1.5 * IQR rule)
+      if (calculatedUph < stats.lowerBound || calculatedUph > stats.upperBound) {
         anomalyType = 'statistical_outlier';
-        reason = `UPH ${calculatedUph.toFixed(1)} is ${((calculatedUph - stats.mean) / stats.stdDev).toFixed(1)}σ above mean`;
+        reason = `IQR outlier: UPH ${calculatedUph.toFixed(1)} outside [${stats.lowerBound.toFixed(1)}, ${stats.upperBound.toFixed(1)}]`;
+      }
+      // Fallback detection: z-score >3 for extreme cases
+      else if (stats.stdDev > 0) {
+        const zScore = Math.abs(calculatedUph - stats.mean) / stats.stdDev;
+        if (zScore > 3) {
+          anomalyType = 'statistical_outlier';
+          reason = `Z-score outlier: UPH ${calculatedUph.toFixed(1)} (z-score: ${zScore.toFixed(2)})`;
+        }
       }
     }
     

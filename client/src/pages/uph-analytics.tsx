@@ -6,8 +6,10 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search, Download, AlertTriangle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
@@ -32,8 +34,13 @@ interface UphTableData {
     totalRoutings: number;
     avgUphByCeter: Record<string, number>;
     noDataReason?: string;
+    // PRD Section 4.5: Anomaly statistics
+    anomaliesCount?: number;
+    anomaliesExcluded?: number;
   };
   workCenters: string[];
+  // PRD Section 4.5: Anomaly map for red-pill highlighting
+  anomalyMap?: Record<string, boolean>;
 }
 
 interface RawUphData {
@@ -195,32 +202,19 @@ export default function UphAnalytics() {
     uphValue: number;
   } | null>(null);
 
-  // Get UPH data from historical table
-  const { data: rawUphData, isLoading: uphLoading, isRefetching, refetch } = useQuery({
-    queryKey: ["/api/uph-data"],
+  // Get UPH table data with anomaly information (PRD Section 4.5)
+  const { data: uphTableData, isLoading: uphLoading, isRefetching, refetch } = useQuery({
+    queryKey: ["/api/uph/table-data"],
     queryFn: async () => {
-      const response = await fetch("/api/uph-data");
-      if (!response.ok) throw new Error("Failed to fetch UPH data");
+      const response = await fetch("/api/uph/table-data");
+      if (!response.ok) throw new Error("Failed to fetch UPH table data");
       return response.json();
     },
     staleTime: 5 * 60 * 1000,
   });
 
-  // Transform raw UPH data to table format
-  const uphData = (() => {
-    console.log("Raw UPH data:", rawUphData);
-    if (!rawUphData) return null;
-    // Handle both array and object responses
-    const dataArray = Array.isArray(rawUphData) ? rawUphData : rawUphData.data || [];
-    if (!Array.isArray(dataArray)) {
-      console.error("UPH data is not an array:", rawUphData);
-      return null;
-    }
-    console.log("Processing", dataArray.length, "UPH records");
-    const result = transformRawUphData(dataArray);
-    console.log("Transformed data:", result);
-    return result;
-  })();
+  // Use UPH table data directly (already formatted)
+  const uphData = uphTableData;
 
   // Use standardized UPH calculation job
   const { calculate, isCalculating, status: jobStatus } = useUphCalculationJob();
@@ -337,29 +331,43 @@ export default function UphAnalytics() {
   // Debug logging
   console.log("UPH Analytics Render State:", {
     uphLoading,
-    rawUphData,
+    uphTableData,
     uphData,
     hasRoutings: uphData?.routings?.length > 0
   });
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="mb-6 flex justify-between items-start">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">UPH Analytics</h1>
-          <p className="text-gray-600">Units Per Hour performance metrics organized by product routing</p>
-          
-          {/* Unified Status Indicator */}
-          {isAnyOperationRunning && (
-            <div className="flex items-center mt-2 text-sm text-blue-600">
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
-                <span className="font-medium">Live</span>
-                <span className="ml-2 text-gray-600">• Calculating UPH...</span>
+    <TooltipProvider>
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="mb-6 flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">UPH Analytics</h1>
+            <p className="text-gray-600">Units Per Hour performance metrics organized by product routing</p>
+            
+            {/* PRD Section 4.5: Anomaly Banner */}
+            {uphData?.summary?.anomaliesExcluded && uphData.summary.anomaliesExcluded > 0 && (
+              <Alert className="mt-3 border-orange-200 bg-orange-50">
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+                <AlertDescription className="text-orange-800">
+                  ⚠️ {uphData.summary.anomaliesExcluded} anomalies excluded from averages. 
+                  <Button variant="link" className="h-auto p-0 ml-1 text-orange-600 hover:text-orange-800">
+                    Review in Fulfil
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {/* Unified Status Indicator */}
+            {isAnyOperationRunning && (
+              <div className="flex items-center mt-2 text-sm text-blue-600">
+                <div className="flex items-center">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+                  <span className="font-medium">Live</span>
+                  <span className="ml-2 text-gray-600">• Calculating UPH...</span>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
         
         <div className="flex items-center gap-4">
 
@@ -569,26 +577,51 @@ export default function UphAnalytics() {
                               {routing.operators.map((operator) => (
                                 <tr key={operator.operatorId} className="border-b">
                                   <td className="py-2 font-medium">{operator.operatorName}</td>
-                                  {getOrderedWorkCenters(uphData.workCenters).map((wc) => (
-                                    <td key={wc} className="text-center py-2">
-                                      <Badge
-                                        variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
-                                        className={`min-w-[60px] ${operator.workCenterPerformance[wc] ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                                        onClick={() => {
-                                          if (operator.workCenterPerformance[wc]) {
-                                            setSelectedUphDetails({
-                                              operatorName: operator.operatorName,
-                                              workCenter: wc,
-                                              routing: routing.routingName,
-                                              uphValue: operator.workCenterPerformance[wc]
-                                            });
-                                          }
-                                        }}
-                                      >
-                                        {formatUph(operator.workCenterPerformance[wc])}
-                                      </Badge>
-                                    </td>
-                                  ))}
+                                  {getOrderedWorkCenters(uphData.workCenters).map((wc) => {
+                                    const uphValue = operator.workCenterPerformance[wc];
+                                    // PRD Section 4.5: Check if this UPH value is anomalous
+                                    const anomalyKey = `${operator.operatorName}|${wc}|${routing.routingName}`;
+                                    const isAnomaly = uphData.anomalyMap?.[anomalyKey] || false;
+                                    
+                                    return (
+                                      <td key={wc} className="text-center py-2">
+                                        {uphValue ? (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Badge
+                                                variant={getUphBadgeVariant(uphValue, wc, routing.routingName)}
+                                                className={`min-w-[60px] cursor-pointer hover:opacity-80 transition-opacity ${
+                                                  isAnomaly ? 'border-2 border-red-500 ring-1 ring-red-200' : ''
+                                                }`}
+                                                onClick={() => {
+                                                  setSelectedUphDetails({
+                                                    operatorName: operator.operatorName,
+                                                    workCenter: wc,
+                                                    routing: routing.routingName,
+                                                    uphValue: uphValue
+                                                  });
+                                                }}
+                                              >
+                                                {formatUph(uphValue)}
+                                              </Badge>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              {isAnomaly ? (
+                                                <p className="text-red-600 font-medium">Anomaly – excluded from avg</p>
+                                              ) : (
+                                                <p>Click for calculation details</p>
+                                              )}
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        ) : (
+                                          <Badge variant="outline" className="min-w-[60px]">
+                                            -
+                                          </Badge>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                
                                   <td className="text-center py-2">
                                     <span className="text-sm text-muted-foreground">
                                       {operator.totalObservations}
@@ -660,6 +693,7 @@ export default function UphAnalytics() {
           uphValue={selectedUphDetails.uphValue}
         />
       )}
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
