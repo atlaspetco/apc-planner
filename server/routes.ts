@@ -3651,22 +3651,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       
       // Convert to the expected format
-      const moDetails = detailsResult.moGroupedData.map(mo => ({
-        moNumber: mo.moNumber,
-        moQuantity: mo.moQuantity,
-        totalDurationHours: mo.totalDurationSeconds / 3600,
-        uph: mo.moQuantity / (mo.totalDurationSeconds / 3600),
-        cycleCount: mo.cycleCount
-      }));
+      const moDetails = detailsResult.moGroupedData.map(mo => {
+        const totalDurationHours = mo.totalDurationSeconds / 3600;
+        const uph = totalDurationHours > 0 ? mo.moQuantity / totalDurationHours : 0;
+        return {
+          moNumber: mo.moNumber,
+          moQuantity: mo.moQuantity,
+          totalDurationHours,
+          uph: isFinite(uph) ? uph : 0,
+          cycleCount: mo.cycleCount
+        };
+      }).filter(mo => mo.uph > 0); // Filter out invalid UPH values
 
       // Calculate summary statistics from MO details - BLUE methodology (average of individual MO UPH)
       const totalQuantity = moDetails.reduce((sum, mo) => sum + mo.moQuantity, 0);
       const totalHours = moDetails.reduce((sum, mo) => sum + mo.totalDurationHours, 0);
       
-      // CRITICAL: Use average of individual MO UPH values instead of total qty/total hours
-      const averageUph = moDetails.length > 0 
-        ? moDetails.reduce((sum, mo) => sum + mo.uph, 0) / moDetails.length 
-        : 0;
+      // CRITICAL: Use the pre-calculated average from the core calculator
+      const averageUph = detailsResult.averageUph || 0;
 
       // Send the response with authentic MO-level data
       res.json({

@@ -398,7 +398,7 @@ export async function getCoreUphDetails(
   const moTotalDurations = new Map<string, number>();
   
   allCyclesForMos.forEach(cycle => {
-    if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
+    if (!cycle.work_production_number || !cycle.duration_sec || cycle.duration_sec <= 0) {
       return;
     }
     
@@ -409,14 +409,14 @@ export async function getCoreUphDetails(
     
     const moNumber = cycle.work_production_number;
     const currentTotal = moTotalDurations.get(moNumber) || 0;
-    moTotalDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
+    moTotalDurations.set(moNumber, currentTotal + cycle.duration_sec);
   });
   
   // STEP 2: Group by MO using TOTAL MO duration
   const moGroupedMap = new Map<string, MoGroupData>();
   
   filteredCycles.forEach(cycle => {
-    if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
+    if (!cycle.work_production_number || !cycle.duration_sec || cycle.duration_sec <= 0) {
       return;
     }
     

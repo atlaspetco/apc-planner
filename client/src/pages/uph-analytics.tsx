@@ -196,6 +196,7 @@ export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
+  const [filterAnomalies, setFilterAnomalies] = useState<boolean>(false);
   // UPH Analytics always shows ALL data - no time filtering
   const [selectedUphDetails, setSelectedUphDetails] = useState<{
     operatorName: string;
@@ -220,11 +221,58 @@ export default function UphAnalytics() {
     console.log("Raw UPH data:", rawUphData);
     if (!rawUphData) return null;
     // Handle both array and object responses
-    const dataArray = Array.isArray(rawUphData) ? rawUphData : rawUphData.data || [];
+    let dataArray = Array.isArray(rawUphData) ? rawUphData : rawUphData.data || [];
     if (!Array.isArray(dataArray)) {
       console.error("UPH data is not an array:", rawUphData);
       return null;
     }
+    
+    // Apply anomaly filtering if enabled
+    if (filterAnomalies && dataArray.length > 0) {
+      // Calculate statistics for each work center category
+      const workCenterStats = new Map<string, { mean: number; stdDev: number; values: number[] }>();
+      
+      // Group by work center to calculate statistics
+      dataArray.forEach(record => {
+        const wc = record.workCenter;
+        if (!workCenterStats.has(wc)) {
+          workCenterStats.set(wc, { mean: 0, stdDev: 0, values: [] });
+        }
+        workCenterStats.get(wc)!.values.push(record.uph);
+      });
+      
+      // Calculate mean and standard deviation for each work center
+      workCenterStats.forEach((stats, wc) => {
+        const values = stats.values;
+        const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+        const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+        const stdDev = Math.sqrt(variance);
+        
+        stats.mean = mean;
+        stats.stdDev = stdDev;
+        
+        console.log(`Work Center ${wc} - Mean: ${mean.toFixed(2)}, StdDev: ${stdDev.toFixed(2)}`);
+      });
+      
+      // Filter out anomalies (values beyond 2 standard deviations)
+      const filteredData = dataArray.filter(record => {
+        const stats = workCenterStats.get(record.workCenter);
+        if (!stats) return true;
+        
+        const lowerBound = stats.mean - (2 * stats.stdDev);
+        const upperBound = stats.mean + (2 * stats.stdDev);
+        
+        const isAnomaly = record.uph < lowerBound || record.uph > upperBound;
+        if (isAnomaly) {
+          console.log(`Filtering anomaly: ${record.operatorName} - ${record.workCenter} - ${record.routing}: ${record.uph} UPH (outside ${lowerBound.toFixed(2)} - ${upperBound.toFixed(2)})`);
+        }
+        return !isAnomaly;
+      });
+      
+      console.log(`Filtered ${dataArray.length - filteredData.length} anomalies out of ${dataArray.length} records`);
+      dataArray = filteredData;
+    }
+    
     console.log("Processing", dataArray.length, "UPH records");
     const result = transformRawUphData(dataArray);
     console.log("Transformed data:", result);
@@ -373,14 +421,14 @@ export default function UphAnalytics() {
         <div className="flex items-center gap-4">
 
           
-          {/* AI Optimized Toggle */}
+          {/* Filter Anomalies Toggle */}
           <div className="flex items-center space-x-2">
             <Switch
-              id="ai-optimized"
-              checked={aiOptimized}
-              onCheckedChange={setAiOptimized}
+              id="filter-anomalies"
+              checked={filterAnomalies}
+              onCheckedChange={setFilterAnomalies}
             />
-            <Label htmlFor="ai-optimized" className="text-sm">AI Optimized</Label>
+            <Label htmlFor="filter-anomalies" className="text-sm">Filter Anomalies</Label>
           </div>
           
           {/* Refresh Button */}
