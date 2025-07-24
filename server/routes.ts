@@ -5469,7 +5469,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Calculate operator's current workload
+      // Calculate operator's current workload using the same method as workload modal
       const assignments = await db.select()
         .from(workOrderAssignments)
         .where(and(
@@ -5489,19 +5489,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const wo = po.workOrders?.find(w => w.id === assignment.workOrderId);
         if (!wo) continue;
 
-        // Get UPH data using operator name (not ID)
-        const currentUphData = await db
-          .select()
-          .from(uphData)
-          .where(and(
-            eq(uphData.operatorName, operator.name),
-            eq(uphData.workCenter, wo.workCenter),
-            eq(uphData.productRouting, po.routing)
-          ))
-          .limit(1);
+        // Use operator_uph table instead of deprecated uphData table
+        const currentUphData = await db.execute(sql`
+          SELECT uph FROM operator_uph 
+          WHERE operator_operation_workcenter LIKE ${`%${operator.name}%${wo.workCenter}%`}
+          AND routing_name = ${po.routing || po.routingName}
+          LIMIT 1
+        `);
 
-        if (currentUphData.length > 0 && currentUphData[0].uph > 0) {
-          currentWorkloadHours += po.quantity / currentUphData[0].uph;
+        if (currentUphData.rows.length > 0 && currentUphData.rows[0].uph > 0) {
+          // Use work order quantity (or fall back to production order quantity)
+          const quantity = wo.quantity > 0 ? wo.quantity : po.quantity;
+          const uph = currentUphData.rows[0].uph;
+          currentWorkloadHours += quantity / uph;
         }
       }
 
@@ -5520,21 +5520,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const assignmentDetails = [];
 
       for (const { workOrderId, productionOrder, workOrder } of workOrdersToAssign) {
-        // Get UPH data for this combination using operator name (not ID)
-        const currentUphData = await db
-          .select()
-          .from(uphData)
-          .where(and(
-            eq(uphData.operatorName, operator.name),
-            eq(uphData.workCenter, workCenter),
-            eq(uphData.productRouting, routing)
-          ))
-          .limit(1);
+        // Get UPH data using operator_uph table
+        const currentUphData = await db.execute(sql`
+          SELECT uph FROM operator_uph 
+          WHERE operator_operation_workcenter LIKE ${`%${operator.name}%${workCenter}%`}
+          AND routing_name = ${routing}
+          LIMIT 1
+        `);
 
-        if (currentUphData.length === 0 || currentUphData[0].uph === 0) {
+        if (currentUphData.rows.length === 0 || currentUphData.rows[0].uph === 0) {
           assignmentDetails.push({
             workOrderId,
-            quantity: productionOrder.quantity,
+            quantity: workOrder.quantity > 0 ? workOrder.quantity : productionOrder.quantity,
             estimatedHours: 0,
             uph: 0,
             skip: true,
@@ -5543,14 +5540,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        const estimatedHours = productionOrder.quantity / currentUphData[0].uph;
+        // Use work order quantity if available, otherwise production order quantity
+        const quantity = workOrder.quantity > 0 ? workOrder.quantity : productionOrder.quantity;
+        const uph = currentUphData.rows[0].uph;
+        const estimatedHours = quantity / uph;
         totalNewHours += estimatedHours;
         
         assignmentDetails.push({
           workOrderId,
-          quantity: productionOrder.quantity,
+          quantity,
           estimatedHours,
-          uph: currentUphData[0].uph,
+          uph,
           skip: false
         });
       }
