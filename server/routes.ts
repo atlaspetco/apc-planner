@@ -1183,8 +1183,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("Fetching UPH data from database...");
       
-      // Use raw SQL to avoid Drizzle schema issues
-      const result = await db.execute(sql`SELECT * FROM uph_data ORDER BY uph DESC`);
+      // Fetch UPH data with operator ID mapping
+      const result = await db.execute(sql`
+        SELECT 
+          u.*,
+          o.id as mapped_operator_id
+        FROM uph_data u
+        LEFT JOIN operators o ON u.operator_name = o.name
+        ORDER BY u.uph DESC
+      `);
       const data = result.rows;
       
       console.log(`Retrieved ${data.length} UPH records`);
@@ -1192,7 +1199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Transform data to match expected frontend format
       const transformedData = data.map((record: any) => ({
         id: record.id,
-        operatorId: record.operator_id,
+        operatorId: record.mapped_operator_id || record.operator_id, // Use mapped ID or original
         operatorName: record.operator_name,
         workCenter: record.work_center,
         operation: record.operation || record.work_center, // Use workCenter as fallback

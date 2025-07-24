@@ -80,7 +80,18 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   
   // Process each record
   rawData.forEach(record => {
+    // Skip records without operator ID
+    if (!record.operatorId) {
+      console.log(`Skipping UPH row with null operatorId:`, record);
+      return;
+    }
+    
     const routing = record.routing;
+    if (!routing) {
+      console.log(`Skipping UPH row with null routing:`, record);
+      return;
+    }
+    
     if (!routingMap.has(routing)) {
       routingMap.set(routing, {
         routingName: routing,
