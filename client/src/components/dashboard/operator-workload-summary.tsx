@@ -191,10 +191,10 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
               (entry.routing === routing || entry.productRouting === routing)
             );
             
-            if (uphEntry && uphEntry.uph > 0) {
-              estimatedHours = assignment.quantity / uphEntry.uph;
-              productData.uph = uphEntry.uph;
-              console.log(`Found UPH for ${operator.operatorName} - ${workCenter}/${routing}: ${uphEntry.uph} UPH, Hours: ${estimatedHours}`);
+            if (uphEntry && uphEntry.unitsPerHour > 0) {
+              estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
+              productData.uph = uphEntry.unitsPerHour;
+              console.log(`Found UPH for ${operator.operatorName} - ${workCenter}/${routing}: ${uphEntry.unitsPerHour} UPH, Hours: ${estimatedHours}`);
             } else {
               console.log(`No UPH data found for ${operator.operatorName} - ${workCenter}/${routing}`);
             }
