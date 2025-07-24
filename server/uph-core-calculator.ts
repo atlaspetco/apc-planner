@@ -1,12 +1,11 @@
 import { db } from "./db.js";
-import { workCycles, productionOrders, operators, uphData } from "../shared/schema.js";
+import { workCycles, productionOrders, operators } from "../shared/schema.js";
 import { eq, or, isNull } from "drizzle-orm";
 
 export interface UphCalculationResult {
   operatorName: string;
   workCenter: string;
   routing: string;
-  operation?: string;
   unitsPerHour: number;
   observations: number;
   moUphValues: number[];
@@ -20,7 +19,6 @@ export interface MoGroupData {
   totalDurationSeconds: number;
   moQuantity: number;
   cycleCount: number;
-  operations: Set<string>;
 }
 
 // Core work center consolidation logic
@@ -50,10 +48,11 @@ export async function calculateCoreUph(
   console.log('=== CORE UPH CALCULATOR STARTED ===', filters);
   
   // Fetch all necessary data - EXCLUDE CORRUPTED RECORDS
-  const allCyclesRaw = await db.select().from(workCycles);
-  // Filter out corrupted records in JavaScript
-  const allCycles = allCyclesRaw.filter(cycle => 
-    cycle.data_corrupted === false || cycle.data_corrupted === null
+  const allCycles = await db.select().from(workCycles).where(
+    or(
+      eq(workCycles.data_corrupted, false),
+      isNull(workCycles.data_corrupted)
+    )
   );
   const allProductionOrders = await db.select().from(productionOrders);
   const allOperators = await db.select().from(operators);
@@ -166,8 +165,7 @@ export async function calculateCoreUph(
         moNumber: cycle.work_production_number,
         totalDurationSeconds: 0, // Will accumulate individual operator's duration only
         moQuantity: 0,
-        cycleCount: 0,
-        operations: new Set<string>()
+        cycleCount: 0
       });
       
       // Debug specific case
@@ -183,17 +181,6 @@ export async function calculateCoreUph(
     
     // CRITICAL FIX: Add duration ONLY within the same work center for this operator
     group.totalDurationSeconds += cycle.work_cycles_duration;
-    
-    // Extract operation from work_operation_rec_name or rec_name
-    if (cycle.work_operation_rec_name) {
-      group.operations.add(cycle.work_operation_rec_name);
-    } else if (cycle.work_rec_name) {
-      // Extract operation from rec_name (e.g., "WO33046 | Sewing | MO178231")
-      const parts = cycle.work_rec_name.split(' | ');
-      if (parts.length >= 2) {
-        group.operations.add(parts[1]);
-      }
-    }
     
     // Get MO quantity - CRITICAL: Use production order quantity, not cycle quantity
     const moQuantity = moQuantityMap.get(cycle.work_production_number) || 
@@ -211,22 +198,13 @@ export async function calculateCoreUph(
     routing: string;
     moUphValues: number[];
     totalObservations: number;
-    operations: Set<string>;
   }>();
   
   moGroupedData.forEach(moData => {
     // Skip if no quantity or duration
     if (moData.moQuantity <= 0 || moData.totalDurationSeconds <= 0) return;
     
-    // CRITICAL FIX: Filter out unrealistic UPH values below 1.0
     const durationHours = moData.totalDurationSeconds / 3600;
-    const calculatedUph = moData.moQuantity / durationHours;
-    
-    // Skip Manufacturing Orders with UPH below 1.0 (indicates data corruption)
-    if (calculatedUph < 1.0) {
-      console.log(`⚠️ FILTERING OUT unrealistic UPH: ${moData.moNumber} = ${calculatedUph.toFixed(2)} UPH (${moData.moQuantity} units ÷ ${durationHours.toFixed(2)}h)`);
-      return;
-    }
     
     // Apply realistic filters
     if (durationHours < (2 / 60)) return; // Less than 2 minutes
@@ -264,17 +242,13 @@ export async function calculateCoreUph(
         workCenter: moData.workCenter,
         routing: moData.routing,
         moUphValues: [],
-        totalObservations: 0,
-        operations: new Set<string>()
+        totalObservations: 0
       });
     }
     
     const operatorGroup = operatorGroupedData.get(operatorKey)!;
     operatorGroup.moUphValues.push(uphPerMo);
     operatorGroup.totalObservations++;
-    
-    // Merge operations from this MO
-    moData.operations.forEach(op => operatorGroup.operations.add(op));
   });
   
   // Apply statistical outlier detection before calculating averages
@@ -319,7 +293,6 @@ export async function calculateCoreUph(
       operatorName: group.operatorName,
       workCenter: group.workCenter,
       routing: group.routing,
-      operation: Array.from(group.operations).join(' + ') || 'General',
       unitsPerHour: finalValues.length > 0 
         ? finalValues.reduce((sum, uph) => sum + uph, 0) / finalValues.length 
         : 0,
@@ -424,35 +397,40 @@ export async function getCoreUphDetails(
     return true;
   });
   
-  // STEP 1: Group by MO using OPERATOR-SPECIFIC work center duration only
-  const moGroupedMap = new Map<string, MoGroupData>();
-  const uniqueCycleIds = new Set<number>(); // Track unique work_cycles_id values
+  // STEP 1: Calculate total duration for each MO across ALL operations
+  const allCyclesForMos = await db.select().from(workCycles);
+  const moTotalDurations = new Map<string, number>();
   
-  // First, group by unique work_cycles_id to handle duplicate imports
-  const uniqueCycles = new Map<number, any>();
+  allCyclesForMos.forEach(cycle => {
+    if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
+      return;
+    }
+    
+    const moNumber = cycle.work_production_number;
+    const currentTotal = moTotalDurations.get(moNumber) || 0;
+    moTotalDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
+  });
+  
+  // STEP 2: Group by MO using TOTAL MO duration
+  const moGroupedMap = new Map<string, MoGroupData>();
   
   filteredCycles.forEach(cycle => {
     if (!cycle.work_production_number || !cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
       return;
     }
     
-    // Use only the first occurrence of each work_cycles_id (handles duplicate imports)
-    if (cycle.work_cycles_id && !uniqueCycles.has(cycle.work_cycles_id)) {
-      uniqueCycles.set(cycle.work_cycles_id, cycle);
-    }
-  });
-  
-  // Now process unique cycles only
-  uniqueCycles.forEach(cycle => {
     const moNumber = cycle.work_production_number;
     
     if (!moGroupedMap.has(moNumber)) {
+      // CRITICAL FIX: Use total MO duration instead of work center specific duration
+      const totalMoDuration = moTotalDurations.get(moNumber) || 0;
+      
       moGroupedMap.set(moNumber, {
         operatorName,
         workCenter,
         routing,
         moNumber,
-        totalDurationSeconds: 0, // Will accumulate ONLY this operator's work center duration
+        totalDurationSeconds: totalMoDuration, // Use TOTAL MO duration
         moQuantity: 0,
         cycleCount: 0
       });
@@ -460,8 +438,6 @@ export async function getCoreUphDetails(
     
     const group = moGroupedMap.get(moNumber)!;
     group.cycleCount++;
-    // Add only THIS operator's work center duration
-    group.totalDurationSeconds += cycle.work_cycles_duration;
     
     // Get MO quantity
     const moQuantity = moQuantityMap.get(moNumber) || 
@@ -485,13 +461,6 @@ export async function getCoreUphDetails(
     if (durationHours < (2 / 60)) return; // Less than 2 minutes
     
     const uphPerMo = moData.moQuantity / durationHours;
-    
-    // CRITICAL FIX: Filter out unrealistic UPH values below 1.0
-    if (uphPerMo < 1.0) {
-      console.log(`⚠️ FILTERING OUT unrealistic UPH in details: ${moData.moNumber} = ${uphPerMo.toFixed(2)} UPH (${moData.moQuantity} units ÷ ${durationHours.toFixed(2)}h)`);
-      return;
-    }
-    
     if (uphPerMo > 500) return;
     
     validUphValues.push(uphPerMo);

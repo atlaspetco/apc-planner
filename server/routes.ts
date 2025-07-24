@@ -1032,9 +1032,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       currentUphData.forEach(uph => {
         // Create key using operator name, work center, and routing
-        // Use routing field (from CSV import) or fall back to productRouting field  
-        const routingValue = uph.routing || uph.productRouting;
-        const key = `${uph.operatorName}-${uph.workCenter}-${routingValue}`;
+        const key = `${uph.operatorName}-${uph.workCenter}-${uph.productRouting}`;
         uphMap.set(key, {
           uph: uph.uph,
           observations: uph.observationCount,
@@ -1198,7 +1196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         operatorName: record.operator_name,
         workCenter: record.work_center,
         operation: record.operation || record.work_center, // Use workCenter as fallback
-        routing: record.routing || record.product_routing, // Handle both column names
+        routing: record.product_routing,
         uph: record.uph,
         observationCount: record.observation_count,
         totalDurationHours: record.total_duration_hours,
@@ -3011,31 +3009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Use CORE UPH calculator that properly aggregates durations across all operations
       const { calculateCoreUph } = await import("./uph-core-calculator.js");
-      const results = await calculateCoreUph();
-      
-      // Clear all existing UPH data first
-      await db.delete(uphData);
-      console.log("Cleared existing UPH data");
-      
-      // Insert new UPH calculations
-      let insertedCount = 0;
-      for (const result of results) {
-        if (result.unitsPerHour > 0) {
-          await db.insert(uphData).values({
-            operatorName: result.operatorName,
-            workCenter: result.workCenter,
-            operation: result.operation || 'General', // Provide default if no operation extracted
-            productRouting: result.routing,
-            uph: Math.round(result.unitsPerHour * 100) / 100,
-            observationCount: result.observations,
-            totalDurationHours: null,
-            totalQuantity: null,
-            dataSource: 'calculated',
-            calculationPeriod: 30
-          });
-          insertedCount++;
-        }
-      }
+      const result = await calculateCoreUph();
       
       // Clear calculating status
       (global as any).updateImportStatus({
@@ -3046,10 +3020,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         success: true,
-        message: `Fixed UPH calculation complete: ${insertedCount} UPH values calculated and stored`,
-        totalCalculations: insertedCount,
-        method: "Core UPH Calculator with duplicate import handling",
-        note: "Handles one-to-many relationships from multiple CSV imports correctly"
+        message: `Fixed UPH calculation complete: ${result.operatorWorkCenterCombinations} combinations from ${result.productionOrders} production orders`,
+        productionOrders: result.productionOrders,
+        operatorWorkCenterCombinations: result.operatorWorkCenterCombinations,
+        totalObservations: result.totalObservations,
+        averageUph: result.averageUph,
+        method: "Fixed UPH using production.id grouping",
+        note: "Groups by production_id to ensure authentic MO totals"
       });
     } catch (error) {
       console.error("Error calculating accurate UPH:", error);
@@ -3656,23 +3633,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routing as string
       );
       
-      // Convert to the expected format with UPH filtering
-      const moDetails = detailsResult.moGroupedData
-        .map(mo => ({
-          moNumber: mo.moNumber,
-          moQuantity: mo.moQuantity,
-          totalDurationHours: mo.totalDurationSeconds / 3600,
-          uph: mo.moQuantity / (mo.totalDurationSeconds / 3600),
-          cycleCount: mo.cycleCount
-        }))
-        .filter(mo => {
-          // CRITICAL FIX: Filter out unrealistic UPH values below 1.0
-          if (mo.uph < 1.0) {
-            console.log(`⚠️ FILTERING OUT unrealistic UPH from API response: ${mo.moNumber} = ${mo.uph.toFixed(2)} UPH`);
-            return false;
-          }
-          return true;
-        });
+      // Convert to the expected format
+      const moDetails = detailsResult.moGroupedData.map(mo => ({
+        moNumber: mo.moNumber,
+        moQuantity: mo.moQuantity,
+        totalDurationHours: mo.totalDurationSeconds / 3600,
+        uph: mo.moQuantity / (mo.totalDurationSeconds / 3600),
+        cycleCount: mo.cycleCount
+      }));
 
       // Calculate summary statistics from MO details - BLUE methodology (average of individual MO UPH)
       const totalQuantity = moDetails.reduce((sum, mo) => sum + mo.moQuantity, 0);

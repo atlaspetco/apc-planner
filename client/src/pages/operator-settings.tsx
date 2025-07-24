@@ -38,12 +38,12 @@ export default function OperatorSettings() {
   });
 
   // Fetch routings
-  const { data: routingsData = { routings: [] } } = useQuery({
+  const { data: routingsData } = useQuery({
     queryKey: ["/api/routings"],
   });
 
   // Fetch UPH analytics data for operator capability mapping
-  const { data: uphData = { routings: [] } } = useQuery({
+  const { data: uphData } = useQuery({
     queryKey: ["/api/uph/table-data"],
   });
 

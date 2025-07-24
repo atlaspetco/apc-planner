@@ -283,7 +283,7 @@ export default function OperatorCard({
               {localOperator.routings?.length || 0} selected
             </Badge>
           </div>
-          <div className="space-y-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {(() => {
               // Define routing categories
               const routingCategories = [
@@ -348,10 +348,19 @@ export default function OperatorCard({
                 .filter(category => category.routings.length > 0);
 
               return (
-                <div className="space-y-2">
-                  {/* Render ALL available routings in a simple list */}
-                  {availableRoutings.map(renderRouting)}
-                </div>
+                <>
+                  {categoriesWithRoutings.map((category) => (
+                    <div key={category.name} className="space-y-2">
+                      {category.routings.map(renderRouting)}
+                    </div>
+                  ))}
+                  {/* Render any uncategorized routings at the end */}
+                  {uncategorizedRoutings.length > 0 && (
+                    <div className="space-y-2">
+                      {uncategorizedRoutings.map(renderRouting)}
+                    </div>
+                  )}
+                </>
               );
             })()}
           </div>
