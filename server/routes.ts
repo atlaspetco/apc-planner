@@ -1196,7 +1196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         operatorName: record.operator_name,
         workCenter: record.work_center,
         operation: record.operation || record.work_center, // Use workCenter as fallback
-        routing: record.product_routing,
+        routing: record.routing || record.product_routing, // Handle both column names
         uph: record.uph,
         observationCount: record.observation_count,
         totalDurationHours: record.total_duration_hours,
