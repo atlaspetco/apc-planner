@@ -402,6 +402,11 @@ export async function getCoreUphDetails(
       return;
     }
     
+    // Only include cycles that have a production quantity (not NULL)
+    if (!cycle.work_production_quantity || cycle.work_production_quantity <= 0) {
+      return;
+    }
+    
     const moNumber = cycle.work_production_number;
     const currentTotal = moTotalDurations.get(moNumber) || 0;
     moTotalDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
