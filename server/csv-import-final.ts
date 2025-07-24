@@ -12,7 +12,6 @@ interface WorkCyclesCSVRow {
   'work/cycles/quantity_done': string;
   'work/production/number': string;
   'work/production/product/code': string;
-  'work/production/quantity': string; // CRITICAL for UPH calculations
   'work/production/routing/rec_name': string;
   'work/rec_name': string;
   'work/operation/rec_name': string;
@@ -146,7 +145,6 @@ export async function importWorkCyclesFinal(
           work_production_id: productionId,
           work_production_number: row['work/production/number'] || null,
           work_production_product_code: row['work/production/product/code'] || null,
-          work_production_quantity: parseFloat(row['work/production/quantity']) || null, // CRITICAL for UPH calculations
           work_production_routing_rec_name: row['work/production/routing/rec_name'] || null,
           work_rec_name: row['work/rec_name'] || null,
           work_operation_rec_name: row['work/operation/rec_name'] || null,

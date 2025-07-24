@@ -6,25 +6,24 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search, Download, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Users, Target, TrendingUp, RefreshCw, Calculator, Search } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
-import { useToast } from "@/hooks/use-toast";
-import { AnomalyNotification } from "@/components/uph/anomaly-notification";
+
+interface OperatorPerformance {
+  operatorId: number;
+  operatorName: string;
+  workCenterPerformance: Record<string, number | null>;
+  workCenterUphValues?: Record<string, number[]>;
+  totalObservations: number;
+}
 
 interface UphTableData {
   routings: Array<{
     routingName: string;
-    operators: Array<{
-      operatorId: number;
-      operatorName: string;
-      workCenterPerformance: Record<string, number | null>;
-      totalObservations: number;
-    }>;
+    operators: Array<OperatorPerformance>;
     routingAverages: Record<string, number | null>;
     totalOperators: number;
   }>;
@@ -34,13 +33,8 @@ interface UphTableData {
     totalRoutings: number;
     avgUphByCeter: Record<string, number>;
     noDataReason?: string;
-    // PRD Section 4.5: Anomaly statistics
-    anomaliesCount?: number;
-    anomaliesExcluded?: number;
   };
   workCenters: string[];
-  // PRD Section 4.5: Anomaly map for red-pill highlighting
-  anomalyMap?: Record<string, boolean>;
 }
 
 interface RawUphData {
@@ -78,28 +72,12 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   // Group by routing
   const routingMap = new Map<string, {
     routingName: string;
-    operators: Map<number, {
-      operatorId: number;
-      operatorName: string;
-      workCenterPerformance: Record<string, number | null>;
-      totalObservations: number;
-    }>;
+    operators: Map<number, OperatorPerformance>;
   }>();
   
   // Process each record
   rawData.forEach(record => {
-    // Skip records without operator name
-    if (!record.operatorName) {
-      console.log(`Skipping UPH row with null operatorName:`, record);
-      return;
-    }
-    
     const routing = record.routing;
-    if (!routing) {
-      console.log(`Skipping UPH row with null routing:`, record);
-      return;
-    }
-    
     if (!routingMap.has(routing)) {
       routingMap.set(routing, {
         routingName: routing,
@@ -109,29 +87,62 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
     
     const routingData = routingMap.get(routing)!;
     
-    // Create unique key using operatorName (since operatorId may be null)
-    const operatorKey = record.operatorName;
-    if (!routingData.operators.has(operatorKey)) {
-      routingData.operators.set(operatorKey, {
-        operatorId: record.operatorId || 0, // Use 0 as fallback
+    if (!routingData.operators.has(record.operatorId)) {
+      routingData.operators.set(record.operatorId, {
+        operatorId: record.operatorId,
         operatorName: record.operatorName,
         workCenterPerformance: {
           Cutting: null,
           Assembly: null,
           Packaging: null
         },
+        workCenterUphValues: {
+          Cutting: [],
+          Assembly: [],
+          Packaging: []
+        },
         totalObservations: 0
       });
     }
     
-    const operatorData = routingData.operators.get(operatorKey)!;
-    operatorData.workCenterPerformance[record.workCenter] = record.uph;
+    const operatorData = routingData.operators.get(record.operatorId)!;
+    
+    // Collect all UPH values for proper averaging
+    if (!operatorData.workCenterUphValues) {
+      operatorData.workCenterUphValues = {
+        Cutting: [],
+        Assembly: [],
+        Packaging: []
+      };
+    }
+    
+    operatorData.workCenterUphValues[record.workCenter].push(record.uph);
     operatorData.totalObservations += record.observationCount;
   });
   
-  // Convert to array format
+  // Convert to array format and calculate averages
   const routings = Array.from(routingMap.values()).map(routing => {
-    const operators = Array.from(routing.operators.values());
+    const operators = Array.from(routing.operators.values()).map(operator => {
+      // Calculate averages for each work center
+      const workCenterPerformance: Record<string, number | null> = {
+        Cutting: null,
+        Assembly: null,
+        Packaging: null
+      };
+      
+      ['Cutting', 'Assembly', 'Packaging'].forEach(wc => {
+        const uphValues = operator.workCenterUphValues?.[wc];
+        if (uphValues && uphValues.length > 0) {
+          const average = uphValues.reduce((sum: number, uph: number) => sum + uph, 0) / uphValues.length;
+          workCenterPerformance[wc] = Math.round(average * 100) / 100;
+        }
+      });
+      
+      return {
+        ...operator,
+        workCenterPerformance
+      };
+    });
     
     // Calculate routing averages
     const routingAverages: Record<string, number | null> = {
@@ -193,7 +204,6 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
 
 export default function UphAnalytics() {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
   // UPH Analytics always shows ALL data - no time filtering
@@ -204,19 +214,32 @@ export default function UphAnalytics() {
     uphValue: number;
   } | null>(null);
 
-  // Get UPH table data with anomaly information (PRD Section 4.5)
-  const { data: uphTableData, isLoading: uphLoading, isRefetching, refetch } = useQuery({
-    queryKey: ["/api/uph/table-data"],
+  // Get UPH data from historical table
+  const { data: rawUphData, isLoading: uphLoading, isRefetching, refetch } = useQuery({
+    queryKey: ["/api/uph-data"],
     queryFn: async () => {
-      const response = await fetch("/api/uph/table-data");
-      if (!response.ok) throw new Error("Failed to fetch UPH table data");
+      const response = await fetch("/api/uph-data");
+      if (!response.ok) throw new Error("Failed to fetch UPH data");
       return response.json();
     },
     staleTime: 5 * 60 * 1000,
   });
 
-  // Use UPH table data directly (already formatted)
-  const uphData = uphTableData;
+  // Transform raw UPH data to table format
+  const uphData = (() => {
+    console.log("Raw UPH data:", rawUphData);
+    if (!rawUphData) return null;
+    // Handle both array and object responses
+    const dataArray = Array.isArray(rawUphData) ? rawUphData : rawUphData.data || [];
+    if (!Array.isArray(dataArray)) {
+      console.error("UPH data is not an array:", rawUphData);
+      return null;
+    }
+    console.log("Processing", dataArray.length, "UPH records");
+    const result = transformRawUphData(dataArray);
+    console.log("Transformed data:", result);
+    return result;
+  })();
 
   // Use standardized UPH calculation job
   const { calculate, isCalculating, status: jobStatus } = useUphCalculationJob();
@@ -333,32 +356,29 @@ export default function UphAnalytics() {
   // Debug logging
   console.log("UPH Analytics Render State:", {
     uphLoading,
-    uphTableData,
+    rawUphData,
     uphData,
     hasRoutings: uphData?.routings?.length > 0
   });
 
   return (
-    <TooltipProvider>
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="mb-6 flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">UPH Analytics</h1>
-            <p className="text-gray-600">Units Per Hour performance metrics organized by product routing</p>
-            
-
-            
-            {/* Unified Status Indicator */}
-            {isAnyOperationRunning && (
-              <div className="flex items-center mt-2 text-sm text-blue-600">
-                <div className="flex items-center">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
-                  <span className="font-medium">Live</span>
-                  <span className="ml-2 text-gray-600">• Calculating UPH...</span>
-                </div>
+    <div className="max-w-6xl mx-auto p-6">
+      <div className="mb-6 flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">UPH Analytics</h1>
+          <p className="text-gray-600">Units Per Hour performance metrics organized by product routing</p>
+          
+          {/* Unified Status Indicator */}
+          {isAnyOperationRunning && (
+            <div className="flex items-center mt-2 text-sm text-blue-600">
+              <div className="flex items-center">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+                <span className="font-medium">Live</span>
+                <span className="ml-2 text-gray-600">• Calculating UPH...</span>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
         
         <div className="flex items-center gap-4">
 
@@ -372,48 +392,6 @@ export default function UphAnalytics() {
             />
             <Label htmlFor="ai-optimized" className="text-sm">AI Optimized</Label>
           </div>
-          
-          {/* Import Work Cycles Button */}
-          <Button
-            onClick={async () => {
-              if (!confirm("This will import all ~32,000 work cycles from Fulfil. This may take several minutes. Continue?")) {
-                return;
-              }
-              
-              try {
-                const response = await fetch("/api/fulfil/import-all-work-cycles", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                  toast({
-                    title: "Import Complete",
-                    description: `Imported ${result.totalImported} work cycles from Fulfil`,
-                  });
-                  refetch(); // Refresh UPH data
-                } else {
-                  toast({
-                    title: "Import Failed",
-                    description: result.error || "Failed to import work cycles",
-                    variant: "destructive",
-                  });
-                }
-              } catch (error) {
-                toast({
-                  title: "Import Error",
-                  description: error instanceof Error ? error.message : "Failed to import work cycles",
-                  variant: "destructive",
-                });
-              }
-            }}
-            variant="outline"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Import All Work Cycles
-          </Button>
           
           {/* Refresh Button */}
           <Button
@@ -484,9 +462,6 @@ export default function UphAnalytics() {
         </div>
       )}
 
-      {/* Anomaly Notification */}
-      <AnomalyNotification />
-
       {/* UPH Table by Product Routing */}
       <Card>
         <CardHeader>
@@ -504,7 +479,7 @@ export default function UphAnalytics() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {uphData && uphData.routings && uphData.routings.length > 0 ? (
+          {uphData?.routings && uphData.routings.length > 0 ? (
             <div className="space-y-4">
               {[...uphData.routings]
                 .sort((a, b) => {
@@ -568,51 +543,26 @@ export default function UphAnalytics() {
                               {routing.operators.map((operator) => (
                                 <tr key={operator.operatorId} className="border-b">
                                   <td className="py-2 font-medium">{operator.operatorName}</td>
-                                  {getOrderedWorkCenters(uphData.workCenters).map((wc) => {
-                                    const uphValue = operator.workCenterPerformance[wc];
-                                    // PRD Section 4.5: Check if this UPH value is anomalous
-                                    const anomalyKey = `${operator.operatorName}|${wc}|${routing.routingName}`;
-                                    const isAnomaly = uphData.anomalyMap?.[anomalyKey] || false;
-                                    
-                                    return (
-                                      <td key={wc} className="text-center py-2">
-                                        {uphValue ? (
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Badge
-                                                variant={getUphBadgeVariant(uphValue, wc, routing.routingName)}
-                                                className={`min-w-[60px] cursor-pointer hover:opacity-80 transition-opacity ${
-                                                  isAnomaly ? 'border-2 border-red-500 ring-1 ring-red-200' : ''
-                                                }`}
-                                                onClick={() => {
-                                                  setSelectedUphDetails({
-                                                    operatorName: operator.operatorName,
-                                                    workCenter: wc,
-                                                    routing: routing.routingName,
-                                                    uphValue: uphValue
-                                                  });
-                                                }}
-                                              >
-                                                {formatUph(uphValue)}
-                                              </Badge>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                              {isAnomaly ? (
-                                                <p className="text-red-600 font-medium">Anomaly – excluded from avg</p>
-                                              ) : (
-                                                <p>Click for calculation details</p>
-                                              )}
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        ) : (
-                                          <Badge variant="outline" className="min-w-[60px]">
-                                            -
-                                          </Badge>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                
+                                  {getOrderedWorkCenters(uphData.workCenters).map((wc) => (
+                                    <td key={wc} className="text-center py-2">
+                                      <Badge
+                                        variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
+                                        className={`min-w-[60px] ${operator.workCenterPerformance[wc] ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                                        onClick={() => {
+                                          if (operator.workCenterPerformance[wc]) {
+                                            setSelectedUphDetails({
+                                              operatorName: operator.operatorName,
+                                              workCenter: wc,
+                                              routing: routing.routingName,
+                                              uphValue: operator.workCenterPerformance[wc]
+                                            });
+                                          }
+                                        }}
+                                      >
+                                        {formatUph(operator.workCenterPerformance[wc])}
+                                      </Badge>
+                                    </td>
+                                  ))}
                                   <td className="text-center py-2">
                                     <span className="text-sm text-muted-foreground">
                                       {operator.totalObservations}
@@ -684,7 +634,6 @@ export default function UphAnalytics() {
           uphValue={selectedUphDetails.uphValue}
         />
       )}
-      </div>
-    </TooltipProvider>
+    </div>
   );
 }

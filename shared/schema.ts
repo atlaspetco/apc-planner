@@ -161,6 +161,7 @@ export const workCycles = pgTable("work_cycles", {
   work_operator_id: integer("work_operator_id"), // work/operator/id
   work_center_id: integer("work_center_id"), // work_center/id
   state: text("state"), // work cycle state (done, etc.)
+  data_corrupted: boolean("data_corrupted").default(false), // Flag for corrupted records with identical short durations
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

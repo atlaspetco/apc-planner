@@ -390,37 +390,6 @@ export default function FulfilSettings() {
     enhancedImportMutation.mutate();
   };
 
-  // Import all work cycles from Fulfil API
-  const importAllWorkCyclesMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/fulfil/import-all-work-cycles", { method: "POST" });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to import work cycles");
-      }
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Work Cycles Import Complete",
-        description: data.message || `Successfully imported work cycles from Fulfil API`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
-    },
-    onError: (error) => {
-      console.error("Work cycles import error:", error);
-      toast({
-        title: "Work Cycles Import Failed",
-        description: error instanceof Error ? error.message : "Failed to import work cycles from Fulfil API",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleImportAllWorkCycles = () => {
-    importAllWorkCyclesMutation.mutate();
-  };
-
   if (isLoading) {
     return (
       <div className="max-w-4xl mx-auto p-6">
@@ -667,38 +636,6 @@ export default function FulfilSettings() {
                     <span>Building complete database</span>
                   </div>
                   <Progress value={85} className="h-2" />
-                </div>
-              )}
-            </div>
-
-            {/* Work Cycles Import Section */}
-            <div className="border rounded-lg p-4 bg-purple-50 mt-4">
-              <h4 className="font-medium text-purple-900 mb-2">Import All Work Cycles</h4>
-              <p className="text-sm text-purple-700 mb-3">
-                Import all completed work cycles (~32,000 records) from Fulfil API for comprehensive UPH calculations. 
-                This is a one-time import that may take several minutes.
-              </p>
-              
-              <Button 
-                onClick={handleImportAllWorkCycles}
-                className="w-full bg-purple-600 hover:bg-purple-700"
-                disabled={!isConnected || importAllWorkCyclesMutation.isPending}
-              >
-                {importAllWorkCyclesMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Database className="w-4 h-4 mr-2" />
-                )}
-                {importAllWorkCyclesMutation.isPending ? 'Importing Work Cycles...' : 'Import All Work Cycles'}
-              </Button>
-              
-              {importAllWorkCyclesMutation.isPending && (
-                <div className="w-full mt-2">
-                  <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>Importing work cycles...</span>
-                    <span>~32,000 records</span>
-                  </div>
-                  <Progress className="h-2" />
                 </div>
               )}
             </div>

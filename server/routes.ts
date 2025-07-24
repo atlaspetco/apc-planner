@@ -1183,15 +1183,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("Fetching UPH data from database...");
       
-      // Fetch UPH data with operator ID mapping
-      const result = await db.execute(sql`
-        SELECT 
-          u.*,
-          o.id as mapped_operator_id
-        FROM uph_data u
-        LEFT JOIN operators o ON u.operator_name = o.name
-        ORDER BY u.uph DESC
-      `);
+      // Use raw SQL to avoid Drizzle schema issues
+      const result = await db.execute(sql`SELECT * FROM uph_data ORDER BY uph DESC`);
       const data = result.rows;
       
       console.log(`Retrieved ${data.length} UPH records`);
@@ -1199,11 +1192,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Transform data to match expected frontend format
       const transformedData = data.map((record: any) => ({
         id: record.id,
-        operatorId: record.mapped_operator_id || record.operator_id, // Use mapped ID or original
+        operatorId: record.operator_id,
         operatorName: record.operator_name,
         workCenter: record.work_center,
         operation: record.operation || record.work_center, // Use workCenter as fallback
-        routing: record.product_routing,
+        routing: record.routing || record.product_routing, // Handle both column names
         uph: record.uph,
         observationCount: record.observation_count,
         totalDurationHours: record.total_duration_hours,
@@ -1945,6 +1938,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating operators:", error);
       res.status(500).json({ message: "Error creating operators from extracted data" });
+    }
+  });
+
+  // API endpoint to completely rebuild all work cycles from Fulfil API
+  app.post("/api/work-cycles/complete-rebuild", async (req, res) => {
+    try {
+      console.log("🚀 Starting complete work cycles rebuild from API...");
+      
+      // Import rebuild functions
+      const { fetchAllWorkCycles, insertAllWorkCycles, verifyCompleteDataIntegrity } = 
+        await import("./complete-work-cycles-rebuild.js");
+      
+      // Fetch all work cycles from API
+      const allCycles = await fetchAllWorkCycles();
+      
+      if (allCycles.length === 0) {
+        return res.json({
+          success: false,
+          message: "No work cycles retrieved from Fulfil API",
+          rebuiltCount: 0
+        });
+      }
+      
+      // Insert all cycles into database
+      const insertedCount = await insertAllWorkCycles(allCycles);
+      
+      // Verify data integrity
+      await verifyCompleteDataIntegrity();
+      
+      console.log(`✅ Complete rebuild: ${insertedCount} work cycles imported`);
+      
+      res.json({
+        success: true,
+        message: `Successfully rebuilt complete work cycles dataset with ${insertedCount} authentic records`,
+        cyclesFetched: allCycles.length,
+        cyclesInserted: insertedCount,
+        successRate: Math.round((insertedCount / allCycles.length) * 100)
+      });
+      
+    } catch (error) {
+      console.error("❌ Error during complete rebuild:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to complete work cycles rebuild",
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // API endpoint to rebuild corrupted work cycles data from Fulfil API
+  app.post("/api/work-cycles/rebuild-corrupted", async (req, res) => {
+    try {
+      console.log("🚀 Starting corrupted work cycles rebuild from API...");
+      
+      // Import rebuild functions
+      const { getCorruptedCyclesList, batchFetchCyclesFromAPI, updateDatabaseWithAuthenticData } = 
+        await import("./rebuild-corrupted-data-from-api.js");
+      
+      // Get corrupted cycles list
+      const corruptedCycles = await getCorruptedCyclesList();
+      
+      if (corruptedCycles.length === 0) {
+        return res.json({
+          success: true,
+          message: "No corrupted cycles found - data is already clean",
+          rebuiltCount: 0
+        });
+      }
+      
+      // Extract unique cycle IDs
+      const cycleIds = [...new Set(corruptedCycles.map(c => c.work_cycles_id))].filter(id => id);
+      
+      // Fetch authentic data from API (smaller batches for reliability)
+      const cycleDataMap = await batchFetchCyclesFromAPI(cycleIds, 5);
+      
+      // Update database with authentic data
+      const updatedCount = await updateDatabaseWithAuthenticData(cycleDataMap);
+      
+      console.log(`✅ Rebuilt ${updatedCount} work cycles with authentic API data`);
+      
+      res.json({
+        success: true,
+        message: `Successfully rebuilt ${updatedCount} corrupted work cycles with authentic API data`,
+        corruptedFound: corruptedCycles.length,
+        uniqueCycleIds: cycleIds.length,
+        apiDataFetched: cycleDataMap.size,
+        databaseUpdated: updatedCount
+      });
+      
+    } catch (error) {
+      console.error("❌ Error rebuilding corrupted data:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to rebuild corrupted work cycles data",
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // API endpoint to check corruption status
+  app.get("/api/work-cycles/corruption-status", async (req, res) => {
+    try {
+      const corruptionStats = await db.execute(sql`
+        SELECT 
+          COUNT(*) as total_cycles,
+          COUNT(CASE WHEN data_corrupted = TRUE THEN 1 END) as corrupted_cycles,
+          COUNT(CASE WHEN data_corrupted = FALSE OR data_corrupted IS NULL THEN 1 END) as clean_cycles,
+          ROUND(AVG(work_cycles_duration), 2) as avg_duration_seconds
+        FROM work_cycles 
+        WHERE work_cycles_duration IS NOT NULL
+      `);
+      
+      const stats = corruptionStats.rows[0];
+      
+      res.json({
+        success: true,
+        totalCycles: parseInt(stats.total_cycles),
+        corruptedCycles: parseInt(stats.corrupted_cycles),
+        cleanCycles: parseInt(stats.clean_cycles),
+        averageDurationSeconds: parseFloat(stats.avg_duration_seconds),
+        corruptionPercentage: Math.round((stats.corrupted_cycles / stats.total_cycles) * 100)
+      });
+      
+    } catch (error) {
+      console.error("❌ Error checking corruption status:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to check corruption status"
+      });
     }
   });
 
@@ -2875,94 +2997,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Single UPH calculation from work cycles - CANONICAL VERSION
+  // Single UPH calculation from work cycles - ACCURATE VERSION
   app.post("/api/uph/calculate", async (req: Request, res: Response) => {
     try {
       // Set calculating status
       (global as any).updateImportStatus({
         isCalculating: true,
-        currentOperation: 'Calculating UPH using canonical algorithm',
+        currentOperation: 'Rebuilding UPH using production.id grouping',
         startTime: Date.now()
       });
 
-      // Use canonical UPH calculator following the exact specification
-      const { calculateCanonicalUph } = await import("./uph-canonical-calculator.js");
-      const result = await calculateCanonicalUph(0); // 0 means no date filtering
+      // Use CORE UPH calculator that properly aggregates durations across all operations
+      const { calculateCoreUph } = await import("./uph-core-calculator.js");
+      const result = await calculateCoreUph();
       
       // Clear calculating status
       (global as any).updateImportStatus({
         isCalculating: false,
-        currentOperation: 'Canonical UPH calculation completed',
+        currentOperation: 'Fixed UPH calculation completed',
         startTime: null
       });
       
       res.json({
         success: true,
-        message: `Canonical UPH calculation complete: ${result.calculatedCount} calculations`,
-        calculatedCount: result.calculatedCount,
-        windowDays: result.windowDays,
-        method: "Canonical UPH Algorithm",
-        note: "Following exact specification: WO → MO/WC → UPH → Average"
+        message: `Fixed UPH calculation complete: ${result.operatorWorkCenterCombinations} combinations from ${result.productionOrders} production orders`,
+        productionOrders: result.productionOrders,
+        operatorWorkCenterCombinations: result.operatorWorkCenterCombinations,
+        totalObservations: result.totalObservations,
+        averageUph: result.averageUph,
+        method: "Fixed UPH using production.id grouping",
+        note: "Groups by production_id to ensure authentic MO totals"
       });
     } catch (error) {
-      console.error("Error calculating canonical UPH:", error);
+      console.error("Error calculating accurate UPH:", error);
       
       // Clear calculating status on error
       (global as any).updateImportStatus({
         isCalculating: false,
-        currentOperation: 'Canonical UPH calculation failed',
+        currentOperation: 'UPH calculation failed',
         lastError: error instanceof Error ? error.message : "Unknown error",
         startTime: null
       });
       
       res.status(500).json({
         success: false,
-        message: "Failed to calculate canonical UPH",
+        message: "Failed to calculate accurate UPH",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });
 
-  // Import all work cycles using search_read with pagination
-  app.post("/api/fulfil/import-all-work-cycles", async (req: Request, res: Response) => {
+  // Fetch newer work cycles from Fulfil API
+  app.post("/api/fulfil/fetch-newer-work-cycles", async (req: Request, res: Response) => {
     try {
-      // Set importing status
-      (global as any).updateImportStatus({
-        isImporting: true,
-        currentOperation: 'Starting comprehensive work cycles import',
-        startTime: Date.now()
-      });
-
-      const { importAllWorkCyclesFromFulfil } = await import("./fulfil-search-read-import.js");
-      const result = await importAllWorkCyclesFromFulfil();
+      const { fetchNewerWorkCycles } = await import("./fetch-newer-work-cycles.js");
       
-      // Clear importing status
-      (global as any).updateImportStatus({
-        isImporting: false,
-        currentOperation: 'Import complete',
-        startTime: null
-      });
+      console.log("Fetching newer work cycles from Fulfil API...");
+      const result = await fetchNewerWorkCycles();
       
       res.json({
-        success: true,
-        message: `Imported ${result.totalImported} work cycles`,
-        totalImported: result.totalImported,
-        operatorCount: result.operatorCount,
+        success: result.success,
+        message: result.message,
+        cyclesImported: result.cyclesImported,
+        newOperators: result.newOperators,
+        totalNewOperators: result.newOperators.length
       });
     } catch (error) {
-      console.error("Import error:", error);
-      
-      // Clear importing status on error
-      (global as any).updateImportStatus({
-        isImporting: false,
-        currentOperation: 'Import failed',
-        lastError: error instanceof Error ? error.message : "Unknown error",
-        startTime: null
-      });
-      
+      console.error("Error fetching newer work cycles:", error);
       res.status(500).json({
         success: false,
-        message: "Failed to import work cycles",
+        message: "Failed to fetch newer work cycles",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
@@ -3107,63 +3211,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching UPH data:", error);
       res.status(500).json({ message: "Error fetching UPH data" });
-    }
-  });
-
-  // Detect UPH anomalies
-  app.get("/api/uph/anomalies", async (req, res) => {
-    try {
-      const { detectUphAnomalies } = await import("./uph-anomaly-detector.js");
-      const anomalies = await detectUphAnomalies();
-      
-      res.json({
-        success: true,
-        anomalies: anomalies,
-        count: anomalies.length
-      });
-    } catch (error) {
-      console.error("Error detecting anomalies:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Error detecting anomalies",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Get anomaly statistics
-  app.get("/api/uph/anomaly-stats", async (req, res) => {
-    try {
-      const { getAnomalyStatistics } = await import("./uph-anomaly-detector.js");
-      const stats = await getAnomalyStatistics();
-      
-      res.json({
-        success: true,
-        ...stats
-      });
-    } catch (error) {
-      console.error("Error getting anomaly statistics:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Error getting anomaly statistics" 
-      });
-    }
-  });
-
-  // Canonical Work Cycle Pull (PRD Section 4.1)
-  app.post("/api/fulfil/canonical-pull", async (req, res) => {
-    try {
-      const { fullCanonicalImport } = await import("./fulfil-canonical-data-pull.js");
-      const result = await fullCanonicalImport();
-      
-      res.json(result);
-    } catch (error) {
-      console.error("Error in canonical data pull:", error);
-      res.status(500).json({
-        success: false,
-        totalImported: 0,
-        message: `Canonical import failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-      });
     }
   });
 
@@ -3401,22 +3448,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current UPH table data for dashboard display with anomaly information
+  // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
       // Use historical UPH data from the accurate calculation
       const uphResults = await db.select().from(uphData).orderBy(uphData.productRouting);
-      
-      // Get anomaly data for highlighting (PRD Section 4.5)
-      const { detectUphAnomalies } = await import("./uph-anomaly-detector.js");
-      const anomalies = await detectUphAnomalies();
-      
-      // Create anomaly lookup map for UPH values
-      const anomalyMap = new Map<string, boolean>();
-      anomalies.forEach(anomaly => {
-        const key = `${anomaly.operatorName}|${anomaly.workCenter}|${anomaly.routing}`;
-        anomalyMap.set(key, true);
-      });
       
       const allOperators = await db.select().from(operators);
       
@@ -3441,14 +3477,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
       const allRoutings = Array.from(new Set(uphResults.map(row => row.routing))).sort();
       
-      // Group UPH data by routing, then by operator name
-      const routingData = new Map<string, Map<string, Record<string, { uph: number; observations: number }>>>();
+      // Group UPH data by routing, then by operator
+      const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
       
       // Build the routing data structure from historical UPH data
       uphResults.forEach(row => {
         // Skip rows without proper data
-        if (!row.operatorName || !row.routing || !row.workCenter) {
-          console.warn('Skipping UPH row with null operatorName, routing, or workCenter:', row);
+        if (!row.operatorId || !row.routing || !row.workCenter) {
+          console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
           return;
         }
         
@@ -3457,10 +3493,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const routingOperators = routingData.get(row.routing)!;
         
-        if (!routingOperators.has(row.operatorName)) {
-          routingOperators.set(row.operatorName, {});
+        if (!routingOperators.has(row.operatorId)) {
+          routingOperators.set(row.operatorId, {});
         }
-        const operatorData = routingOperators.get(row.operatorName)!;
+        const operatorData = routingOperators.get(row.operatorId)!;
         
         // Use the historical UPH data directly 
         operatorData[row.workCenter] = {
@@ -3471,10 +3507,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
-        const operators = Array.from(routingOperators.entries()).map(([operatorName, workCenterData]) => {
-          // Find operator ID from database for consistency
-          const operator = allOperators.find(op => op.name === operatorName);
-          const operatorId = operator?.id || Math.abs(operatorName.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)); // Fallback hash if no ID found
+        const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
+          // Get operator name from map or historical data
+          const operatorRecord = uphResults.find(r => r.operatorId === operatorId && r.routing === routingName);
+          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
@@ -3560,14 +3596,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalOperators: uniqueOperators.size,
           totalCombinations: uphResults.length,
           totalRoutings: allRoutings.length,
-          avgUphByCeter: avgUphByCenter,
-          // PRD Section 4.5: Include anomaly statistics in response
-          anomaliesCount: anomalies.length,
-          anomaliesExcluded: anomalies.filter(a => a.anomalyType === 'statistical_outlier').length
+          avgUphByCeter: avgUphByCenter
         },
-        workCenters: allWorkCenters,
-        // PRD Section 4.5: Include anomaly map for red-pill highlighting
-        anomalyMap: Object.fromEntries(anomalyMap)
+        workCenters: allWorkCenters
       });
     } catch (error) {
       console.error("Error getting UPH table data:", error);
@@ -5013,38 +5044,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // API endpoint to import work cycles using search_read API
-  app.post("/api/fulfil/import", async (req: Request, res: Response) => {
-    try {
-      if (!process.env.FULFIL_ACCESS_TOKEN) {
-        return res.status(400).json({ 
-          success: false,
-          message: "Fulfil API key not configured" 
-        });
-      }
-
-      const { limit = 100 } = req.body;
-      const { importAllWorkCyclesFromFulfil } = await import("./fulfil-search-read-import.js");
-      
-      const result = await importAllWorkCyclesFromFulfil();
-      
-      res.json({
-        success: true,
-        message: `Successfully imported ${result.totalImported} work cycles`,
-        imported: result.totalImported,
-        operatorsCreated: result.operatorsCreated,
-        totalProcessed: result.totalProcessed
-      });
-    } catch (error) {
-      console.error("Error importing work cycles:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to import work cycles",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
   // Comprehensive refresh endpoints for UPH workflow
   app.post("/api/fulfil/import-work-cycles", async (req: Request, res: Response) => {
     try {
@@ -5068,55 +5067,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error importing work cycles:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to import work cycles",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-  
-  // New endpoint using updated import logic with production quantities
-  app.post("/api/fulfil/import", async (req: Request, res: Response) => {
-    try {
-      if (!process.env.FULFIL_ACCESS_TOKEN) {
-        return res.status(400).json({ 
-          success: false,
-          message: "Fulfil API key not configured" 
-        });
-      }
-
-      const { importAllWorkCyclesFromFulfil } = await import("./fulfil-search-read-import.js");
-      
-      // Set import status
-      res.locals.importStatus = {
-        isImporting: true,
-        isCalculating: false,
-        currentOperation: "Importing work cycles from Fulfil API",
-        progress: 0,
-        totalItems: 0,
-        processedItems: 0,
-        errors: [],
-        lastError: null,
-        startTime: new Date(),
-        lastUpdate: new Date(),
-      };
-      
-      const result = await importAllWorkCyclesFromFulfil();
-      
-      // Update import status
-      res.locals.importStatus.isImporting = false;
-      res.locals.importStatus.currentOperation = "";
-      
-      res.json({
-        success: true,
-        message: `Imported ${result.totalImported} work cycles with production quantities`,
-        imported: result.totalImported,
-        skipped: 0,
-        operators: result.operatorCount
-      });
-    } catch (error) {
-      console.error("Error importing work cycles with production quantities:", error);
       res.status(500).json({
         success: false,
         message: "Failed to import work cycles",
@@ -5518,8 +5468,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ))
           .limit(1);
 
-        if (uphData.length > 0 && uphData[0].unitsPerHour > 0) {
-          currentWorkloadHours += po.quantity / uphData[0].unitsPerHour;
+        if (currentUphData.length > 0 && currentUphData[0].uph > 0) {
+          currentWorkloadHours += po.quantity / currentUphData[0].uph;
         }
       }
 
@@ -5549,7 +5499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ))
           .limit(1);
 
-        if (uphData.length === 0 || uphData[0].unitsPerHour === 0) {
+        if (currentUphData.length === 0 || currentUphData[0].uph === 0) {
           assignmentDetails.push({
             workOrderId,
             quantity: productionOrder.quantity,
@@ -5561,14 +5511,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        const estimatedHours = productionOrder.quantity / uphData[0].unitsPerHour;
+        const estimatedHours = productionOrder.quantity / currentUphData[0].uph;
         totalNewHours += estimatedHours;
         
         assignmentDetails.push({
           workOrderId,
           quantity: productionOrder.quantity,
           estimatedHours,
-          uph: uphData[0].unitsPerHour,
+          uph: currentUphData[0].uph,
           skip: false
         });
       }
