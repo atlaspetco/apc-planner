@@ -5,7 +5,7 @@ import { parse } from 'csv-parse/sync';
 async function debugCsvSample() {
   try {
     // Read first few lines of the CSV to understand format
-    const csvContent = fs.readFileSync('./attached_assets/Fulfil API Schema - work.cycles_1751861383472.csv', 'utf-8');
+    const csvContent = fs.readFileSync('./attached_assets/Work Cycles - tmpu0ex5p25_1751616591130.csv', 'utf-8');
     const lines = csvContent.split('\n').slice(0, 10); // First 10 lines
     
     console.log("=== CSV SAMPLE (First 10 lines) ===");
