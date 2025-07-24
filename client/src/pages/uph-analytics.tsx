@@ -12,15 +12,18 @@ import { apiRequest } from "@/lib/queryClient";
 import { UphCalculationModal } from "@/components/dashboard/uph-calculation-modal";
 import { useStandardizedUph, useUphCalculationJob, transformUphDataForTable } from "@/hooks/useStandardizedUph";
 
+interface OperatorPerformance {
+  operatorId: number;
+  operatorName: string;
+  workCenterPerformance: Record<string, number | null>;
+  workCenterUphValues?: Record<string, number[]>;
+  totalObservations: number;
+}
+
 interface UphTableData {
   routings: Array<{
     routingName: string;
-    operators: Array<{
-      operatorId: number;
-      operatorName: string;
-      workCenterPerformance: Record<string, number | null>;
-      totalObservations: number;
-    }>;
+    operators: Array<OperatorPerformance>;
     routingAverages: Record<string, number | null>;
     totalOperators: number;
   }>;
@@ -69,12 +72,7 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   // Group by routing
   const routingMap = new Map<string, {
     routingName: string;
-    operators: Map<number, {
-      operatorId: number;
-      operatorName: string;
-      workCenterPerformance: Record<string, number | null>;
-      totalObservations: number;
-    }>;
+    operators: Map<number, OperatorPerformance>;
   }>();
   
   // Process each record
@@ -98,18 +96,53 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
           Assembly: null,
           Packaging: null
         },
+        workCenterUphValues: {
+          Cutting: [],
+          Assembly: [],
+          Packaging: []
+        },
         totalObservations: 0
       });
     }
     
     const operatorData = routingData.operators.get(record.operatorId)!;
-    operatorData.workCenterPerformance[record.workCenter] = record.uph;
+    
+    // Collect all UPH values for proper averaging
+    if (!operatorData.workCenterUphValues) {
+      operatorData.workCenterUphValues = {
+        Cutting: [],
+        Assembly: [],
+        Packaging: []
+      };
+    }
+    
+    operatorData.workCenterUphValues[record.workCenter].push(record.uph);
     operatorData.totalObservations += record.observationCount;
   });
   
-  // Convert to array format
+  // Convert to array format and calculate averages
   const routings = Array.from(routingMap.values()).map(routing => {
-    const operators = Array.from(routing.operators.values());
+    const operators = Array.from(routing.operators.values()).map(operator => {
+      // Calculate averages for each work center
+      const workCenterPerformance: Record<string, number | null> = {
+        Cutting: null,
+        Assembly: null,
+        Packaging: null
+      };
+      
+      ['Cutting', 'Assembly', 'Packaging'].forEach(wc => {
+        const uphValues = operator.workCenterUphValues?.[wc];
+        if (uphValues && uphValues.length > 0) {
+          const average = uphValues.reduce((sum: number, uph: number) => sum + uph, 0) / uphValues.length;
+          workCenterPerformance[wc] = Math.round(average * 100) / 100;
+        }
+      });
+      
+      return {
+        ...operator,
+        workCenterPerformance
+      };
+    });
     
     // Calculate routing averages
     const routingAverages: Record<string, number | null> = {
@@ -446,7 +479,7 @@ export default function UphAnalytics() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {uphData && uphData.routings && uphData.routings.length > 0 ? (
+          {uphData?.routings && uphData.routings.length > 0 ? (
             <div className="space-y-4">
               {[...uphData.routings]
                 .sort((a, b) => {
