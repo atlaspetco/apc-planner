@@ -125,6 +125,36 @@ export async function importWorkCyclesFinal(
         const operatorName = row['work_cycles_operator_rec_name'] || null;
         const productionId = parseInt(row['work_production_id']) || null;
 
+        // Log parsing issues for first few records
+        if (globalIndex < 10) {
+          console.log(`Row ${globalIndex + 1} parsing:`, {
+            id: csvId,
+            duration: row['work_cycles_duration'], 
+            durationParsed: durationSeconds,
+            operator: operatorName,
+            workId: workId,
+            productionId: productionId,
+            quantity: quantityDone
+          });
+        }
+
+        // Skip records with critical data issues
+        if (durationSeconds <= 0) {
+          if (globalIndex < 5) {
+            console.log(`Row ${globalIndex + 1}: Skipping due to invalid duration: "${row['work_cycles_duration']}" → ${durationSeconds}s`);
+          }
+          skipped++;
+          continue;
+        }
+
+        if (!operatorName || operatorName.trim() === '') {
+          if (globalIndex < 5) {
+            console.log(`Row ${globalIndex + 1}: Skipping due to missing operator name`);
+          }
+          skipped++;
+          continue;
+        }
+
         // Second check: composite key (workOrderId, operatorId, timestamp, quantity) per ChatGPT recommendations
         if (workId && operatorName && durationSeconds > 0) {
           const existingByComposite = await db.select({ id: workCycles.id })
