@@ -32,17 +32,17 @@ interface WorkCenterUph {
 async function calculateCorrectUphSameWorkCenter(): Promise<WorkCenterUph[]> {
   console.log("🔧 CALCULATING UPH WITHIN SAME WORK CENTER ONLY");
   
-  // Query work cycles grouped by Work Center (not cross-work-center)
+  // Query work cycles grouped by Work Center, consolidating ALL operations within same work center per MO
   const workCenterResults = await db.execute(sql`
     SELECT 
       work_cycles_operator_rec_name as operator_name,
       work_cycles_work_center_rec_name as work_center,
       work_production_routing_rec_name as routing,
-      work_operation_rec_name as operation,
       work_production_number as mo_number,
       work_production_quantity as quantity,
       SUM(work_cycles_duration) as total_duration_seconds,
-      COUNT(*) as observation_count
+      COUNT(*) as observation_count,
+      STRING_AGG(DISTINCT work_operation_rec_name, ' + ') as combined_operations
     FROM work_cycles 
     WHERE work_cycles_operator_rec_name IS NOT NULL
       AND work_cycles_work_center_rec_name IS NOT NULL
@@ -53,7 +53,6 @@ async function calculateCorrectUphSameWorkCenter(): Promise<WorkCenterUph[]> {
       work_cycles_operator_rec_name,
       work_cycles_work_center_rec_name,
       work_production_routing_rec_name,
-      work_operation_rec_name,
       work_production_number,
       work_production_quantity
     HAVING SUM(work_cycles_duration) > 60
@@ -68,7 +67,7 @@ async function calculateCorrectUphSameWorkCenter(): Promise<WorkCenterUph[]> {
     const operatorName = row.operator_name as string;
     const workCenter = row.work_center as string;
     const routing = row.routing as string;
-    const operation = row.operation as string;
+    const operation = row.combined_operations as string; // Combined operations like "Sewing + Zipper Pull - LP"
     const quantity = row.quantity as number;
     const durationSeconds = row.total_duration_seconds as number;
     const moNumber = row.mo_number as string;
