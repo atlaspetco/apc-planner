@@ -1,5 +1,5 @@
 import { db } from "./db.js";
-import { workCycles, productionOrders, operators } from "../shared/schema.js";
+import { workCycles, productionOrders, operators, uphData } from "../shared/schema.js";
 import { eq, or, isNull } from "drizzle-orm";
 
 export interface UphCalculationResult {
@@ -204,7 +204,15 @@ export async function calculateCoreUph(
     // Skip if no quantity or duration
     if (moData.moQuantity <= 0 || moData.totalDurationSeconds <= 0) return;
     
+    // CRITICAL FIX: Filter out unrealistic UPH values below 1.0
     const durationHours = moData.totalDurationSeconds / 3600;
+    const calculatedUph = moData.moQuantity / durationHours;
+    
+    // Skip Manufacturing Orders with UPH below 1.0 (indicates data corruption)
+    if (calculatedUph < 1.0) {
+      console.log(`⚠️ FILTERING OUT unrealistic UPH: ${moData.moNumber} = ${calculatedUph.toFixed(2)} UPH (${moData.moQuantity} units ÷ ${durationHours.toFixed(2)}h)`);
+      return;
+    }
     
     // Apply realistic filters
     if (durationHours < (2 / 60)) return; // Less than 2 minutes
@@ -461,6 +469,13 @@ export async function getCoreUphDetails(
     if (durationHours < (2 / 60)) return; // Less than 2 minutes
     
     const uphPerMo = moData.moQuantity / durationHours;
+    
+    // CRITICAL FIX: Filter out unrealistic UPH values below 1.0
+    if (uphPerMo < 1.0) {
+      console.log(`⚠️ FILTERING OUT unrealistic UPH in details: ${moData.moNumber} = ${uphPerMo.toFixed(2)} UPH (${moData.moQuantity} units ÷ ${durationHours.toFixed(2)}h)`);
+      return;
+    }
+    
     if (uphPerMo > 500) return;
     
     validUphValues.push(uphPerMo);

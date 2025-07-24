@@ -3635,14 +3635,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routing as string
       );
       
-      // Convert to the expected format
-      const moDetails = detailsResult.moGroupedData.map(mo => ({
-        moNumber: mo.moNumber,
-        moQuantity: mo.moQuantity,
-        totalDurationHours: mo.totalDurationSeconds / 3600,
-        uph: mo.moQuantity / (mo.totalDurationSeconds / 3600),
-        cycleCount: mo.cycleCount
-      }));
+      // Convert to the expected format with UPH filtering
+      const moDetails = detailsResult.moGroupedData
+        .map(mo => ({
+          moNumber: mo.moNumber,
+          moQuantity: mo.moQuantity,
+          totalDurationHours: mo.totalDurationSeconds / 3600,
+          uph: mo.moQuantity / (mo.totalDurationSeconds / 3600),
+          cycleCount: mo.cycleCount
+        }))
+        .filter(mo => {
+          // CRITICAL FIX: Filter out unrealistic UPH values below 1.0
+          if (mo.uph < 1.0) {
+            console.log(`⚠️ FILTERING OUT unrealistic UPH from API response: ${mo.moNumber} = ${mo.uph.toFixed(2)} UPH`);
+            return false;
+          }
+          return true;
+        });
 
       // Calculate summary statistics from MO details - BLUE methodology (average of individual MO UPH)
       const totalQuantity = moDetails.reduce((sum, mo) => sum + mo.moQuantity, 0);
