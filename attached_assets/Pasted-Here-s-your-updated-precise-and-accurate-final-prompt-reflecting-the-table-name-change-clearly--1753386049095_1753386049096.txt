@@ -1,0 +1,129 @@
+Here’s your updated, precise, and accurate final prompt reflecting the table name change clearly:
+
+⸻
+
+✅ Final Prompt for Replit Developer (Table Names Updated)
+
+Goal:
+	•	Consolidate work cycle data accurately from the provided CSV (cycles-appended.csv), resolving Fulfil’s duplication and duration issues:
+	•	Duration: sum all cycle rows per WO/MO/Operation.
+	•	Quantity: Take only from the first fully populated row (completed row) per WO/MO/Operation.
+	•	Calculate and store UPH (units per hour) separately for each unique:
+
+Operator + Operation + Routing + Work_Center
+
+combination (Columns O & Q).
+
+📌 Step-by-Step Instructions:
+
+⸻
+
+Step 1: Clear Existing Consolidated and UPH Data
+	•	Clear existing data from tables:
+
+work_cycles_consolidated
+operator_uph
+
+
+
+⸻
+
+Step 2: Load CSV and Prepare Data
+	•	Load provided CSV file:
+
+cycles-appended.csv
+
+
+	•	Convert work/cycles/duration from HH:MM:SS to numeric (duration_sec).
+
+⸻
+
+Step 3: Consolidate Work Cycles (store in work_cycles_consolidated)
+	•	Group rows strictly by:
+	•	work/production/id (MO number)
+	•	production_work_number+Operation_rec_name+production_number (key from CSV)
+	•	Aggregate exactly:
+	•	Duration (duration_sec):
+	•	SUM all rows per group.
+	•	Quantity (quantity_done):
+	•	Use only the quantity from the first row where MO details (work/production/id) and quantity are populated.
+	•	Timestamp & Metadata:
+	•	Take from the first populated (completed) row.
+	•	Store consolidated data into the table:
+
+work_cycles_consolidated
+
+
+
+⸻
+
+Step 4: Calculate and Store UPH (operator_uph)
+	•	Group separately by these columns for UPH calculations:
+	•	Column O: work/cycles/rec_name (Operator+Operation+Work_Center)
+	•	Column Q: work/cycles/work/production/routing/name (Routing)
+	•	For each unique combination, calculate UPH:
+
+UPH = Total Quantity / Total Duration (hours)
+
+
+	•	Store the following clearly in the table:
+
+operator_uph
+
+	•	operator_operation_workcenter (Column O)
+	•	routing_name (Column Q)
+	•	total_quantity (sum quantities for UPH calculation)
+	•	total_duration_hours (sum durations in hours)
+	•	uph (units per hour)
+
+⸻
+
+⚙️ Exact Python/Pandas Logic (Reference for Developer):
+
+import pandas as pd
+
+# Load CSV
+df = pd.read_csv("cycles-appended.csv")
+
+# Convert duration to seconds
+df['duration_sec'] = pd.to_timedelta(df['work/cycles/duration']).dt.total_seconds()
+
+# Flag completed rows (fully populated)
+df['is_completed_row'] = df['work/production/id'].notnull() & df['work/cycles/quantity_done'].notnull()
+
+# Consolidate by MO/WO/Operation
+consolidated_df = df.groupby(['work/production/id', 'production_work_number+Operation_rec_name+production_number'], as_index=False).agg({
+    'duration_sec': 'sum',
+    'work/cycles/quantity_done': lambda x: x[df.loc[x.index, 'is_completed_row']].iloc[0],
+    'work/cycles/operator/write_date': 'first',
+    'work/cycles/operator/rec_name': 'first',
+    'work/cycles/work_center/category/name': 'first',
+    'work/cycles/rec_name': 'first',
+    'work/cycles/work/production/routing/name': 'first'
+})
+
+# Save to 'work_cycles_consolidated' table
+
+# Calculate UPH separately
+uph_df = df.groupby(['work/cycles/rec_name', 'work/cycles/work/production/routing/name'], as_index=False).agg({
+    'work/cycles/quantity_done': 'sum',
+    'duration_sec': 'sum'
+})
+
+uph_df['total_duration_hours'] = uph_df['duration_sec'] / 3600
+uph_df['uph'] = uph_df['work/cycles/quantity_done'] / uph_df['total_duration_hours']
+
+uph_df.rename(columns={
+    'work/cycles/rec_name': 'operator_operation_workcenter',
+    'work/cycles/work/production/routing/name': 'routing_name',
+    'work/cycles/quantity_done': 'total_quantity'
+}, inplace=True)
+
+final_uph = uph_df[['operator_operation_workcenter', 'routing_name', 'total_quantity', 'total_duration_hours', 'uph']]
+
+# Save to 'operator_uph' table
+
+
+⸻
+
+This explicitly ensures your Replit developer accurately and efficiently performs the consolidation and stores UPH data correctly.

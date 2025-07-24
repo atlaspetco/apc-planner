@@ -235,6 +235,43 @@ export const uphCalculationData = pgTable("uph_calculation_data", {
   updatedAt: timestamp("updated_at").defaultNow()
 });
 
+// Work cycles consolidated table - stores deduplicated/consolidated work cycles
+export const workCyclesConsolidated = pgTable("work_cycles_consolidated", {
+  id: serial("id").primaryKey(),
+  // Key fields for grouping
+  work_production_id: integer("work_production_id").notNull(), // MO number
+  production_work_operation_key: text("production_work_operation_key"), // production_work_number+Operation_rec_name+production_number (if needed)
+  consolidation_key: text("consolidation_key"), // production_work_number+Operation_rec_name+production_number
+  
+  // Aggregated values
+  total_duration_sec: integer("total_duration_sec").notNull(), // Sum of all durations
+  quantity_done: integer("quantity_done").notNull(), // Quantity from first populated row
+  
+  // Metadata from first populated row
+  operator_write_date: timestamp("operator_write_date"),
+  operator_rec_name: text("operator_rec_name"),
+  work_center_category_name: text("work_center_category_name"),
+  cycles_rec_name: text("cycles_rec_name"), // Column O: operator+operation+work_center
+  routing_name: text("routing_name"), // Column Q: routing
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Operator UPH table - stores calculated UPH by operator+operation+work_center and routing
+export const operatorUph = pgTable("operator_uph", {
+  id: serial("id").primaryKey(),
+  operator_operation_workcenter: text("operator_operation_workcenter").notNull(), // Column O: work/cycles/rec_name
+  routing_name: text("routing_name").notNull(), // Column Q: work/cycles/work/production/routing/name
+  total_quantity: real("total_quantity").notNull(), // Sum of quantities for this combination
+  total_duration_hours: real("total_duration_hours").notNull(), // Sum of durations in hours
+  uph: real("uph").notNull(), // Units per hour (total_quantity / total_duration_hours)
+  observation_count: integer("observation_count").notNull().default(0), // Number of cycles included
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
 // Insert schemas
 export const insertProductionOrderSchema = createInsertSchema(productionOrders).omit({
   id: true,
@@ -280,6 +317,18 @@ export const insertUphCalculationDataSchema = createInsertSchema(uphCalculationD
   updatedAt: true,
 });
 
+export const insertWorkCyclesConsolidatedSchema = createInsertSchema(workCyclesConsolidated).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOperatorUphSchema = createInsertSchema(operatorUph).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -305,6 +354,10 @@ export type InsertWorkCycle = z.infer<typeof insertWorkCycleSchema>;
 
 export type UphCalculationData = typeof uphCalculationData.$inferSelect;
 export type InsertUphCalculationData = z.infer<typeof insertUphCalculationDataSchema>;
+export type WorkCyclesConsolidated = typeof workCyclesConsolidated.$inferSelect;
+export type InsertWorkCyclesConsolidated = z.infer<typeof insertWorkCyclesConsolidatedSchema>;
+export type OperatorUph = typeof operatorUph.$inferSelect;
+export type InsertOperatorUph = z.infer<typeof insertOperatorUphSchema>;
 
 // Dashboard types
 export const statusFilterSchema = z.array(z.enum(["Requests", "Draft", "Waiting", "Assigned", "Running"]));

@@ -1178,36 +1178,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   });
 
-  // UPH Data - Use current active UPH data system
+  // UPH Data - Use new operator_uph table
   app.get("/api/uph-data", async (req, res) => {
     try {
-      console.log("Fetching UPH data from database...");
+      console.log("Fetching UPH data from operator_uph table...");
       
-      // Use raw SQL to avoid Drizzle schema issues
-      const result = await db.execute(sql`SELECT * FROM uph_data ORDER BY uph DESC`);
+      // Use raw SQL to query from the new operator_uph table
+      const result = await db.execute(sql`
+        SELECT * FROM operator_uph 
+        ORDER BY uph DESC
+      `);
       const data = result.rows;
       
-      console.log(`Retrieved ${data.length} UPH records`);
+      console.log(`Retrieved ${data.length} UPH records from operator_uph table`);
       
       // Transform data to match expected frontend format
-      const transformedData = data.map((record: any) => ({
-        id: record.id,
-        operatorId: record.operator_id,
-        operatorName: record.operator_name,
-        workCenter: record.work_center,
-        operation: record.operation || record.work_center, // Use workCenter as fallback
-        routing: record.routing || record.product_routing, // Handle both column names
-        uph: record.uph,
-        observationCount: record.observation_count,
-        totalDurationHours: record.total_duration_hours,
-        totalQuantity: record.total_quantity,
-        dataSource: record.data_source,
-        lastUpdated: record.updated_at || record.created_at
-      }));
+      const transformedData = data.map((record: any) => {
+        // Parse operator+operation+work_center to extract individual parts
+        // Format is "Operation | Operator | Work Center"
+        const parts = record.operator_operation_workcenter?.split(' | ') || [];
+        const operation = parts[0] || '';
+        const operatorName = parts[1] || '';
+        const workCenter = parts[2] || '';
+        
+        return {
+          id: record.id,
+          operatorId: record.operator_id || 0, // We don't have operator ID in new table
+          operatorName: operatorName,
+          workCenter: workCenter,
+          operation: operation,
+          routing: record.routing_name || '',
+          uph: record.uph,
+          observationCount: record.observation_count,
+          totalDurationHours: record.total_duration_hours,
+          totalQuantity: record.total_quantity,
+          dataSource: 'consolidated_work_cycles',
+          lastUpdated: record.updated_at || record.created_at
+        };
+      });
       
       res.json(transformedData);
     } catch (error) {
-      console.error("Error fetching UPH data:", error);
+      console.error("Error fetching UPH data from operator_uph:", error);
       res.status(500).json({ error: "Failed to fetch UPH data" });
     }
   });
