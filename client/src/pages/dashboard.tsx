@@ -144,7 +144,7 @@ export default function Dashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  {uniqueStatuses.map(status => (
+                  {uniqueStatuses.filter(status => status && status.trim() !== '').map(status => (
                     <SelectItem key={status} value={status}>{status}</SelectItem>
                   ))}
                 </SelectContent>
@@ -159,7 +159,7 @@ export default function Dashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  {uniqueRoutings.map(routing => (
+                  {uniqueRoutings.filter(routing => routing && routing.trim() !== '').map(routing => (
                     <SelectItem key={routing} value={routing}>{routing}</SelectItem>
                   ))}
                 </SelectContent>
