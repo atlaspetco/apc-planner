@@ -2227,6 +2227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { workCycles } = await import("../shared/schema.js");
       const { db } = await import("./db.js");
       const { sql } = await import("drizzle-orm");
+      const { consolidateWorkCenter } = await import("./uph-core-calculator.js");
       
       // Get unique work centers and operations from work cycles table
       const workCyclesData = await db
@@ -2242,32 +2243,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Found ${workCyclesData.length} unique work center/operation combinations from work cycles`);
 
-      // Group operations by work center - keep original names, no aggregation
+      // Define the standard work centers
+      const standardWorkCenters = ['Cutting', 'Assembly', 'Packaging'];
       const workCenterMap = new Map<string, Set<string>>();
       
+      // Initialize standard work centers
+      standardWorkCenters.forEach(wc => {
+        workCenterMap.set(wc, new Set());
+      });
+      
+      // Apply consolidation to group operations under standard work centers
       for (const row of workCyclesData) {
         if (!row.workCenter || !row.operation) continue;
         
-        let workCenter = row.workCenter.trim();
+        const rawWorkCenter = row.workCenter.trim();
         const operation = row.operation.trim();
         
-        // Only clean up compound work centers like "Sewing / Assembly" -> "Sewing"
-        // But keep Rope, Sewing, etc. as separate work centers (no Assembly aggregation)
-        if (workCenter.includes(' / ')) {
-          workCenter = workCenter.split(' / ')[0].trim();
-        }
+        // Apply consolidation logic
+        const consolidatedWC = consolidateWorkCenter(rawWorkCenter);
         
-        if (!workCenterMap.has(workCenter)) {
-          workCenterMap.set(workCenter, new Set());
+        // Only add if it's one of our standard work centers
+        if (consolidatedWC && standardWorkCenters.includes(consolidatedWC)) {
+          workCenterMap.get(consolidatedWC)!.add(operation);
         }
-        workCenterMap.get(workCenter)!.add(operation);
       }
       
-      // Convert to response format
-      const workCenters = Array.from(workCenterMap.entries()).map(([workCenter, operations]) => ({
+      // Convert to response format - only include standard work centers
+      const workCenters = standardWorkCenters.map(workCenter => ({
         workCenter,
-        operations: Array.from(operations).sort()
-      })).sort((a, b) => a.workCenter.localeCompare(b.workCenter));
+        operations: Array.from(workCenterMap.get(workCenter)!).sort()
+      }));
       
       console.log(`Returning ${workCenters.length} work centers with operations:`, 
         workCenters.map(wc => `${wc.workCenter}: ${wc.operations.length} operations`));
