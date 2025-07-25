@@ -308,13 +308,26 @@ export function OperatorDropdown({
                       )}
                     </div>
                   </div>
-                ) : ""
+                ) : (
+                  <span className="text-muted-foreground">
+                    {qualifiedOperators.length > 0 ? "Select operator" : "No operators available"}
+                  </span>
+                )
               )
             }
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {qualifiedOperators.length === 0 && !loading && (
+          {loading && (
+            <SelectItem value="loading" disabled>
+              <div className="flex items-center justify-between w-full">
+                <span className="text-muted-foreground text-xs">
+                  Loading operators...
+                </span>
+              </div>
+            </SelectItem>
+          )}
+          {!loading && qualifiedOperators.length === 0 && (
             <SelectItem value="no-operators" disabled>
               <div className="flex items-center justify-between w-full">
                 <span className="text-muted-foreground text-xs">
