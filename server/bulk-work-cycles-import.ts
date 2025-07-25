@@ -8,18 +8,29 @@ const RATE_LIMIT_DELAY = 500; // 500ms between requests
 
 interface WorkCycleResponse {
   id: number;
-  "operator.rec_name": string;
-  rec_name: string;
-  production: number;
-  "work_center.rec_name": string;
-  "operation.rec_name": string;
+  operator: number;
+  "operator.rec_name"?: string;
+  work: number;
+  "work.rec_name"?: string;
+  "work.production"?: number;
+  "work.production.rec_name"?: string;
+  "work.production.routing.rec_name"?: string;
+  "work.production.quantity"?: number;
+  "work.operation.rec_name"?: string;
+  work_center: number;
+  "work_center.rec_name"?: string;
+  duration: {
+    __class__: string;
+    seconds: number;
+    iso_string: string;
+  };
+  quantity_done: number;
   state: string;
-  "production.routing.rec_name": string;
-  "production.quantity": number;
-  create_date: {
+  start_time: {
     __class__: string;
     iso_string: string;
   };
+  rec_name: string;
 }
 
 export async function bulkImportAllWorkCycles() {
@@ -61,28 +72,35 @@ export async function bulkImportAllWorkCycles() {
         });
       }
 
-      // Fetch batch from Fulfil
-      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work/search_read`, {
+      // Fetch batch from Fulfil - using production.work.cycle for duration data
+      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work.cycle/search_read`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "X-API-KEY": process.env.FULFIL_ACCESS_TOKEN
         },
         body: JSON.stringify({
-          filters: [["state", "in", ["done", "finished"]]],
+          filters: [["state", "=", "done"]],
           fields: [
             "id",
-            "operator.rec_name",
             "rec_name",
-            "production",
+            "operator",
+            "operator.rec_name",
+            "work",
+            "work.rec_name",
+            "work.production",
+            "work.production.rec_name",
+            "work.production.routing.rec_name",
+            "work.production.quantity",
+            "work.operation.rec_name",
+            "work_center",
             "work_center.rec_name",
-            "operation.rec_name",
+            "duration",
+            "quantity_done",
             "state",
-            "production.routing.rec_name",
-            "production.quantity",
-            "create_date"
+            "start_time"
           ],
-          order: [["create_date", "ASC"]],
+          order: [["id", "DESC"]],
           limit: BATCH_SIZE,
           offset: offset
         })
@@ -130,37 +148,37 @@ export async function bulkImportAllWorkCycles() {
           uniqueOperators.get(operatorName)!.workCenters.add(workCenter);
         }
 
-        // Extract operation from operation.rec_name
-        const operation = cycle["operation.rec_name"] || null;
+        // Extract operation from work.operation.rec_name
+        const operation = cycle["work.operation.rec_name"] || null;
 
-        // Extract production number from rec_name (format: "WO33046 | Sewing | MO178231")
-        let productionNumber = null;
-        let workOrderNumber = null;
-        if (cycle.rec_name) {
-          const parts = cycle.rec_name.split(' | ');
-          if (parts.length >= 3) {
-            workOrderNumber = parts[0]; // WO number
-            productionNumber = parts[2]; // MO number
-          }
-        }
+        // Extract production number from work.production.rec_name 
+        let productionNumber = cycle["work.production.rec_name"] || null;
+        
+        // Extract work order number from work.rec_name
+        let workOrderNumber = cycle["work.rec_name"] || null;
 
-        // Get create date
-        const createDate = cycle.create_date?.iso_string || null;
+        // Get start time as effective date
+        const effectiveDate = cycle.start_time?.iso_string || null;
 
-        // Insert work cycle (using WO ID as work_cycles_id since we don't have cycles data)
+        // Extract duration in seconds
+        const durationSeconds = cycle.duration?.seconds || 0;
+
+        // Insert work cycle
         try {
           await db.insert(workCycles).values({
             work_cycles_id: workCyclesId,
             work_cycles_operator_rec_name: operatorName,
             work_operation_rec_name: operation,
             work_cycles_work_center_rec_name: workCenter,
-            work_cycles_duration: 0, // We don't have duration data from production.work
-            work_cycles_quantity: cycle["production.quantity"] || 0,
+            work_cycles_duration: durationSeconds,
+            work_cycles_quantity: cycle.quantity_done || 0,
             work_production_rec_name: productionNumber,
-            work_production_routing_rec_name: cycle["production.routing.rec_name"] || null,
-            work_production_id: cycle.production?.toString() || null,
-            work_cycles_effective_date: createDate,
-            state: cycle.state || null
+            work_production_routing_rec_name: cycle["work.production.routing.rec_name"] || null,
+            work_production_id: cycle["work.production"]?.toString() || null,
+            work_cycles_effective_date: effectiveDate,
+            state: cycle.state || null,
+            work_cycles_quantity_done: cycle.quantity_done || 0,
+            work_production_quantity: cycle["work.production.quantity"] || 0
           });
           
           totalImported++;

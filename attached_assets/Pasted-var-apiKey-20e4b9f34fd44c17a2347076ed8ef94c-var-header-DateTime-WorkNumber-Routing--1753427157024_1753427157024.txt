@@ -1,0 +1,127 @@
+var apiKey = "20e4b9f34fd44c17a2347076ed8ef94c";
+var header = ["DateTime", "WorkNumber", "Routing", "WorkCenter", "Operator", "Operation", "Cost", "Duration", "QuantityDone", "LastRun"]; 
+var pageSize = 500;
+  
+  
+function onOpen() {
+	const ui = SpreadsheetApp.getUi();
+	ui.createMenu('Fulfil')
+		.addItem('Refresh', 'refresh')
+		.addToUi();
+}
+
+function makeApiCall(url, payload) {
+	var baseUrl = "https://apc.fulfil.io/api/v2/model/production.work.cycle/";
+	
+	var options = {
+		"method" : "put",
+		"headers" : {
+			"x-api-key" : apiKey,
+			"Content-Type" : "application/json"
+		},
+		"payload": payload		
+	};
+  
+	var response = UrlFetchApp.fetch(baseUrl + url, options);
+	// Logger.log("API results: " + response.getContentText());
+	return response;
+}
+
+function getFilter() {
+  var now = new Date();
+  var cutoff = new Date(2020, 1, 1, 0, 0, 0, 0); 
+
+  return [
+      [
+        "state",
+        "=",
+        "done"
+      ],
+      [
+        "create_date",
+        ">=",
+        {
+          "__class__": "datetime",
+          "year": cutoff.getFullYear(),
+          "month": (cutoff.getMonth()+1),
+          "day": cutoff.getDate(),
+          "hour": 0,
+          "minute": 0,
+          "second": 0,
+          "microsecond": 0
+        }
+      ]
+    ];
+}
+
+function getRecordCount() {
+	var payload = JSON.stringify([
+		getFilter(),
+		null,
+		null,
+		null,
+		null
+	]);
+	
+	var response = makeApiCall("search_count", payload);
+  return parseInt(response);
+}
+
+function getRecords(offset) {
+	var payload = JSON.stringify([
+		getFilter(),
+		offset,
+		pageSize,
+		null,
+		[
+			  "create_date",
+        "cost",
+        "duration",
+        "quantity_done",
+        "work.number",
+        "work_center.name",
+        "work.operation.name",
+        "work.operator.rec_name",
+        "work.work_center_category.name",
+        "work.production.routing.name",
+        "work.production.product.name",
+        "work.production.product.code"
+		]
+	]);
+  
+	var response = makeApiCall("search_read", payload);    
+	return JSON.parse(response);
+}
+
+function refresh() {
+	
+	var sheet = SpreadsheetApp.getActiveSheet();
+	sheet.clear();
+	sheet.appendRow(header);
+	
+	var count = getRecordCount();
+
+  Logger.log("Count is " + count);
+
+  var rows = [];
+	for (var i = 0; i < count; i++) {
+		var data = getRecords(i);
+		Logger.log("Got records - " + data.length);
+		
+		for (var j = 0; j < data.length; j++) {			
+      var cost = 0;
+
+      if (data[j]['cost'] != null) {
+        cost = data[j]['cost']['decimal'];
+      }
+
+
+			rows.push([data[j]['create_date']['iso_string'],data[j]['work.number'],data[j]['work.production.routing.name'],data[j]['work.work_center_category.name'],data[j]['work.operator.rec_name'],data[j]['work.operation.name'],cost,data[j]['duration']['seconds'],data[j]['quantity_done'],new Date()]);			
+		}  
+		
+		i += pageSize;
+	}
+
+  var lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow + 1, 1, rows.length, rows[0].length).setValues(rows);
+}
