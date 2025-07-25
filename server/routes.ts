@@ -4664,6 +4664,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/fulfil/populate-all-production-orders", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.FULFIL_ACCESS_TOKEN) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Fulfil API key not configured" 
+        });
+      }
+
+      const { populateAllProductionOrders } = await import("./populate-all-production-orders.js");
+      const result = await populateAllProductionOrders();
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error populating all production orders:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+  });
+
   app.get("/api/fulfil/current-production-orders", async (req: Request, res: Response) => {
     try {
       if (!process.env.FULFIL_ACCESS_TOKEN) {
