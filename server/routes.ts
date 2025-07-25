@@ -291,7 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const productName = mo['product.name'] || mo.rec_name;
         
         // Use routing from Fulfil API - it correctly returns "Lifetime Harness" for LHA products
-        let routing = mo['routing.name'] || getRoutingForProduct(productCode);
+        let routing = mo['routing.name'] || '';
         
         // Parse planned_date if it exists
         let plannedDate = null;
@@ -3706,9 +3706,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          // Get operator name from map or historical data
-          const operatorRecord = uphResults.find(r => r.operatorId === operatorId && (r.productRouting === routingName || r.routing === routingName));
-          const operatorName = operatorRecord?.operator || operatorMap.get(operatorId) || `Operator ${operatorId}`;
+          // Get operator name from map or historical data - handle snake_case
+          const operatorRecord = uphResults.find(r => 
+            (r.operator_id === operatorId || r.operatorId === operatorId) && 
+            (r.product_routing === routingName || r.productRouting === routingName || r.routing === routingName)
+          );
+          const operatorName = operatorRecord?.operator_name || operatorRecord?.operatorName || operatorMap.get(operatorId) || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
