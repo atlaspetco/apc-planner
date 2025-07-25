@@ -349,17 +349,17 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     const operatorProfiles = new Map<number, OperatorProfile>();
     
     for (const op of activeOperators) {
-      const uphData = new Map<string, { uph: number; observations: number }>();
+      const operatorUphMap = new Map<string, { uph: number; observations: number }>();
       
-      // Get all UPH data for this operator
+      // Get all UPH data for this operator using name-based lookup
       const operatorUphData = await db
         .select()
         .from(uphData)
-        .where(eq(uphData.operatorId, op.id));
+        .where(eq(uphData.operatorName, op.name));
       
       for (const uphRecord of operatorUphData) {
         const key = `${uphRecord.workCenter}-${uphRecord.productRouting}`;
-        uphData.set(key, {
+        operatorUphMap.set(key, {
           uph: uphRecord.uph || 0,
           observations: uphRecord.observationCount || 0
         });
@@ -373,7 +373,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         maxHours: op.availableHours || 40,
         hoursAssigned: 0,
         activeAssignments: 0,
-        uphData
+        uphData: operatorUphMap
       });
     }
 
