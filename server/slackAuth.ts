@@ -48,12 +48,20 @@ export async function setupSlackAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Debug logging
+  console.log("Slack OAuth Configuration:", {
+    clientID: process.env.SLACK_CLIENT_ID ? "Set" : "Missing",
+    clientSecret: process.env.SLACK_CLIENT_SECRET ? "Set" : "Missing",
+    callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`
+  });
+
   // Slack OAuth Strategy
   passport.use('slack', new SlackStrategy({
     clientID: process.env.SLACK_CLIENT_ID!,
     clientSecret: process.env.SLACK_CLIENT_SECRET!,
-    callbackURL: `https://${process.env.REPLIT_DOMAINS!.split(',')[0]}/api/auth/slack/callback`,
-    scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar']
+    callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`,
+    scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar'],
+    skipUserProfile: false
   }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
     try {
       console.log("Slack profile received:", JSON.stringify(profile, null, 2));
@@ -95,8 +103,16 @@ export async function setupSlackAuth(app: Express) {
   app.get("/api/auth/slack/callback",
     passport.authenticate("slack", {
       successRedirect: "/",
-      failureRedirect: "/login"
-    })
+      failureRedirect: "/login",
+      failureMessage: true
+    }),
+    (err: any, req: any, res: any, next: any) => {
+      if (err) {
+        console.error("Slack OAuth callback error:", err);
+        return res.redirect("/login?error=" + encodeURIComponent(err.message));
+      }
+      next();
+    }
   );
 
   app.get("/api/logout", (req, res) => {
