@@ -77,7 +77,9 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   
   // Process each record
   rawData.forEach(record => {
-    const routing = record.routing;
+    const routing = record.productRouting || record.routing; // Handle both field names
+    if (!routing) return; // Skip records without routing
+    
     if (!routingMap.has(routing)) {
       routingMap.set(routing, {
         routingName: routing,
@@ -207,9 +209,9 @@ export default function UphAnalytics() {
 
   // Get UPH data from historical table
   const { data: rawUphData, isLoading: uphLoading, isRefetching, refetch } = useQuery({
-    queryKey: ["/api/uph-data"],
+    queryKey: ["/api/uph/table-data"],
     queryFn: async () => {
-      const response = await fetch("/api/uph-data");
+      const response = await fetch("/api/uph/table-data");
       if (!response.ok) throw new Error("Failed to fetch UPH data");
       return response.json();
     },
@@ -220,10 +222,17 @@ export default function UphAnalytics() {
   const uphData = (() => {
     console.log("Raw UPH data:", rawUphData);
     if (!rawUphData) return null;
-    // Handle both array and object responses
+    
+    // The table-data endpoint returns the data already formatted
+    if (rawUphData.routings && rawUphData.summary && rawUphData.workCenters) {
+      console.log("Using pre-formatted table data:", rawUphData);
+      return rawUphData;
+    }
+    
+    // Fallback to array processing if needed
     let dataArray = Array.isArray(rawUphData) ? rawUphData : rawUphData.data || [];
     if (!Array.isArray(dataArray)) {
-      console.error("UPH data is not an array:", rawUphData);
+      console.error("UPH data is not in expected format:", rawUphData);
       return null;
     }
     

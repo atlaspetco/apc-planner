@@ -3644,9 +3644,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Use the core UPH calculator for accurate values
-      const { calculateAllUphFromWorkCycles } = await import("./uph-core-calculator.js");
-      const uphResults = await calculateAllUphFromWorkCycles();
+      // Read from the database instead of recalculating
+      const uphResults = await db.select().from(uphData);
       
       const allOperators = await db.select().from(operators);
       
@@ -3676,11 +3675,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Build the routing data structure from historical UPH data
       uphResults.forEach(row => {
-        // Use productRouting field (newer schema) or routing field (legacy)
-        const routing = row.productRouting || row.routing;
+        // Use productRouting field - handle both camelCase and snake_case
+        const routing = row.productRouting || row.product_routing;
+        const operatorId = row.operatorId ?? row.operator_id;
+        const workCenter = row.workCenter || row.work_center;
         
         // Skip rows without proper data
-        if (row.operatorId === null || row.operatorId === undefined || !routing || !row.workCenter) {
+        if (operatorId === null || operatorId === undefined || !routing || !workCenter) {
           console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
           return;
         }
@@ -3690,15 +3691,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const routingOperators = routingData.get(routing)!;
         
-        if (!routingOperators.has(row.operatorId)) {
-          routingOperators.set(row.operatorId, {});
+        if (!routingOperators.has(operatorId)) {
+          routingOperators.set(operatorId, {});
         }
-        const operatorData = routingOperators.get(row.operatorId)!;
+        const operatorData = routingOperators.get(operatorId)!;
         
-        // Use the historical UPH data directly 
-        operatorData[row.workCenter] = {
-          uph: row.uph || row.unitsPerHour, // Handle both field names
-          observations: row.observationCount || row.observations // Handle both field names
+        // Use the historical UPH data directly - handle both camelCase and snake_case
+        operatorData[workCenter] = {
+          uph: row.uph ?? row.units_per_hour, // Handle both field names
+          observations: row.observationCount ?? row.observation_count // Handle both field names
         };
       });
       
