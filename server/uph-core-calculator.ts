@@ -23,6 +23,8 @@ export interface MoGroupData {
   createDate?: string;
   actualWorkCenter?: string;
   operations?: string;
+  productionId?: number; // Add production ID for correct Fulfil link
+  workOrderId?: number; // Work order ID for correct Fulfil link
 }
 
 // Core work center consolidation logic
@@ -411,6 +413,7 @@ export async function getCoreUphDetails(
         cycleCount: 0,
         woNumber: cycle.work_cycles_id ? `WO${cycle.work_cycles_id}` : 'N/A',
         workOrderId: cycle.work_id || null,
+        productionId: cycle.work_production_id || null, // Add production ID for correct Fulfil link
         createDate: cycle.work_production_create_date || null,
         actualWorkCenter: cycle.work_cycles_work_center_rec_name || workCenter,
         operations: cycle.work_operation_rec_name || workCenter
