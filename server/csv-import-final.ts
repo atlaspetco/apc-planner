@@ -106,15 +106,28 @@ export async function importWorkCyclesFinal(
         
         const csvId = parseInt(workNumberMatch[1]);
         
-        // Check for existing record using work_cycles_work_number
-        const existingByWorkNumber = await db.select({ id: workCycles.id })
-          .from(workCycles)
-          .where(eq(workCycles.work_cycles_work_number, workNumber))
-          .limit(1);
+        // Check for existing record using work_cycles_id (the CSV ID)
+        let existingById: any[] = [];
+        try {
+          existingById = await db.select({ id: workCycles.id })
+            .from(workCycles)
+            .where(eq(workCycles.work_cycles_id, csvId))
+            .limit(1);
+        } catch (duplicateCheckError) {
+          console.error(`Row ${globalIndex + 1}: Error checking for duplicate:`, duplicateCheckError);
+          errors.push(`Row ${globalIndex + 1}: Database error during duplicate check`);
+          skipped++;
+          continue;
+        }
         
-        if (existingByWorkNumber.length > 0) {
+        // Debug logging for first few records
+        if (globalIndex < 5) {
+          console.log(`Row ${globalIndex + 1}: Checking CSV ID ${csvId}, found:`, existingById);
+        }
+        
+        if (existingById.length > 0) {
           if (globalIndex < 5) {
-            console.log(`Row ${globalIndex + 1}: Skipping duplicate work number ${workNumber}`);
+            console.log(`Row ${globalIndex + 1}: Skipping duplicate CSV ID ${csvId}`);
           }
           skipped++;
           continue;
@@ -150,18 +163,13 @@ export async function importWorkCyclesFinal(
         // Check for duplicates only by work number to avoid re-importing same records
         // No other filtering applied
         
-        // Parse numeric fields with proper null handling
-        const workOperationId = row['work_operation_id'] ? parseInt(row['work_operation_id']) : null;
-        const workOperatorId = row['work_operator_id'] ? parseInt(row['work_operator_id']) : null;
-        const workCenterId = row['work_center_id'] ? parseInt(row['work_center_id']) : null;
-        
-        // Insert with exact field mapping using work_cycles_id for CSV ID
-        await db.insert(workCycles).values({
+        // Build insert values object with only fields that exist in the CSV
+        const insertValues = {
           work_cycles_id: csvId, // Store CSV ID in dedicated field
           work_cycles_duration: durationSeconds,
           work_cycles_rec_name: row['work_cycles_rec_name'] || null,
           work_cycles_operator_rec_name: operatorName,
-          work_cycles_operator_write_date: row['work_cycles_operator_write_date'] ? new Date(row['work_cycles_operator_write_date']) : null,
+          work_cycles_operator_write_date: null, // Not in this CSV
           work_cycles_work_center_rec_name: workCenterCategory,
           work_cycles_quantity_done: quantityDone,
           work_production_id: null, // Not in this CSV format
@@ -169,14 +177,21 @@ export async function importWorkCyclesFinal(
           work_production_product_code: null, // Not in this CSV
           work_production_routing_rec_name: productRouting,
           work_rec_name: row['work_cycles_work_rec_name'] || null,
-          work_cycles_work_number: workNumber, // Store the work number
-          work_operation_rec_name: row['work_operation_rec_name'] || null,
-          work_operation_id: workOperationId,
+          work_operation_rec_name: null, // Not in this CSV
+          work_operation_id: null, // Not in this CSV
           work_id: workId,
-          work_operator_id: workOperatorId,
-          work_center_id: workCenterId,
-          work_cycles_operator_id: workOperatorId,
-        });
+          work_operator_id: null, // Not in this CSV
+          work_center_id: null, // Not in this CSV
+          work_cycles_operator_id: null, // Not in this CSV
+        };
+        
+        // Log the values for debugging the first few records
+        if (globalIndex < 3) {
+          console.log(`Row ${globalIndex + 1} insert values:`, JSON.stringify(insertValues, null, 2));
+        }
+        
+        // Insert with exact field mapping using work_cycles_id for CSV ID
+        await db.insert(workCycles).values(insertValues);
 
         imported++;
         
