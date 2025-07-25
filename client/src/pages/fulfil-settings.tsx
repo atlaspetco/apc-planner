@@ -953,6 +953,62 @@ export default function FulfilSettings() {
         </Card>
       </div>
 
+      {/* Work Cycles Import Operations */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Database className="mr-2" />
+            Work Cycles Import
+          </CardTitle>
+          <CardDescription>
+            Import work cycles data from Fulfil API
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+            <div className="flex">
+              <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 mr-2" />
+              <div className="text-sm text-amber-700">
+                <strong>Database Status:</strong> Currently empty (0 work cycles). Use the import button below to fetch all work cycles from Fulfil API.
+              </div>
+            </div>
+          </div>
+          
+          <Button
+            onClick={() => {
+              fetch('/api/fulfil/bulk-import-work-cycles', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                  if (data.success) {
+                    toast({ 
+                      title: "Import Successful", 
+                      description: `Imported ${data.totalImported} work cycles` 
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
+                  } else {
+                    throw new Error(data.message || 'Import failed');
+                  }
+                })
+                .catch(err => toast({ 
+                  title: "Error", 
+                  description: err.message || "Failed to import work cycles", 
+                  variant: "destructive" 
+                }));
+            }}
+            className="w-full bg-green-600 hover:bg-green-700"
+          >
+            <Database className="w-4 h-4 mr-2" />
+            Import All Work Cycles from API
+          </Button>
+          
+          <div className="text-xs text-gray-500 space-y-1 pt-2">
+            <p>• This will fetch all completed work cycles from Fulfil API</p>
+            <p>• NO filtering will be applied during import (as per requirements)</p>
+            <p>• Import may take several minutes for large datasets</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* UPH Analytics Operations */}
       <Card className="mt-6">
         <CardHeader>

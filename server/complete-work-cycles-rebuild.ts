@@ -65,10 +65,10 @@ async function fetchWorkCyclesPage(offset: number, limit: number): Promise<Fulfi
     throw new Error("FULFIL_ACCESS_TOKEN not found in environment");
   }
 
-  const url = 'https://apc.fulfil.io/api/v2/model/production.work.cycles/search_read';
+  const url = 'https://apc.fulfil.io/model/production.work.cycles/search_read';
   
   const requestBody = {
-    domain: [['state', '=', 'done']], // Only completed cycles
+    filters: [['state', '=', 'done']], // Only completed cycles
     fields: [
       'id',
       'duration',
@@ -94,12 +94,12 @@ async function fetchWorkCyclesPage(offset: number, limit: number): Promise<Fulfi
     ],
     offset: offset,
     limit: limit,
-    order: [['id', 'ASC']] // Consistent ordering
+    order: 'id ASC' // Consistent ordering
   };
 
   try {
     const response = await fetch(url, {
-      method: 'POST',
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'X-API-KEY': FULFIL_TOKEN
