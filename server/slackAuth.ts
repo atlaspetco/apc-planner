@@ -53,7 +53,7 @@ export async function setupSlackAuth(app: Express) {
     clientID: process.env.SLACK_CLIENT_ID!,
     clientSecret: process.env.SLACK_CLIENT_SECRET!,
     callbackURL: `https://${process.env.REPLIT_DOMAINS!.split(',')[0]}/api/auth/slack/callback`,
-    scope: ['identity.basic', 'identity.email', 'identity.team']
+    scope: ['openid', 'email', 'profile']
   }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
     try {
       console.log("Slack profile received:", JSON.stringify(profile, null, 2));
