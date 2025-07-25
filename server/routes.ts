@@ -1318,37 +1318,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   });
 
-  // UPH Data - Use clean uphData table instead of corrupted operator_uph
+  // UPH Data - Use core calculator for consistent calculations
   app.get("/api/uph-data", async (req, res) => {
     try {
-      console.log("Fetching UPH data from clean uphData table...");
+      console.log("Calculating UPH data using core calculator...");
       
-      // Use the clean uphData table that excludes corrupted work cycles
-      const data = await db.select().from(uphData).orderBy(uphData.uph);
+      // Use the core UPH calculator for accurate values
+      const { calculateAllUphFromWorkCycles } = await import("./uph-core-calculator.js");
+      const uphResults = await calculateAllUphFromWorkCycles();
       
-      console.log(`Retrieved ${data.length} clean UPH records from uphData table`);
+      console.log(`Calculated ${uphResults.length} UPH records using core calculator`);
       
       // Transform data to match expected frontend format
-      const transformedData = data.map((record: any) => {
+      const transformedData = uphResults.map((record: any, index: number) => {
         return {
-          id: record.id,
+          id: index + 1, // Generate sequential IDs
           operatorId: record.operatorId || 0,
-          operatorName: record.operatorName || record.operator,
+          operatorName: record.operatorName,
           workCenter: record.workCenter,
-          operation: record.operation || 'Assembly', // Fallback for clean data
-          routing: record.productRouting || record.routing,
-          uph: record.uph || record.unitsPerHour,
-          observationCount: record.observationCount || record.observations,
-          totalDurationHours: record.totalDurationHours || 0,
-          totalQuantity: record.totalQuantity || 0,
+          operation: record.operation || record.workCenter, // Use work center as fallback
+          routing: record.routing,
+          uph: record.uph,
+          observationCount: record.observationCount,
+          totalDurationHours: record.totalDurationHours,
+          totalQuantity: record.totalQuantity,
           dataSource: 'work_cycles', // Mark as clean data source
-          lastUpdated: record.updatedAt || record.createdAt
+          lastUpdated: new Date().toISOString()
         };
-      }).filter(record => record !== null); // Remove null records
+      });
       
       res.json(transformedData);
     } catch (error) {
-      console.error("Error fetching UPH data from operator_uph:", error);
+      console.error("Error calculating UPH data:", error);
       res.status(500).json({ error: "Failed to fetch UPH data" });
     }
   });
@@ -3786,13 +3787,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const totalDurationHours = mo.totalDurationSeconds / 3600;
         const uph = totalDurationHours > 0 ? mo.moQuantity / totalDurationHours : 0;
         
-        // Extract production ID from moNumber (e.g., MO124899 -> 124899)
-        const productionId = parseInt(mo.moNumber.replace('MO', ''), 10) || 0;
-        
         return {
-          productionId, // Add production ID for link
+          productionId: mo.productionId || 0, // Use actual production ID from database
           moNumber: mo.moNumber,
           woNumber: mo.woNumber || 'N/A', // Add work order number
+          workOrderId: mo.workOrderId || null, // Use actual work order ID from database
           moQuantity: mo.moQuantity,
           totalDurationHours,
           uph: isFinite(uph) ? uph : 0,
