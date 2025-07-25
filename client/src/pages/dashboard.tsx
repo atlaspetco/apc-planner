@@ -45,8 +45,10 @@ export default function Dashboard() {
 
   // Filter production orders based on selected filters
   const filteredOrders = productionOrders.filter(order => {
-    const statusMatch = statusFilter === "all" || order.status === statusFilter;
-    const routingMatch = routingFilter === "all" || order.routing === routingFilter;
+    const statusMatch = statusFilter === "all" || 
+      (statusFilter === "unspecified" ? !order.status : order.status === statusFilter);
+    const routingMatch = routingFilter === "all" || 
+      (routingFilter === "unspecified" ? !order.routing : order.routing === routingFilter);
     return statusMatch && routingMatch;
   });
 
@@ -144,8 +146,10 @@ export default function Dashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  {uniqueStatuses.filter(status => status && status.trim() !== '').map(status => (
-                    <SelectItem key={status} value={status}>{status}</SelectItem>
+                  {uniqueStatuses.map(status => (
+                    <SelectItem key={status || 'unspecified'} value={status || 'unspecified'}>
+                      {status || 'Unspecified'}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -159,8 +163,10 @@ export default function Dashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  {uniqueRoutings.filter(routing => routing && routing.trim() !== '').map(routing => (
-                    <SelectItem key={routing} value={routing}>{routing}</SelectItem>
+                  {uniqueRoutings.map(routing => (
+                    <SelectItem key={routing || 'unspecified'} value={routing || 'unspecified'}>
+                      {routing || 'Unspecified'}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
