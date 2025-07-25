@@ -60,7 +60,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
   React.useEffect(() => {
     if (uphResults) {
       console.log('UPH data loaded:', uphResults.length, 'entries');
-      const evanUph = uphResults.filter((d: any) => d.operator === "Evan Crosby");
+      const evanUph = uphResults.filter((d: any) => d.operatorName === "Evan Crosby");
       console.log('Evan Crosby UPH entries:', evanUph.length);
       console.log('Sample Evan UPH:', evanUph.slice(0, 3));
     }
@@ -177,11 +177,11 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
               console.log(`Searching UPH for Evan: operator="${operator.operatorName}", workCenter="${workCenter}", routing="${routing}"`);
               
               // Log all Evan's UPH entries to see what's available
-              const evanUphData = uphResults.filter((e: any) => e.operatorName === "Evan Crosby");
+              const evanUphData = uphResults.filter((e: any) => (e.operator === "Evan Crosby" || e.operatorName === "Evan Crosby"));
               console.log(`Evan's UPH data (${evanUphData.length} entries):`, evanUphData);
               
               // Check if there's a name mismatch
-              const hasEvanInUph = uphResults.some((e: any) => e.operatorName === "Evan Crosby");
+              const hasEvanInUph = uphResults.some((e: any) => (e.operator === "Evan Crosby" || e.operatorName === "Evan Crosby"));
               console.log(`UPH data has "Evan Crosby": ${hasEvanInUph}`);
             }
             
@@ -189,7 +189,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
             let uphEntry = uphResults.find((entry: any) => 
               entry.operatorName === operator.operatorName &&
               entry.workCenter === workCenter &&
-              (entry.routing === routing || entry.productRouting === routing)
+              entry.productRouting === routing
             );
             
             // If no exact match, try to find same operator and work center (any routing)
@@ -201,8 +201,8 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
               
               if (workCenterMatches.length > 0) {
                 // Use average UPH for this work center
-                const avgUph = workCenterMatches.reduce((sum: number, e: any) => sum + (e.unitsPerHour || e.uph || 0), 0) / workCenterMatches.length;
-                uphEntry = { unitsPerHour: avgUph } as any;
+                const avgUph = workCenterMatches.reduce((sum: number, e: any) => sum + (e.uph || 0), 0) / workCenterMatches.length;
+                uphEntry = { uph: avgUph } as any;
                 console.log(`Using average UPH for ${operator.operatorName} - ${workCenter}: ${avgUph} (from ${workCenterMatches.length} other routings)`);
               }
             }
@@ -215,14 +215,14 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
               
               if (anyWorkCenterMatches.length > 0) {
                 // Use average UPH for this work center across all operators
-                const avgUph = anyWorkCenterMatches.reduce((sum: number, e: any) => sum + (e.unitsPerHour || e.uph || 0), 0) / anyWorkCenterMatches.length;
-                uphEntry = { unitsPerHour: avgUph } as any;
+                const avgUph = anyWorkCenterMatches.reduce((sum: number, e: any) => sum + (e.uph || 0), 0) / anyWorkCenterMatches.length;
+                uphEntry = { uph: avgUph } as any;
                 console.log(`Using work center average UPH for ${workCenter}: ${avgUph} (from ${anyWorkCenterMatches.length} records)`);
               }
             }
             
-            if (uphEntry && uphEntry.unitsPerHour > 0) {
-              const uphValue = uphEntry.unitsPerHour;
+            if (uphEntry && uphEntry.uph > 0) {
+              const uphValue = uphEntry.uph;
               estimatedHours = assignment.quantity / uphValue;
               productData.uph = uphValue;
               console.log(`Calculated hours for ${operator.operatorName} - ${workCenter}/${routing}: ${estimatedHours.toFixed(2)}h (${assignment.quantity} units @ ${uphValue} UPH)`);

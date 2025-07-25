@@ -99,7 +99,7 @@ export function OperatorWorkloadDetailModal({
         const uphEntry = uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
-          (entry.routing === routing || entry.productRouting === routing)
+          entry.productRouting === routing
         );
         
         if (uphEntry && uphEntry.uph > 0) {
