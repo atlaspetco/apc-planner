@@ -63,6 +63,7 @@ This is a React + Express + TypeScript application designed for manufacturing pr
 - **Validation**: Zod schemas with Drizzle integration
 - **Session Management**: Connect-pg-simple for PostgreSQL sessions
 - **External API**: Fulfil.io integration via personal access token
+- **Authentication**: Slack OAuth 2.0 for atlaspetcompany.slack.com workspace
 
 ### Fulfil API Integration (Based on AtlasPetPlanner)
 - **Authentication**: Uses FULFIL_ACCESS_TOKEN environment secret with X-API-KEY header
@@ -158,6 +159,7 @@ Changelog:
 - **Example**: Courtney Banh + Assembly + Lifetime Pouch shows 23.18 UPH (average of 88 MOs), while individual MOs range from 0.83 to 128.76 UPH
 
 ## Recent Changes (Latest First)
+- **Slack OAuth Authentication Implemented (July 25, 2025)**: Successfully transitioned from Replit Auth to Slack OAuth 2.0 authentication for the atlaspetcompany.slack.com workspace. Implemented passport-slack-oauth2 strategy with identity scopes (identity.basic, identity.email, identity.team, identity.avatar). All API endpoints remain protected with authentication requirement (401 for unauthorized access). Team members now sign in using their existing Slack accounts, providing seamless integration with the company's Slack workspace where they already receive workload notifications.
 - **DEPLOYMENT FIX: Removed dotenv Dependency (July 25, 2025)**: Fixed production deployment crash caused by missing dotenv dependency. Removed unused dotenv import and config from server/import-all-work-cycles-comprehensive.ts file, as production environments provide secrets directly via environment variables. Build process now completes successfully without external dependency errors. Application is deployment-ready for Replit Deployments without requiring additional package installations.
 - **Fixed Auto Assignments UPH Data Lookup (July 25, 2025)**: Resolved smart bulk assignment failures where operators were incorrectly reported as having "no UPH data" for specific work center/routing combinations. The issue was that the smart bulk assignment endpoint was querying the empty `operator_uph` table instead of the populated `uph_data` table. Updated the SQL query to use `uph_data` table with correct column names (operator_name, work_center, product_routing) instead of the legacy operator_uph table structure. Auto assignments now correctly find and use operator UPH performance data for assignment decisions.
 - **AI Auto-Assign Routing Flexibility Implemented (July 25, 2025)**: Fixed AI auto-assign failing with "No assignments could be made" error when no operators had exact routing experience. Modified auto-assign logic to be more flexible: first tries operators with exact routing UPH data, then falls back to operators with work center experience if no exact matches found. This allows assignments for new product routings (like "Lifetime Loop") by leveraging operators' work center expertise even without specific routing history. Updated autoAssignWorkOrders function to separate operatorsWithRoutingExperience and operatorsWithWorkCenterExperience, using work center experience as fallback.

@@ -49,11 +49,11 @@ export async function setupSlackAuth(app: Express) {
   app.use(passport.session());
 
   // Slack OAuth Strategy
-  passport.use(new SlackStrategy({
+  passport.use('slack', new SlackStrategy({
     clientID: process.env.SLACK_CLIENT_ID!,
     clientSecret: process.env.SLACK_CLIENT_SECRET!,
     callbackURL: `https://${process.env.REPLIT_DOMAINS!.split(',')[0]}/api/auth/slack/callback`,
-    scope: ['openid', 'email', 'profile']
+    scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar']
   }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
     try {
       console.log("Slack profile received:", JSON.stringify(profile, null, 2));
