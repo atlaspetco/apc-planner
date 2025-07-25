@@ -171,17 +171,18 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                             <span className="text-sm text-blue-600">({orders.length} MOs)</span>
                           </div>
                           <div className="flex space-x-1 mt-1">
-                            {Object.entries(statusCounts).map(([status, count]) => (
-                              <Badge key={status} className={`text-xs rounded-sm ${
-                                status === 'assigned' ? 'bg-blue-500 text-white' :
-                                status === 'waiting' ? 'bg-yellow-500 text-white' :
-                                status === 'running' ? 'bg-green-500 text-white' :
-                                status === 'done' ? 'bg-gray-500 text-white' :
-                                'bg-gray-400 text-white'
-                              }`}>
-                                {count} {status}
-                              </Badge>
-                            ))}
+                            {Object.entries(statusCounts)
+                              .filter(([status]) => status !== 'done' && status !== 'finished')
+                              .map(([status, count]) => (
+                                <Badge key={status} className={`text-xs rounded-sm ${
+                                  status === 'assigned' ? 'bg-blue-500 text-white' :
+                                  status === 'waiting' ? 'bg-yellow-500 text-white' :
+                                  status === 'running' ? 'bg-green-500 text-white' :
+                                  'bg-gray-400 text-white'
+                                }`}>
+                                  {count} {status}
+                                </Badge>
+                              ))}
                           </div>
                         </div>
                       </button>
