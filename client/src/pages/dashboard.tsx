@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Factory, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multiselect";
 import ProductionGrid from "@/components/dashboard/production-grid";
 import { OperatorWorkloadSummary } from "@/components/dashboard/operator-workload-summary";
 import { AutoAssignControls } from "@/components/dashboard/auto-assign-controls";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 
 export default function Dashboard() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
@@ -45,8 +46,7 @@ export default function Dashboard() {
 
   // Filter production orders based on selected filters
   const filteredOrders = productionOrders.filter(order => {
-    const statusMatch = statusFilter === "all" || 
-      (statusFilter === "unspecified" ? !order.status : order.status === statusFilter);
+    const statusMatch = statusFilter.length === 0 || statusFilter.includes(order.status || 'unspecified');
     const routingMatch = routingFilter === "all" || 
       (routingFilter === "unspecified" ? !order.routing : order.routing === routingFilter);
     return statusMatch && routingMatch;
@@ -58,6 +58,16 @@ export default function Dashboard() {
   const statusOrder = ['waiting', 'assigned', 'running'];
   const uniqueStatuses = statusOrder.filter(status => statusesFromOrders.includes(status));
   const uniqueRoutings = [...new Set(productionOrders.map(order => order.routing))];
+
+  // Create status options with counts
+  const statusOptions = uniqueStatuses.map(status => {
+    const count = productionOrders.filter(order => order.status === status).length;
+    return {
+      value: status || 'unspecified',
+      label: status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unspecified',
+      count
+    };
+  });
 
   // Status indicator color  
   const statusIndicator = isLoadingPOs || isLoadingAssignments || isRefreshing ? "yellow" : errorPOs ? "red" : "green";
@@ -140,19 +150,13 @@ export default function Dashboard() {
           <div className="flex items-center space-x-4 mt-4">
             <div className="flex items-center space-x-2">
               <label className="text-sm font-medium text-gray-700">Status:</label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {uniqueStatuses.map(status => (
-                    <SelectItem key={status || 'unspecified'} value={status || 'unspecified'}>
-                      {status || 'Unspecified'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                options={statusOptions}
+                selected={statusFilter}
+                onChange={setStatusFilter}
+                placeholder="All Statuses"
+                className="w-40"
+              />
             </div>
             
             <div className="flex items-center space-x-2">
