@@ -144,45 +144,11 @@ export async function importWorkCyclesFinal(
           });
         }
 
-        // Skip records with critical data issues
-        if (durationSeconds <= 0) {
-          if (globalIndex < 5) {
-            console.log(`Row ${globalIndex + 1}: Skipping due to invalid duration: "${row['work_cycles_duration']}" → ${durationSeconds}s`);
-          }
-          skipped++;
-          continue;
-        }
+        // No filtering - import all data as requested
+        // Frontend will handle all filtering through menu settings
 
-        if (!operatorName || operatorName.trim() === '') {
-          if (globalIndex < 5) {
-            console.log(`Row ${globalIndex + 1}: Skipping due to missing operator name`);
-          }
-          skipped++;
-          continue;
-        }
-
-        // Second check: composite key (workOrderId, operatorId, timestamp, quantity) per ChatGPT recommendations
-        if (workId && operatorName && durationSeconds > 0) {
-          const existingByComposite = await db.select({ id: workCycles.id })
-            .from(workCycles)
-            .where(
-              and(
-                eq(workCycles.work_id, workId),
-                eq(workCycles.work_cycles_operator_rec_name, operatorName),
-                eq(workCycles.work_cycles_duration, durationSeconds),
-                eq(workCycles.work_cycles_quantity_done, quantityDone)
-              )
-            )
-            .limit(1);
-
-          if (existingByComposite.length > 0) {
-            if (globalIndex < 5) {
-              console.log(`Row ${globalIndex + 1}: Skipping duplicate by composite key (WO:${workId}, Op:${operatorName}, Dur:${durationSeconds}s)`);
-            }
-            skipped++;
-            continue;
-          }
-        }
+        // Check for duplicates only by work number to avoid re-importing same records
+        // No other filtering applied
         
         // Insert with exact field mapping using work_cycles_id for CSV ID
         await db.insert(workCycles).values({

@@ -203,8 +203,8 @@ export async function calculateCoreUph(
     
     const durationHours = moData.totalDurationSeconds / 3600;
     
-    // Apply realistic filters
-    if (durationHours < (2 / 60)) return; // Less than 2 minutes
+    // No filtering - all data will be used as requested
+    // Frontend will handle all filtering through menu settings
     
     const uphPerMo = moData.moQuantity / durationHours;
     
@@ -215,21 +215,8 @@ export async function calculateCoreUph(
       console.log(`🔍 MO ${moData.moNumber}: Quantity=${moData.moQuantity}, Duration=${durationHours.toFixed(2)}hrs, UPH=${uphPerMo.toFixed(2)}`);
     }
     
-    // Apply work center-specific UPH limits
-    const getUphLimit = (workCenter: string): number => {
-      switch (workCenter.toLowerCase()) {
-        case 'assembly': return 100; // Assembly is more manual, limited to 100 UPH
-        case 'cutting': return 500;  // Cutting can be much faster with machines
-        case 'packaging': return 300; // Packaging can be fast but not as fast as cutting
-        default: return 200; // Default conservative limit
-      }
-    };
-    
-    const uphLimit = getUphLimit(moData.workCenter);
-    if (uphPerMo > uphLimit) {
-      console.log(`🚫 EXTREME OUTLIER FILTERED: MO ${moData.moNumber} - ${uphPerMo.toFixed(2)} UPH exceeds ${uphLimit} limit for ${moData.workCenter} (${moData.operatorName}/${moData.workCenter}/${moData.routing})`);
-      return;
-    }
+    // No UPH limit filtering - all values accepted
+    // Frontend will handle filtering through menu settings
     
     const operatorKey = `${moData.operatorName}|${moData.workCenter}|${moData.routing}`;
     
@@ -261,30 +248,9 @@ export async function calculateCoreUph(
       };
     }
 
-    // For groups with multiple values, apply statistical outlier detection
+    // No statistical outlier filtering - all values accepted
+    // Frontend will handle filtering through menu settings
     let finalValues = group.moUphValues;
-    
-    if (group.moUphValues.length >= 3) {
-      const mean = group.moUphValues.reduce((sum, uph) => sum + uph, 0) / group.moUphValues.length;
-      const variance = group.moUphValues.reduce((sum, uph) => sum + Math.pow(uph - mean, 2), 0) / group.moUphValues.length;
-      const stdDev = Math.sqrt(variance);
-      
-      // Filter outliers beyond 2 standard deviations
-      const filteredValues = group.moUphValues.filter(uph => {
-        const isOutlier = Math.abs(uph - mean) > (2 * stdDev);
-        if (isOutlier) {
-          console.log(`📊 STATISTICAL OUTLIER: ${group.operatorName}/${group.workCenter}/${group.routing} - UPH ${uph.toFixed(2)} (mean: ${mean.toFixed(2)}, stdDev: ${stdDev.toFixed(2)})`);
-        }
-        return !isOutlier;
-      });
-      
-      // Only use filtered values if we don't remove too many
-      if (filteredValues.length >= (group.moUphValues.length * 0.7)) {
-        finalValues = filteredValues;
-      } else {
-        console.log(`⚠️ Too many statistical outliers for ${group.operatorName}/${group.workCenter}/${group.routing}, keeping original data`);
-      }
-    }
 
     return {
       operatorName: group.operatorName,

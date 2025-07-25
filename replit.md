@@ -311,6 +311,13 @@ Preferred communication style: Simple, everyday language.
 
 **CRITICAL DATA INTEGRITY REQUIREMENT**: Never use estimates, guesses, or fallback calculations for production planning. System must ONLY use actual data from Fulfil API or fail gracefully. Any hardcoded UPH estimates, routing-specific time calculations, or fallback values violate the core system principle and render the application worthless.
 
+**NO FILTERING DURING IMPORT**: The system must import ALL data without any filtering, validation, or limits. All data filtering must be implemented in the frontend through menu settings controls. This includes:
+- No duration validation or limits
+- No UPH limits (previously 100 for Assembly, 500 for Cutting, 300 for Packaging)
+- No statistical outlier detection
+- No missing data validation
+- Frontend menu settings will control all filtering
+
 **PRODUCT ROUTING REQUIREMENT**: All product routings are distinct products and must match exactly. Never map between different products (e.g., "Lifetime Air Harness", "Lifetime Air - Bio", and "Lifetime Harness" are all completely different products). Only exact routing name matches should be used for operator qualification and UPH calculations.
 
 **NO FALLBACKS WITH BLENDED DATA**: The system must only use exact routing matches for operator qualifications. If an operator doesn't have specific UPH data for the exact work center + routing combination requested, they should not be shown as qualified. No averaging or blending of UPH data across different routings is allowed.
