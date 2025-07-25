@@ -4213,18 +4213,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startTime: Date.now()
       });
 
-      const { csvData } = req.body;
+      const { csvData, chunkInfo } = req.body;
       
       if (!csvData || !Array.isArray(csvData)) {
         throw new Error("No Work Cycles CSV data provided");
       }
 
-      console.log(`Processing ${csvData.length} Work Cycles CSV records...`);
+      // Log chunk info if processing chunks
+      if (chunkInfo) {
+        console.log(`Processing chunk ${chunkInfo.current}/${chunkInfo.total}: rows ${chunkInfo.start} to ${chunkInfo.end} of ${chunkInfo.totalRows}`);
+      } else {
+        console.log(`Processing ${csvData.length} Work Cycles CSV records...`);
+      }
       
       // Update progress
       (global as any).updateImportStatus?.({
-        currentOperation: `Importing ${csvData.length} work cycles from CSV...`,
-        totalItems: csvData.length,
+        currentOperation: chunkInfo 
+          ? `Importing chunk ${chunkInfo.current}/${chunkInfo.total}: rows ${chunkInfo.start}-${chunkInfo.end} of ${chunkInfo.totalRows}...`
+          : `Importing ${csvData.length} work cycles from CSV...`,
+        totalItems: chunkInfo ? chunkInfo.totalRows : csvData.length,
         progress: 10
       });
 

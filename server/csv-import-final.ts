@@ -150,6 +150,11 @@ export async function importWorkCyclesFinal(
         // Check for duplicates only by work number to avoid re-importing same records
         // No other filtering applied
         
+        // Parse numeric fields with proper null handling
+        const workOperationId = row['work_operation_id'] ? parseInt(row['work_operation_id']) : null;
+        const workOperatorId = row['work_operator_id'] ? parseInt(row['work_operator_id']) : null;
+        const workCenterId = row['work_center_id'] ? parseInt(row['work_center_id']) : null;
+        
         // Insert with exact field mapping using work_cycles_id for CSV ID
         await db.insert(workCycles).values({
           work_cycles_id: csvId, // Store CSV ID in dedicated field
@@ -166,11 +171,11 @@ export async function importWorkCyclesFinal(
           work_rec_name: row['work_cycles_work_rec_name'] || null,
           work_cycles_work_number: workNumber, // Store the work number
           work_operation_rec_name: row['work_operation_rec_name'] || null,
-          work_operation_id: parseInt(row['work_operation_id']) || null,
+          work_operation_id: workOperationId,
           work_id: workId,
-          work_operator_id: parseInt(row['work_operator_id']) || null,
-          work_center_id: parseInt(row['work_center_id']) || null,
-          work_cycles_operator_id: parseInt(row['work_operator_id']) || null,
+          work_operator_id: workOperatorId,
+          work_center_id: workCenterId,
+          work_cycles_operator_id: workOperatorId,
         });
 
         imported++;

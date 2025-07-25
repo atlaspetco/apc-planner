@@ -178,8 +178,8 @@ export default function FulfilSettings() {
   });
 
   const uploadWorkCyclesCSVMutation = useMutation({
-    mutationFn: async (csvData: any[]) => {
-      const response = await apiRequest("POST", "/api/fulfil/upload-work-cycles-csv", { csvData });
+    mutationFn: async (data: { csvData: any[], chunkInfo?: any }) => {
+      const response = await apiRequest("POST", "/api/fulfil/upload-work-cycles-csv", data);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
@@ -187,19 +187,12 @@ export default function FulfilSettings() {
       return response.json();
     },
     onSuccess: (data) => {
-      toast({
-        title: "Work Cycles Import Complete",
-        description: `Imported ${data.cyclesImported} work cycles for authentic UPH calculations`,
-      });
+      // Don't show success toast for each chunk, handled in handleFileUpload
       queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
     },
     onError: (error) => {
       console.error('Work Cycles CSV Upload Error:', error);
-      toast({
-        title: "Work Cycles Import Failed",
-        description: error instanceof Error ? error.message : "Unknown error occurred during work cycles upload",
-        variant: "destructive",
-      });
+      // Error toasts are handled in handleFileUpload
     },
   });
 
@@ -252,7 +245,7 @@ export default function FulfilSettings() {
     }));
   };
 
-  // Generic file upload handler for CSV processing
+  // Generic file upload handler for CSV processing with chunking
   const handleFileUpload = async (file: File, endpoint: string) => {
     try {
       const csvText = await file.text();
@@ -270,7 +263,59 @@ export default function FulfilSettings() {
       console.log(`Processing ${csvData.length} CSV records for ${endpoint}`);
       
       if (endpoint === '/api/fulfil/upload-work-cycles-csv') {
-        await uploadWorkCyclesCSVMutation.mutateAsync(csvData);
+        // Process large CSV files in chunks
+        const CHUNK_SIZE = 1000; // Process 1000 rows at a time
+        const totalChunks = Math.ceil(csvData.length / CHUNK_SIZE);
+        
+        toast({
+          title: "Processing Large CSV",
+          description: `Uploading ${csvData.length} work cycles in ${totalChunks} chunks...`,
+        });
+        
+        let totalImported = 0;
+        let totalSkipped = 0;
+        
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, csvData.length);
+          const chunk = csvData.slice(start, end);
+          
+          try {
+            const result = await uploadWorkCyclesCSVMutation.mutateAsync({
+              csvData: chunk,
+              chunkInfo: {
+                current: i + 1,
+                total: totalChunks,
+                start: start + 1,
+                end: end,
+                totalRows: csvData.length
+              }
+            });
+            
+            totalImported += result.cyclesImported || 0;
+            totalSkipped += result.cyclesSkipped || 0;
+            
+            // Update progress
+            toast({
+              title: `Processing Chunk ${i + 1}/${totalChunks}`,
+              description: `Processed rows ${start + 1} to ${end} of ${csvData.length}`,
+            });
+            
+          } catch (chunkError) {
+            console.error(`Error processing chunk ${i + 1}:`, chunkError);
+            toast({
+              title: `Error in chunk ${i + 1}`,
+              description: `Failed to process rows ${start + 1} to ${end}`,
+              variant: "destructive",
+            });
+          }
+        }
+        
+        toast({
+          title: "CSV Upload Complete",
+          description: `Imported ${totalImported} work cycles, skipped ${totalSkipped}`,
+        });
+        
       } else {
         // Handle other endpoints as needed
         const response = await apiRequest("POST", endpoint, { csvData });
