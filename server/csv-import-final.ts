@@ -86,44 +86,49 @@ export async function importWorkCyclesFinal(
       const globalIndex = batchStart + i;
       
       try {
-        // Only skip if completely missing CSV ID (the most critical field)
-        if (!row['id']) {
+        // Use work number as unique identifier from the CSV data
+        const workNumber = row['work_cycles_work_number'];
+        if (!workNumber) {
           if (globalIndex < 5) {
-            console.log(`Row ${globalIndex + 1}: Skipping due to missing CSV ID`);
+            console.log(`Row ${globalIndex + 1}: Skipping due to missing work number`);
           }
           skipped++;
           continue;
         }
         
-        const csvId = parseInt(row['id']);
-        
-        if (isNaN(csvId)) {
-          errors.push(`Row ${globalIndex + 1}: Invalid CSV ID "${row['id']}"`);
+        // Extract numeric ID from work number (e.g., "WO10000" -> 10000)
+        const workNumberMatch = workNumber.match(/WO(\d+)/);
+        if (!workNumberMatch) {
+          errors.push(`Row ${globalIndex + 1}: Invalid work number format "${workNumber}"`);
           skipped++;
           continue;
         }
         
-        // Enhanced deduplication: Check both CSV ID and composite key
-        // First check CSV ID for exact duplicates
-        const existingById = await db.select({ id: workCycles.id })
+        const csvId = parseInt(workNumberMatch[1]);
+        
+        // Check for existing record using work_cycles_work_number
+        const existingByWorkNumber = await db.select({ id: workCycles.id })
           .from(workCycles)
-          .where(eq(workCycles.work_cycles_id, csvId))
+          .where(eq(workCycles.work_cycles_work_number, workNumber))
           .limit(1);
         
-        if (existingById.length > 0) {
+        if (existingByWorkNumber.length > 0) {
           if (globalIndex < 5) {
-            console.log(`Row ${globalIndex + 1}: Skipping duplicate CSV ID ${csvId}`);
+            console.log(`Row ${globalIndex + 1}: Skipping duplicate work number ${workNumber}`);
           }
           skipped++;
           continue;
         }
 
-        // Parse data for composite key checking
-        const durationSeconds = parseDurationToSeconds(row['work_cycles_duration']);
-        const quantityDone = parseFloat(row['work_cycles_quantity_done']) || 0;
-        const workId = parseInt(row['work_id']) || null;
+        // Parse data using correct field names from CSV
+        const durationSecondsFromField = parseInt(row['work_cycles_duration_sec']?.replace(/,/g, '') || '0');
+        const durationSeconds = durationSecondsFromField > 0 ? durationSecondsFromField : parseDurationToSeconds(row['work_cycles_duration']);
+        const quantityDone = parseFloat(row['work_cycles_work_production_quantity_done']) || 0;
+        const workId = csvId; // Use the extracted numeric ID from work number
         const operatorName = row['work_cycles_operator_rec_name'] || null;
-        const productionId = parseInt(row['work_production_id']) || null;
+        const productionNumber = row['work_cycles_work_production_rec_name'] || null;
+        const workCenterCategory = row['work_cycles_work_center_category_name'] || null;
+        const productRouting = row['work_cycles_work_production_routing_name'] || null;
 
         // Log parsing issues for first few records
         if (globalIndex < 10) {
@@ -133,7 +138,8 @@ export async function importWorkCyclesFinal(
             durationParsed: durationSeconds,
             operator: operatorName,
             workId: workId,
-            productionId: productionId,
+            productionNumber: productionNumber,
+            workCenter: workCenterCategory,
             quantity: quantityDone
           });
         }
@@ -185,13 +191,14 @@ export async function importWorkCyclesFinal(
           work_cycles_rec_name: row['work_cycles_rec_name'] || null,
           work_cycles_operator_rec_name: operatorName,
           work_cycles_operator_write_date: row['work_cycles_operator_write_date'] ? new Date(row['work_cycles_operator_write_date']) : null,
-          work_cycles_work_center_rec_name: row['work_cycles_work_center_rec_name'] || null,
+          work_cycles_work_center_rec_name: workCenterCategory,
           work_cycles_quantity_done: quantityDone,
-          work_production_id: productionId,
-          work_production_number: row['work_production_number'] || null,
-          work_production_product_code: row['work_production_product_code'] || null,
-          work_production_routing_rec_name: row['work_production_routing_rec_name'] || null,
-          work_rec_name: row['work_rec_name'] || null,
+          work_production_id: null, // Not in this CSV format
+          work_production_number: productionNumber,
+          work_production_product_code: null, // Not in this CSV
+          work_production_routing_rec_name: productRouting,
+          work_rec_name: row['work_cycles_work_rec_name'] || null,
+          work_cycles_work_number: workNumber, // Store the work number
           work_operation_rec_name: row['work_operation_rec_name'] || null,
           work_operation_id: parseInt(row['work_operation_id']) || null,
           work_id: workId,
