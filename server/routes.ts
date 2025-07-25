@@ -1089,6 +1089,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             isActive: op.isActive,
             averageUph: performanceData.uph,
             observations: performanceData.observations,
+            hasPerformanceData: true,
+            isEstimated: false,  // Exact match, not estimated
             estimatedHoursFor: (quantity: number) => {
               if (performanceData.uph && performanceData.uph > 0) {
                 return Number((quantity / performanceData.uph).toFixed(2));
