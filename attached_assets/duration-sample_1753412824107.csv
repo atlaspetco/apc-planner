@@ -1,0 +1,101 @@
+work/cycles/rec_name,work/cycles/operator/rec_name,work/cycles/work_center/category/name,work/cycles/work/production/routing/name,work/cycles/work/production/quantity_done,work/cycles/work/production/production_batch/name,work/cycles/work/production/planned_start_date,work/cycles/work/production/priority,work/cycles/work/rec_name,create_date,work/cycles/work/number,work/cycles/work/production/rec_name,work/cycles/duration,work/cycles/duration_sec
+Packaging | Jon Higgins | Packaging,Jon Higgins,Packaging,Lifetime Pouch,40,,2023-11-09,2,WO10000 | Packaging | MO15160,2023-11-10 15:37:10,WO10000,MO15160,0:17:09,"1,029"
+Cutting - Webbing | Courtney Banh | Cutting,Courtney Banh,Cutting,Lifetime Bandana,15,,2023-11-08,2,WO10002 | Cutting - Webbing | MO15602,2023-11-09 17:33:31,WO10002,MO15602,0:00:05,5
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Bandana,15,,2023-11-08,2,WO10003 | Sewing | MO15602,2023-11-09 15:40:07,WO10003,MO15602,1:30:31,"5,431"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Bandana,15,,2023-11-08,2,WO10004 | Packaging | MO15602,2023-11-09 17:35:32,WO10004,MO15602,0:00:06,6
+Cutting - Webbing | Courtney Banh | Cutting,Courtney Banh,Cutting,Cutting - Webbing,200,,2023-11-08,0,WO10006 | Cutting - Webbing | MO15619,2023-11-09 19:27:57,WO10006,MO15619,0:04:07,247
+Cutting - Webbing | Courtney Banh | Cutting,Courtney Banh,Cutting,Lifetime Pro Collar,5,,2023-11-08,0,WO10007 | Cutting - Webbing | MO15613,2023-11-09 19:32:40,WO10007,MO15613,0:06:09,369
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Pro Collar,5,,2023-11-08,0,WO10008 | Sewing | MO15613,2023-11-09 19:41:15,WO10008,MO15613,1:04:36,"3,876"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Pro Collar,5,,2023-11-08,0,WO10008 | Sewing | MO15613,,WO10008,MO15613,1:05:27,"3,927"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Pro Collar,5,,2023-11-08,0,WO10008 | Sewing | MO15613,2023-11-09 21:06:52,WO10008,MO15613,1:04:36,"3,876"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Pro Collar,5,,2023-11-08,0,WO10008 | Sewing | MO15613,,WO10008,MO15613,1:05:27,"3,927"
+Assembly - Webbing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Pro Collar,5,,2023-11-08,0,WO10009 | Assembly - Webbing | MO15613,2023-11-09 22:12:31,WO10009,MO15613,0:00:03,3
+Packaging | Packaging,,Packaging,Lifetime Pro Collar,5,,2023-11-08,0,WO10010 | Packaging | MO15613,2023-11-09 22:26:37,WO10010,MO15613,0:04:01,241
+Cutting - Biothane | Cutting,,Cutting,Lifetime Air - Bio,10,,2023-11-10,0,WO10013 | Cutting - Biothane | MO15629,2023-11-15 20:56:23,WO10013,MO15629,0:12:16,736
+Punching - Biothane | Cutting,,Cutting,Lifetime Air - Bio,10,,2023-11-10,0,WO10014 | Punching - Biothane | MO15629,2023-11-15 21:08:47,WO10014,MO15629,0:00:02,2
+Assembly - Biothane | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Air - Bio,10,,2023-11-10,0,WO10015 | Assembly - Biothane | MO15629,2023-11-15 23:00:26,WO10015,MO15629,0:49:42,"2,982"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Air - Bio,10,,2023-11-10,0,WO10016 | Packaging | MO15629,2023-11-16 17:16:21,WO10016,MO15629,0:00:04,4
+Cutting - Webbing | Sally Rudolfs | Cutting,Sally Rudolfs,Cutting,Lifetime Harness,10,,2023-10-29,0,WO10017 | Cutting - Webbing | MO15073,2023-11-13 16:26:11,WO10017,MO15073,0:02:02,122
+Cutting - Webbing | Sally Rudolfs | Cutting,Sally Rudolfs,Cutting,Lifetime Harness,10,,2023-10-29,0,WO10017 | Cutting - Webbing | MO15073,,WO10017,MO15073,0:00:04,4
+Cutting - Webbing | Sally Rudolfs | Cutting,Sally Rudolfs,Cutting,Lifetime Harness,10,,2023-10-29,0,WO10017 | Cutting - Webbing | MO15073,2023-11-13 16:29:52,WO10017,MO15073,0:02:02,122
+Cutting - Webbing | Sally Rudolfs | Cutting,Sally Rudolfs,Cutting,Lifetime Harness,10,,2023-10-29,0,WO10017 | Cutting - Webbing | MO15073,,WO10017,MO15073,0:00:04,4
+Sewing | Sally Rudolfs | Assembly,Sally Rudolfs,Sewing,Lifetime Harness,10,,2023-10-29,0,WO10018 | Sewing | MO15073,2023-11-13 16:44:22,WO10018,MO15073,1:07:21,"4,041"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Harness,10,,2023-10-29,0,WO10019 | Packaging | MO15073,2023-11-13 21:30:34,WO10019,MO15073,0:11:08,668
+Cutting - Rope | Sam Alter | Cutting,Sam Alter,Cutting,Lifetime Leash,70,,2023-10-29,1,WO10023 | Cutting - Rope | MO15228,2023-11-10 20:15:13,WO10023,MO15228,0:00:04,4
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-10-29,1,WO10024 | Assembly - Rope | MO15228,2023-11-10 21:02:49,WO10024,MO15228,2:24:26,"8,666"
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-10-29,1,WO10024 | Assembly - Rope | MO15228,,WO10024,MO15228,0:00:04,4
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-10-29,1,WO10024 | Assembly - Rope | MO15228,2023-11-13 15:41:00,WO10024,MO15228,2:24:26,"8,666"
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-10-29,1,WO10024 | Assembly - Rope | MO15228,,WO10024,MO15228,0:00:04,4
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,1,WO10025 | Packaging | MO15228,2023-11-13 20:22:45,WO10025,MO15228,0:57:54,"3,474"
+Cutting - Webbing | Courtney Banh | Cutting,Courtney Banh,Cutting,Belt Bag,4,,2023-11-10,2,WO10033 | Cutting - Webbing | MO15638,2023-11-10 17:20:14,WO10033,MO15638,0:00:56,56
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,2023-11-10 17:11:19,WO10034,MO15638,0:00:04,4
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:06:15,375
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,1:32:30,"5,550"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:31:28,"1,888"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,2023-11-10 17:12:48,WO10034,MO15638,0:00:04,4
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:06:15,375
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,1:32:30,"5,550"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:31:28,"1,888"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,2023-11-10 17:21:17,WO10034,MO15638,0:00:04,4
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:06:15,375
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,1:32:30,"5,550"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:31:28,"1,888"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,2023-11-10 19:34:41,WO10034,MO15638,0:00:04,4
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:06:15,375
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,1:32:30,"5,550"
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Belt Bag,4,,2023-11-10,2,WO10034 | Sewing | MO15638,,WO10034,MO15638,0:31:28,"1,888"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Belt Bag,4,,2023-11-10,2,WO10037 | Packaging | MO15638,2023-11-10 20:14:40,WO10037,MO15638,0:05:16,316
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Fi Snap,31,,2023-11-13,1,WO10044 | Sewing | MO15645,2023-11-13 17:34:47,WO10044,MO15645,0:48:56,"2,936"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Fi Snap,31,,2023-11-13,1,WO10045 | Packaging | MO15645,2023-11-13 18:53:24,WO10045,MO15645,0:19:29,"1,169"
+Grommet - Snap | Jon Higgins | Packaging,Jon Higgins,Packaging,Fi Snap,31,,2023-11-13,1,WO10046 | Grommet - Snap | MO15645,2023-11-11 0:02:36,WO10046,MO15645,0:00:07,7
+Cutting - Rope | Cutting,,Cutting,Lifetime Leash,90,,2023-11-13,1,WO10056 | Cutting - Rope | MO15648,2023-11-17 17:10:10,WO10056,MO15648,0:00:03,3
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,90,,2023-11-13,1,WO10057 | Assembly - Rope | MO15648,2023-11-15 19:37:11,WO10057,MO15648,3:14:32,"11,672"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,90,,2023-11-13,1,WO10058 | Packaging | MO15648,2023-11-17 23:38:55,WO10058,MO15648,0:00:18,18
+Cutting - Rope | Cutting,,Cutting,Lifetime Leash,70,,2023-11-05,2,WO10126 | Cutting - Rope | MO15237,2023-11-17 17:15:00,WO10126,MO15237,0:16:29,989
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-11-05,2,WO10127 | Assembly - Rope | MO15237,2023-11-17 20:24:04,WO10127,MO15237,"2 days, 5:16:05.994694","2 days, 5:16:05.994694"
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-11-05,2,WO10127 | Assembly - Rope | MO15237,,WO10127,MO15237,0:00:06,6
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-11-05,2,WO10127 | Assembly - Rope | MO15237,2023-11-20 15:01:21,WO10127,MO15237,"2 days, 5:16:05.994694","2 days, 5:16:05.994694"
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-11-05,2,WO10127 | Assembly - Rope | MO15237,,WO10127,MO15237,0:00:06,6
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-11-05,2,WO10128 | Packaging | MO15237,2023-11-17 23:39:32,WO10128,MO15237,0:00:44,44
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-11-05,2,WO10128 | Packaging | MO15237,,WO10128,MO15237,0:00:03,3
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-11-05,2,WO10128 | Packaging | MO15237,2023-11-20 22:56:41,WO10128,MO15237,0:00:44,44
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-11-05,2,WO10128 | Packaging | MO15237,,WO10128,MO15237,0:00:03,3
+Cutting - Rope | Cutting,,Cutting,Lifetime Leash,140,,2023-11-05,2,WO10129 | Cutting - Rope | MO15236,2023-11-17 17:03:34,WO10129,MO15236,0:00:04,4
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,140,,2023-11-05,2,WO10130 | Assembly - Rope | MO15236,2023-11-17 15:12:16,WO10130,MO15236,1:35:23,"5,723"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,140,,2023-11-05,2,WO10131 | Packaging | MO15236,2023-11-17 23:38:06,WO10131,MO15236,0:00:04,4
+Cutting - Rope | Cutting,,Cutting,Lifetime Leash,70,,2023-10-29,2,WO10132 | Cutting - Rope | MO15233,2023-11-13 15:14:33,WO10132,MO15233,0:19:54,"1,194"
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-10-29,2,WO10133 | Assembly - Rope | MO15233,2023-11-13 15:29:00,WO10133,MO15233,2:58:29,"10,709"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,2,WO10134 | Packaging | MO15233,2023-11-17 23:39:22,WO10134,MO15233,0:00:04,4
+Cutting - Rope | Jon Higgins | Cutting,Jon Higgins,Cutting,Lifetime Leash,70,,2023-11-05,2,WO10135 | Cutting - Rope | MO15229,2023-11-20 19:06:20,WO10135,MO15229,0:00:05,5
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-11-05,2,WO10136 | Assembly - Rope | MO15229,2023-11-20 19:07:17,WO10136,MO15229,3:41:11,"13,271"
+Cutting - Rope | Cutting,,Cutting,Lifetime Leash,120,,2023-10-29,0,WO10138 | Cutting - Rope | MO15238,2023-11-13 16:02:34,WO10138,MO15238,0:26:15,"1,575"
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,120,,2023-10-29,0,WO10139 | Assembly - Rope | MO15238,2023-11-15 15:12:59,WO10139,MO15238,4:23:51,"15,831"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,120,,2023-10-29,0,WO10140 | Packaging | MO15238,2023-11-15 22:50:02,WO10140,MO15238,0:00:07,7
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,120,,2023-10-29,0,WO10140 | Packaging | MO15238,,WO10140,MO15238,2:02:57,"7,377"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,120,,2023-10-29,0,WO10140 | Packaging | MO15238,2023-11-16 19:16:15,WO10140,MO15238,0:00:07,7
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,120,,2023-10-29,0,WO10140 | Packaging | MO15238,,WO10140,MO15238,2:02:57,"7,377"
+Cutting - Rope | Cutting,,Cutting,Lifetime Leash,70,,2023-10-29,0,WO10141 | Cutting - Rope | MO15658,2023-11-13 15:36:18,WO10141,MO15658,0:14:24,864
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,70,,2023-10-29,0,WO10142 | Assembly - Rope | MO15658,2023-11-13 20:56:07,WO10142,MO15658,2:38:32,"9,512"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,2023-11-14 23:02:16,WO10143,MO15658,0:00:06,6
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,,WO10143,MO15658,0:13:36,816
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,,WO10143,MO15658,0:45:26,"2,726"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,2023-11-15 17:34:18,WO10143,MO15658,0:00:06,6
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,,WO10143,MO15658,0:13:36,816
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,,WO10143,MO15658,0:45:26,"2,726"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,2023-11-15 20:29:01,WO10143,MO15658,0:00:06,6
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,,WO10143,MO15658,0:13:36,816
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,70,,2023-10-29,0,WO10143 | Packaging | MO15658,,WO10143,MO15658,0:45:26,"2,726"
+Cutting - Rope | Cutting,,Cutting,Lifetime Leash,60,,2023-11-13,2,WO10144 | Cutting - Rope | MO15659,2023-11-13 15:50:48,WO10144,MO15659,0:11:36,696
+Assembly - Rope | Jon Higgins | Assembly,Jon Higgins,Rope,Lifetime Leash,60,,2023-11-13,2,WO10145 | Assembly - Rope | MO15659,2023-11-13 18:28:48,WO10145,MO15659,2:26:40,"8,800"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Leash,60,,2023-11-13,2,WO10146 | Packaging | MO15659,2023-11-13 21:42:51,WO10146,MO15659,1:00:49,"3,649"
+Cutting - Webbing | Courtney Banh | Cutting,Courtney Banh,Cutting,Lifetime Lite Collar,10,,2023-11-03,1,WO10148 | Cutting - Webbing | MO15539,2023-11-14 16:03:47,WO10148,MO15539,0:00:06,6
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Lite Collar,10,,2023-11-03,1,WO10149 | Sewing | MO15539,2023-11-13 21:49:59,WO10149,MO15539,0:14:02,842
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Lite Collar,10,,2023-11-03,1,WO10150 | Packaging | MO15539,2023-11-14 22:46:25,WO10150,MO15539,0:17:06,"1,026"
+Cutting - Webbing | Courtney Banh | Cutting,Courtney Banh,Cutting,Lifetime Lite Collar,10,,2023-11-03,2,WO10154 | Cutting - Webbing | MO15536,2023-11-14 16:03:35,WO10154,MO15536,0:00:04,4
+Sewing | Courtney Banh | Assembly,Courtney Banh,Sewing,Lifetime Lite Collar,10,,2023-11-03,2,WO10155 | Sewing | MO15536,2023-11-13 22:04:26,WO10155,MO15536,0:16:26,986
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Lite Collar,10,,2023-11-03,2,WO10156 | Packaging | MO15536,2023-11-14 16:59:17,WO10156,MO15536,0:12:49,769
+Cutting - Webbing | Sally Rudolfs | Cutting,Sally Rudolfs,Cutting,Lifetime Harness,25,,2023-11-13,2,WO10160 | Cutting - Webbing | MO15660,2023-11-13 16:31:08,WO10160,MO15660,0:04:28,268
+Sewing | Sally Rudolfs | Assembly,Sally Rudolfs,Sewing,Lifetime Harness,25,,2023-11-13,2,WO10161 | Sewing | MO15660,2023-11-13 18:01:29,WO10161,MO15660,1:33:58,"5,638"
+Sewing | Sally Rudolfs | Assembly,Sally Rudolfs,Sewing,Lifetime Harness,25,,2023-11-13,2,WO10161 | Sewing | MO15660,,WO10161,MO15660,0:27:03,"1,623"
+Sewing | Sally Rudolfs | Assembly,Sally Rudolfs,Sewing,Lifetime Harness,25,,2023-11-13,2,WO10161 | Sewing | MO15660,,WO10161,MO15660,0:44:49,"2,689"
+Sewing | Sally Rudolfs | Assembly,Sally Rudolfs,Sewing,Lifetime Harness,25,,2023-11-13,2,WO10161 | Sewing | MO15660,2023-11-13 20:07:59,WO10161,MO15660,1:33:58,"5,638"

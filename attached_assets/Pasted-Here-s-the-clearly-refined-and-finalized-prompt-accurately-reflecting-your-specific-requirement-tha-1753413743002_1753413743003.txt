@@ -1,0 +1,124 @@
+Here’s the clearly refined and finalized prompt, accurately reflecting your specific requirement that each Work Order (WO) matches the Manufacturing Order (MO) quantity, ensuring the correct calculation of Units Per Hour (UPH) for precise production forecasting:
+
+⸻
+
+🚀 Final CSV Import and Duration Consolidation Prompt
+
+Objective:
+
+Replace existing work cycle data with a newly formatted CSV to accurately consolidate durations per Work Order (WO), ensuring precise calculation of Units Per Hour (UPH) based on the unique combination of:
+
+MO Number + Operator + Operation + Work Center Category + Routing
+
+This ensures correct calculation of:
+
+UPH = production_quantity_done / total_hours (total duration summed across cycles)
+
+
+⸻
+
+✅ Final CSV Structure:
+	•	Each row clearly represents: One cycle or partial completion within a Work Order.
+	•	Key Consolidation Column:
+	•	work/cycles/work/rec_name (Work Order number)
+	•	Important Columns Provided:
+	•	work/cycles/work/production/quantity_done (production quantity, consistent per MO)
+	•	work/cycles/duration (hh:mm:ss)
+	•	work/cycles/duration_sec (seconds, numeric)
+	•	work/cycles/operator/rec_name
+	•	work/cycles/work_center/category/name (already standardized as Assembly)
+	•	work/cycles/work/production/routing/name
+	•	work/cycles/work/production/routing/rec_name
+	•	work/cycles/work/production/create_date
+	•	work/operation/name
+
+⸻
+
+⚙️ Clear Processing Steps:
+
+Step 1: Import CSV
+	•	Allow direct upload of this structured CSV.
+
+Step 2: Consolidate by WO Number
+	•	Group rows explicitly by:
+
+work/cycles/work/rec_name (WO number)
+
+
+	•	Sum clearly durations:
+
+work/cycles/duration_sec
+
+
+	•	Retain Production Quantity (consistent per MO) and other metadata clearly from the first row.
+
+Step 3: Calculate Total Duration in Hours
+	•	Convert duration clearly to hours:
+
+total_hours = duration_sec / 3600
+
+
+
+Step 4: Precise UPH Calculation
+	•	Accurately calculate UPH using MO-level quantity and total WO duration:
+
+UPH = production_quantity_done / total_hours
+
+
+
+Step 5: Final Output Format
+	•	Each Work Order (work/cycles/work/rec_name) represented clearly once.
+	•	Include explicitly:
+	•	WO Number
+	•	MO Number (clearly extracted from WO)
+	•	Operator, Operation, Work Center Category, Routing, create_date (metadata)
+	•	Production Quantity (MO quantity, consistent per WO)
+	•	Total Duration (seconds)
+	•	Total Duration (hours)
+	•	Accurately calculated UPH
+
+⸻
+
+🛠 Python Implementation (Clear Reference):
+
+import pandas as pd
+
+# Load final CSV
+df = pd.read_csv('final_uploaded.csv')
+
+# Ensure numeric duration
+df['duration_sec'] = pd.to_numeric(df['work/cycles/duration_sec'], errors='coerce')
+
+# Consolidation clearly at WO level
+consolidated_wo = df.groupby('work/cycles/work/rec_name', as_index=False).agg({
+    'work/cycles/work/production/quantity_done': 'first', # consistent per MO
+    'duration_sec': 'sum',
+    'work/cycles/operator/rec_name': 'first',
+    'work/cycles/work_center/category/name': 'first',
+    'work/cycles/work/production/routing/name': 'first',
+    'work/cycles/work/production/routing/rec_name': 'first',
+    'work/cycles/work/production/create_date': 'first',
+    'work/operation/name': 'first'
+})
+
+# Calculate total hours explicitly
+consolidated_wo['total_hours'] = consolidated_wo['duration_sec'] / 3600
+
+# Extract MO number explicitly from WO
+consolidated_wo['MO_number'] = consolidated_wo['work/cycles/work/rec_name'].str.extract(r'(MO\d+)')
+
+# Clearly calculate accurate UPH
+consolidated_wo['UPH'] = (
+    consolidated_wo['work/cycles/work/production/quantity_done'] / consolidated_wo['total_hours']
+)
+
+# Save clearly consolidated results
+consolidated_wo.to_csv('accurate_consolidated_wo_data.csv', index=False)
+
+
+⸻
+
+🎯 Outcome:
+	•	Precisely consolidated durations per Work Order.
+	•	Accurate UPH calculation clearly reflecting true production efficiency.
+	•	Supports precise and actionable production forecasting.
