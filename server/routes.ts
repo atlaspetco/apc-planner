@@ -3644,8 +3644,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Read from the database instead of recalculating
-      const uphResults = await db.select().from(uphData);
+      // Use the core UPH calculator for accurate values
+      const { calculateAllUphFromWorkCycles } = await import("./uph-core-calculator.js");
+      const uphResults = await calculateAllUphFromWorkCycles();
       
       const allOperators = await db.select().from(operators);
       
@@ -3673,18 +3674,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Group UPH data by routing, then by operator
       const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
       
-      // Build the routing data structure from historical UPH data
+      // Build the routing data structure from core calculator results
       uphResults.forEach(row => {
-        // Use productRouting field - handle both camelCase and snake_case
-        const routing = row.productRouting || row.product_routing;
-        const operatorId = row.operatorId ?? row.operator_id;
-        const workCenter = row.workCenter || row.work_center;
+        // Core calculator returns: operatorName, workCenter, routing, uph, observationCount
+        const routing = row.routing;
+        const operatorName = row.operatorName;
+        const workCenter = row.workCenter;
         
         // Skip rows without proper data
-        if (operatorId === null || operatorId === undefined || !routing || !workCenter) {
-          console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
+        if (!operatorName || !routing || !workCenter) {
+          console.warn('Skipping UPH row with missing data:', row);
           return;
         }
+        
+        // Find operator ID by name
+        const operator = allOperators.find(op => op.name === operatorName);
+        if (!operator) {
+          console.warn(`Operator not found: ${operatorName}`);
+          return;
+        }
+        const operatorId = operator.id;
         
         if (!routingData.has(routing)) {
           routingData.set(routing, new Map());
@@ -3696,10 +3705,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const operatorData = routingOperators.get(operatorId)!;
         
-        // Use the historical UPH data directly - handle both camelCase and snake_case
+        // Use the UPH data from core calculator
         operatorData[workCenter] = {
-          uph: row.uph ?? row.units_per_hour, // Handle both field names
-          observations: row.observationCount ?? row.observation_count // Handle both field names
+          uph: row.uph,
+          observations: row.observationCount
         };
       });
       
