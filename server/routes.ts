@@ -3679,17 +3679,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get unique work centers and routings
       const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
-      const allRoutings = Array.from(new Set(uphResults.map(row => row.routing))).sort();
+      const allRoutings = Array.from(new Set(uphResults.map(row => row.productRouting || row.routing))).sort();
       
       // Group UPH data by routing, then by operator
       const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
       
       // Build the routing data structure from core calculator results
       uphResults.forEach(row => {
-        // Core calculator returns: operatorName, workCenter, routing, uph, observationCount
-        const routing = row.routing;
-        const operatorName = row.operatorName;
-        const workCenter = row.workCenter;
+        // Core calculator returns: operatorName, workCenter, productRouting, uph, observationCount
+        const routing = row.productRouting || row.routing; // Handle both field names
+        const operatorName = row.operatorName || row.operator_name; // Handle both field names
+        const workCenter = row.workCenter || row.work_center; // Handle both field names
         
         // Skip rows without proper data
         if (!operatorName || !routing || !workCenter) {
@@ -3718,7 +3718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Use the UPH data from core calculator
         operatorData[workCenter] = {
           uph: row.uph,
-          observations: row.observationCount
+          observations: row.observationCount || row.observation_count // Handle both field names
         };
       });
       
