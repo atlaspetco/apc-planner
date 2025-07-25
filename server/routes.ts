@@ -1068,25 +1068,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Only include operators who have actual performance data for this combination
           if (!hasUphData) return false;
           
-          // CRITICAL: Check if operator has explicitly disabled this work center
-          // Even if they have historical data, respect their current settings
-          if (op.workCenters && !op.workCenters.includes(workCenter as string)) {
-            // For Assembly, also check if they have Sewing or Rope enabled since Assembly is aggregated
-            if (workCenter === 'Assembly') {
-              const hasAssemblyRelated = op.workCenters.some(wc => 
-                wc === 'Assembly' || wc === 'Sewing' || wc === 'Rope'
-              );
-              if (!hasAssemblyRelated) {
-                console.log(`  - ${op.name} has ${workCenter} disabled in settings, excluding from qualified list`);
-                return false;
-              }
-            } else {
-              console.log(`  - ${op.name} has ${workCenter} disabled in settings, excluding from qualified list`);
-              return false;
-            }
-          }
-          
-          // If operator has historical UPH data AND the work center is enabled, they are qualified
+          // If operator has historical UPH data, they are qualified
+          // We prioritize actual performance data over current settings
           return true;
         })
         .map(op => {
@@ -1323,6 +1306,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // UPH Data - Use core calculator for consistent calculations
   app.get("/api/uph-data", async (req, res) => {
+    try {
+      // Use core calculator directly
+      const { calculateCoreUph } = await import("./uph-core-calculator.js");
+      const uphResults = await calculateCoreUph({ bypassDateFilter: true });
+      
+      // Transform to expected format
+      const transformedResults = uphResults.map(result => ({
+        operatorName: result.operatorName,
+        workCenter: result.workCenter,
+        productRouting: result.routing,
+        uph: result.unitsPerHour,
+        observationCount: result.observations
+      }));
+      
+      res.json(transformedResults);
+    } catch (error) {
+      console.error("Error getting UPH data:", error);
+      res.status(500).json({ error: "Failed to get UPH data" });
+    }
+  });
+
+  // OLD UPH Data endpoint - remove this duplicate
+  app.get("/api/uph-data-old", async (req, res) => {
     try {
       console.log("Calculating UPH data using core calculator...");
       
@@ -3655,8 +3661,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Read from cached database for performance
-      const uphResults = await db.select().from(uphData);
+      // Use core calculator directly for consistent results with details page
+      const { calculateCoreUph } = await import("./uph-core-calculator.js");
+      const uphResults = await calculateCoreUph({ bypassDateFilter: true });
       
       const allOperators = await db.select().from(operators);
       
@@ -3679,17 +3686,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get unique work centers and routings
       const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
-      const allRoutings = Array.from(new Set(uphResults.map(row => row.productRouting || row.routing))).sort();
+      const allRoutings = Array.from(new Set(uphResults.map(row => row.routing))).sort();
       
       // Group UPH data by routing, then by operator
       const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
       
       // Build the routing data structure from core calculator results
       uphResults.forEach(row => {
-        // Core calculator returns: operatorName, workCenter, productRouting, uph, observationCount
-        const routing = row.productRouting || row.routing; // Handle both field names
-        const operatorName = row.operatorName || row.operator_name; // Handle both field names
-        const workCenter = row.workCenter || row.work_center; // Handle both field names
+        // Core calculator returns: operatorName, workCenter, routing, unitsPerHour, observations
+        const routing = row.routing;
+        const operatorName = row.operatorName;
+        const workCenter = row.workCenter;
         
         // Skip rows without proper data
         if (!operatorName || !routing || !workCenter) {
@@ -3717,8 +3724,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Use the UPH data from core calculator
         operatorData[workCenter] = {
-          uph: row.uph,
-          observations: row.observationCount || row.observation_count // Handle both field names
+          uph: row.unitsPerHour,
+          observations: row.observations
         };
       });
       
