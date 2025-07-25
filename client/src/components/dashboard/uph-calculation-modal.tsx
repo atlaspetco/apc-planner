@@ -19,6 +19,7 @@ interface WorkCycleDetail {
   productionId: number;
   moNumber: string;
   woNumber: string;
+  workOrderId?: number;
   moQuantity: number;
   totalDurationHours: number;
   uph: number;
@@ -157,7 +158,20 @@ export function UphCalculationModal({
                             {cycle.moNumber}
                           </a>
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{cycle.woNumber}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {cycle.workOrderId ? (
+                            <a 
+                              href={`https://apc.fulfil.io/client/#/model/production.work/${cycle.workOrderId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                              {cycle.woNumber}
+                            </a>
+                          ) : (
+                            cycle.woNumber
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm">{cycle.actualWorkCenter}</TableCell>
                         <TableCell className="text-sm">{cycle.operations}</TableCell>
                         <TableCell className="text-right">{cycle.moQuantity?.toLocaleString() || '0'}</TableCell>
