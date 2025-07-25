@@ -3644,9 +3644,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current UPH table data for dashboard display
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Use the core UPH calculator for accurate values
-      const { calculateAllUphFromWorkCycles } = await import("./uph-core-calculator.js");
-      const uphResults = await calculateAllUphFromWorkCycles();
+      // Read from cached database for performance
+      const uphResults = await db.select().from(uphData);
       
       const allOperators = await db.select().from(operators);
       
