@@ -3040,6 +3040,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Comprehensive work cycles import - pulls ALL work cycles from API
+  app.post("/api/fulfil/import-all-work-cycles", async (req: Request, res: Response) => {
+    try {
+      console.log("Starting comprehensive work cycles import...");
+      
+      // Set importing status
+      global.updateImportStatus?.({
+        isImporting: true,
+        currentOperation: 'Importing ALL work cycles from Fulfil API',
+        progress: 0,
+        startTime: Date.now()
+      });
+
+      const { importAllWorkCycles } = await import("./import-all-work-cycles-comprehensive.js");
+      await importAllWorkCycles();
+
+      // Clear importing status
+      global.updateImportStatus?.({
+        isImporting: false,
+        currentOperation: 'Import completed',
+        progress: 100,
+        startTime: null
+      });
+
+      res.json({
+        success: true,
+        message: "Successfully imported all work cycles from Fulfil API"
+      });
+    } catch (error) {
+      console.error("Error importing work cycles:", error);
+      
+      // Clear importing status on error
+      global.updateImportStatus?.({
+        isImporting: false,
+        currentOperation: 'Import failed',
+        progress: 0,
+        startTime: null
+      });
+      
+      res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Paginated work cycles import to get newer data (like Evan Crosby)
   app.post("/api/fulfil/import-newer-work-cycles", async (req: Request, res: Response) => {
     try {
@@ -3634,7 +3680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const routing = row.productRouting || row.routing;
         
         // Skip rows without proper data
-        if (!row.operatorId || !routing || !row.workCenter) {
+        if (row.operatorId === null || row.operatorId === undefined || !routing || !row.workCenter) {
           console.warn('Skipping UPH row with null operatorId, routing, or workCenter:', row);
           return;
         }
