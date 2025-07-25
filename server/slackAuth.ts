@@ -62,9 +62,18 @@ export async function setupSlackAuth(app: Express) {
     callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`,
     scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar'],
     skipUserProfile: false
-  }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+  }, async (accessToken: string, refreshToken: string, params: any, profile: any, done: any) => {
     try {
-      console.log("Slack profile received:", JSON.stringify(profile, null, 2));
+      console.log("=== SLACK STRATEGY SUCCESS ===");
+      console.log("Access Token:", accessToken ? "Present" : "Missing");
+      console.log("Refresh Token:", refreshToken ? "Present" : "Missing");
+      console.log("Params:", params);
+      console.log("Profile:", profile);
+      
+      if (!profile || !profile.user) {
+        console.error("No profile data received");
+        return done(new Error("No profile data received"), null);
+      }
       
       // Create user object for session
       const user = {
@@ -129,6 +138,14 @@ export async function setupSlackAuth(app: Express) {
         return res.redirect("/");
       });
     })(req, res, next);
+  });
+
+  // Test endpoint
+  app.get("/api/auth/test", (req, res) => {
+    res.json({ 
+      message: "Auth endpoints are working",
+      slackConfigured: !!process.env.SLACK_CLIENT_ID && !!process.env.SLACK_CLIENT_SECRET
+    });
   });
 
   app.get("/api/logout", (req, res) => {
