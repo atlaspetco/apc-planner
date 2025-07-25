@@ -15,9 +15,9 @@ export default function Landing() {
             Optimize your production planning with real-time analytics, operator management, 
             and AI-powered work order assignments.
           </p>
-          <a href="/api/login">
+          <a href="/api/auth/slack">
             <Button size="lg" className="gap-2">
-              Sign in with Replit <ArrowRight className="h-4 w-4" />
+              Sign in with Slack <ArrowRight className="h-4 w-4" />
             </Button>
           </a>
         </div>
