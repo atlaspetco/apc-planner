@@ -8,18 +8,20 @@ const RATE_LIMIT_DELAY = 500; // 500ms between requests
 
 interface WorkCycleResponse {
   id: number;
-  work: number;
-  "work.production": number;
-  "work.production.number": string;
-  "work.production.quantity": number;
-  "work.production.routing.rec_name": string;
-  "work.operation.rec_name": string;
-  "work.work_center.rec_name": string;
-  "operator.rec_name": string;
-  quantity_done: number;
-  duration: number;
-  effective_date: string;
+  operator_rec_name: string;
+  rec_name: string;
+  production: number;
+  work_center_category: string;
+  work_operation_rec_name: string;
+  production_work_cycles_duration: number;
+  production_work_cycles_id: string;
+  work_cycles_work_center_rec_name: string;
+  state: string;
+  production_routing_rec_name: string;
+  production_quantity: number;
   create_date: string;
+  production_planned_date: string;
+  production_priority: string;
 }
 
 export async function bulkImportAllWorkCycles() {
@@ -62,30 +64,32 @@ export async function bulkImportAllWorkCycles() {
       }
 
       // Fetch batch from Fulfil
-      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work.cycles/search_read`, {
+      const response = await fetch(`${FULFIL_BASE_URL}/api/v2/model/production.work/search_read`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "X-API-KEY": process.env.FULFIL_ACCESS_TOKEN
         },
         body: JSON.stringify({
-          filters: [["state", "=", "done"]],
+          filters: [["state", "in", ["done", "finished"]]],
           fields: [
             "id",
-            "work",
-            "work.production",
-            "work.production.number",
-            "work.production.quantity",
-            "work.production.routing.rec_name",
-            "work.operation.rec_name",
-            "work.work_center.rec_name",
-            "operator.rec_name",
-            "quantity_done",
-            "duration",
-            "effective_date",
-            "create_date"
+            "operator_rec_name",
+            "rec_name",
+            "production",
+            "work_center_category",
+            "work_operation_rec_name",
+            "production_work_cycles_duration",
+            "production_work_cycles_id",
+            "work_cycles_work_center_rec_name",
+            "state",
+            "production_routing_rec_name",
+            "production_quantity",
+            "create_date",
+            "production_planned_date",
+            "production_priority"
           ],
-          order: [["id", "ASC"]],
+          order: [["create_date", "ASC"]],
           limit: BATCH_SIZE,
           offset: offset
         })
@@ -106,7 +110,7 @@ export async function bulkImportAllWorkCycles() {
 
       // Process batch
       for (const cycle of data) {
-        const workCyclesId = cycle.id?.toString();
+        const workCyclesId = cycle.production_work_cycles_id?.toString();
         
         if (!workCyclesId || existingIds.has(workCyclesId)) {
           totalSkipped++;
@@ -119,8 +123,8 @@ export async function bulkImportAllWorkCycles() {
         }
 
         // Extract data with proper null handling
-        const operatorName = cycle["operator.rec_name"] || null;
-        const workCenter = cycle["work.work_center.rec_name"] || null;
+        const operatorName = cycle.operator_rec_name || null;
+        const workCenter = cycle.work_cycles_work_center_rec_name || null;
         
         // Track unique operators
         if (operatorName && workCenter) {
@@ -135,10 +139,19 @@ export async function bulkImportAllWorkCycles() {
 
         // Extract operation from rec_name
         let operation = null;
-        if (cycle["work.operation.rec_name"]) {
-          const parts = cycle["work.operation.rec_name"].split(' | ');
+        if (cycle.work_operation_rec_name) {
+          const parts = cycle.work_operation_rec_name.split(' | ');
           if (parts.length >= 2) {
             operation = parts[0];
+          }
+        }
+
+        // Extract production number from rec_name (format: "WO33046 | Sewing | MO178231")
+        let productionNumber = null;
+        if (cycle.rec_name) {
+          const parts = cycle.rec_name.split(' | ');
+          if (parts.length >= 3) {
+            productionNumber = parts[2]; // MO number
           }
         }
 
@@ -147,15 +160,15 @@ export async function bulkImportAllWorkCycles() {
           await db.insert(workCycles).values({
             work_cycles_id: workCyclesId,
             work_cycles_operator_rec_name: operatorName,
-            work_operation_rec_name: cycle["work.operation.rec_name"] || null,
+            work_operation_rec_name: cycle.work_operation_rec_name || null,
             work_cycles_work_center_rec_name: workCenter,
-            work_cycles_duration: cycle.duration || 0,
-            work_cycles_quantity: cycle.quantity_done || 0,
-            work_production_rec_name: cycle["work.production.number"] || null,
-            work_production_routing_rec_name: cycle["work.production.routing.rec_name"] || null,
-            work_production_id: cycle["work.production"]?.toString() || null,
-            work_cycles_effective_date: cycle.effective_date || null,
-            state: null // state field is not in the response
+            work_cycles_duration: cycle.production_work_cycles_duration || 0,
+            work_cycles_quantity: cycle.production_quantity || 0,
+            work_production_rec_name: productionNumber,
+            work_production_routing_rec_name: cycle.production_routing_rec_name || null,
+            work_production_id: cycle.production?.toString() || null,
+            work_cycles_effective_date: cycle.production_planned_date || null,
+            state: cycle.state || null
           });
           
           totalImported++;
