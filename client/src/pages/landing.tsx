@@ -1,8 +1,23 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Shield, BarChart3, Users, Zap, ArrowRight } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Shield, BarChart3, Users, Zap, ArrowRight, AlertCircle } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function Landing() {
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check for error in URL query params
+    const params = new URLSearchParams(window.location.search);
+    const errorParam = params.get('error');
+    if (errorParam) {
+      setError(errorParam);
+      // Clean up URL to remove error param
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       {/* Hero Section */}
@@ -15,6 +30,16 @@ export default function Landing() {
             Optimize your production planning with real-time analytics, operator management, 
             and AI-powered work order assignments.
           </p>
+          
+          {error && (
+            <Alert variant="destructive" className="mb-6 text-left">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Authentication failed: {error}
+              </AlertDescription>
+            </Alert>
+          )}
+          
           <a href="/api/auth/slack">
             <Button size="lg" className="gap-2">
               Sign in with Slack <ArrowRight className="h-4 w-4" />

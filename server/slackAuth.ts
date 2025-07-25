@@ -109,18 +109,18 @@ export async function setupSlackAuth(app: Express) {
       if (err) {
         console.error("Slack authentication error:", err);
         console.error("Error stack:", err.stack);
-        return res.redirect("/login?error=" + encodeURIComponent(err.message || "Authentication failed"));
+        return res.redirect("/?error=" + encodeURIComponent(err.message || "Authentication failed"));
       }
       
       if (!user) {
         console.error("No user returned from Slack auth. Info:", info);
-        return res.redirect("/login?error=" + encodeURIComponent(info?.message || "Authentication failed"));
+        return res.redirect("/?error=" + encodeURIComponent(info?.message || "Authentication failed"));
       }
       
       req.logIn(user, (loginErr) => {
         if (loginErr) {
           console.error("Login error:", loginErr);
-          return res.redirect("/login?error=" + encodeURIComponent("Login failed"));
+          return res.redirect("/?error=" + encodeURIComponent("Login failed"));
         }
         console.log("User successfully logged in:", user.id);
         return res.redirect("/");
