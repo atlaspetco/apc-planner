@@ -196,7 +196,7 @@ export default function UphAnalytics() {
   const queryClient = useQueryClient();
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
   const [aiOptimized, setAiOptimized] = useState<boolean>(false);
-  const [filterAnomalies, setFilterAnomalies] = useState<boolean>(false);
+  const [anomalyFilter, setAnomalyFilter] = useState<"none" | "2percent" | "10percent">("none");
   // UPH Analytics always shows ALL data - no time filtering
   const [selectedUphDetails, setSelectedUphDetails] = useState<{
     operatorName: string;
@@ -227,66 +227,48 @@ export default function UphAnalytics() {
       return null;
     }
     
-    // Apply anomaly filtering if enabled
-    if (filterAnomalies && dataArray.length > 0) {
-      // Use IQR (Interquartile Range) method for robust outlier detection
-      const workCenterStats = new Map<string, { q1: number; q3: number; iqr: number; values: number[] }>();
+    // Apply anomaly filtering if selected
+    if (anomalyFilter !== "none" && dataArray.length > 0) {
+      const percentileToRemove = anomalyFilter === "2percent" ? 0.02 : 0.10;
       
-      // Group by work center to calculate statistics
+      // Group by work center + routing for more accurate filtering
+      const groupedData = new Map<string, RawUphData[]>();
       dataArray.forEach(record => {
-        const wc = record.workCenter;
-        if (!workCenterStats.has(wc)) {
-          workCenterStats.set(wc, { q1: 0, q3: 0, iqr: 0, values: [] });
+        const key = `${record.workCenter}|${record.routing}`;
+        if (!groupedData.has(key)) {
+          groupedData.set(key, []);
         }
-        workCenterStats.get(wc)!.values.push(record.uph);
+        groupedData.get(key)!.push(record);
       });
       
-      // Calculate IQR for each work center
-      workCenterStats.forEach((stats, wc) => {
-        const values = [...stats.values].sort((a, b) => a - b);
-        const n = values.length;
-        
-        if (n < 4) {
-          // Not enough data for IQR, use simple bounds
-          stats.q1 = values[0];
-          stats.q3 = values[n-1];
-          stats.iqr = stats.q3 - stats.q1;
-        } else {
-          // Calculate quartiles
-          const q1Index = Math.floor(n * 0.25);
-          const q3Index = Math.floor(n * 0.75);
-          stats.q1 = values[q1Index];
-          stats.q3 = values[q3Index];
-          stats.iqr = stats.q3 - stats.q1;
+      const filteredData: RawUphData[] = [];
+      
+      // For each work center + routing combination, filter out top and bottom percentiles
+      groupedData.forEach((records, key) => {
+        if (records.length < 3) {
+          // Not enough data to filter, keep all
+          filteredData.push(...records);
+          return;
         }
         
-        console.log(`Work Center ${wc} - Q1: ${stats.q1.toFixed(2)}, Q3: ${stats.q3.toFixed(2)}, IQR: ${stats.iqr.toFixed(2)}`);
+        // Sort by UPH
+        const sortedRecords = [...records].sort((a, b) => a.uph - b.uph);
+        const n = sortedRecords.length;
+        
+        // Calculate how many to remove from each end
+        const removeCount = Math.max(1, Math.floor(n * percentileToRemove));
+        
+        // Keep records that are not in the top or bottom percentile
+        const keepRecords = sortedRecords.slice(removeCount, n - removeCount);
+        
+        console.log(`${key}: Removing ${removeCount} from each end (total ${n} records, keeping ${keepRecords.length})`);
+        console.log(`  Removed bottom: ${sortedRecords.slice(0, removeCount).map(r => `${r.operatorName}:${r.uph.toFixed(1)}`).join(", ")}`);
+        console.log(`  Removed top: ${sortedRecords.slice(n - removeCount).map(r => `${r.operatorName}:${r.uph.toFixed(1)}`).join(", ")}`);
+        
+        filteredData.push(...keepRecords);
       });
       
-      // Filter out anomalies using IQR method
-      const filteredData = dataArray.filter(record => {
-        const stats = workCenterStats.get(record.workCenter);
-        if (!stats || stats.values.length < 4) return true;
-        
-        // Use 1.5 * IQR for outlier bounds (standard box plot method)
-        const lowerBound = stats.q1 - (1.5 * stats.iqr);
-        const upperBound = stats.q3 + (1.5 * stats.iqr);
-        
-        // Also apply absolute maximum thresholds per work center
-        const absoluteMax = {
-          'Assembly': 500,
-          'Cutting': 1000,
-          'Packaging': 1500
-        }[record.workCenter] || 2000;
-        
-        const isAnomaly = record.uph < lowerBound || record.uph > upperBound || record.uph > absoluteMax;
-        if (isAnomaly) {
-          console.log(`Filtering anomaly: ${record.operatorName} - ${record.workCenter} - ${record.routing}: ${record.uph} UPH (IQR bounds: ${lowerBound.toFixed(2)} - ${upperBound.toFixed(2)}, absolute max: ${absoluteMax})`);
-        }
-        return !isAnomaly;
-      });
-      
-      console.log(`Filtered ${dataArray.length - filteredData.length} anomalies out of ${dataArray.length} records`);
+      console.log(`Filtered ${dataArray.length - filteredData.length} records out of ${dataArray.length} using ${anomalyFilter} filter`);
       dataArray = filteredData;
     }
     
@@ -438,14 +420,19 @@ export default function UphAnalytics() {
         <div className="flex items-center gap-4">
 
           
-          {/* Filter Anomalies Toggle */}
+          {/* Anomaly Settings Dropdown */}
           <div className="flex items-center space-x-2">
-            <Switch
-              id="filter-anomalies"
-              checked={filterAnomalies}
-              onCheckedChange={setFilterAnomalies}
-            />
-            <Label htmlFor="filter-anomalies" className="text-sm">Filter Anomalies</Label>
+            <Label htmlFor="anomaly-filter" className="text-sm">Anomaly Settings:</Label>
+            <Select value={anomalyFilter} onValueChange={(value: "none" | "2percent" | "10percent") => setAnomalyFilter(value)}>
+              <SelectTrigger id="anomaly-filter" className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No filtering</SelectItem>
+                <SelectItem value="2percent">Remove top/bottom 2%</SelectItem>
+                <SelectItem value="10percent">Remove top/bottom 10%</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           
           {/* Refresh Button */}
