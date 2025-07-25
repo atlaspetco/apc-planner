@@ -1027,19 +1027,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all active operators
       const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
       
-      // Get current UPH data from the active system
-      const currentUphData = await db.select().from(uphData);
+      // Get current UPH data using core calculator for consistency
+      const { calculateCoreUph } = await import("./uph-core-calculator.js");
+      const coreUphResults = await calculateCoreUph({ bypassDateFilter: true });
       
-      // Build UPH map from current data using operator name as key
+      // Build UPH map from core calculator results using operator name as key
       const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
       
-      currentUphData.forEach(uph => {
+      coreUphResults.forEach(result => {
         // Create key using operator name, work center, and routing
-        const key = `${uph.operatorName}-${uph.workCenter}-${uph.productRouting}`;
+        const key = `${result.operatorName}-${result.workCenter}-${result.routing}`;
         uphMap.set(key, {
-          uph: uph.uph,
-          observations: uph.observationCount,
-          operator: uph.operatorName || ''
+          uph: result.unitsPerHour,
+          observations: result.observations,
+          operator: result.operatorName
         });
       });
 
@@ -1116,7 +1117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`🔍 No direct UPH data found for ${workCenter}/${routing}, searching for estimates...`);
         
         // Debug: Log available UPH data
-        console.log(`📊 Available UPH data:`, currentUphData.map(u => `${u.operatorName}-${u.workCenter}-${u.productRouting}`));
+        console.log(`📊 Available UPH data:`, Array.from(uphMap.keys()));
         
         // Strategy 1: Same work center, different routing
         const sameWorkCenterOperators = allOperators
@@ -1128,40 +1129,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (!hasWorkCenterEnabled) return false;
             
             // Find any UPH data for this operator + work center combination
-            const operatorUphForWorkCenter = currentUphData.filter(uph => 
-              uph.operatorName === op.name && uph.workCenter === workCenter
+            const operatorUphForWorkCenter = coreUphResults.filter(result => 
+              result.operatorName === op.name && result.workCenter === workCenter
             );
             
             console.log(`🔍 Checking ${op.name} for ${workCenter}: found ${operatorUphForWorkCenter.length} UPH records`);
             if (operatorUphForWorkCenter.length > 0) {
-              console.log(`  - Records: ${operatorUphForWorkCenter.map(u => u.productRouting).join(', ')}`);
+              console.log(`  - Records: ${operatorUphForWorkCenter.map(u => u.routing).join(', ')}`);
             }
             
             return operatorUphForWorkCenter.length > 0;
           })
           .map(op => {
             // Find the best UPH data for this operator + work center (highest observations)
-            const operatorUphForWorkCenter = currentUphData.filter(uph => 
-              uph.operatorName === op.name && uph.workCenter === workCenter
+            const operatorUphForWorkCenter = coreUphResults.filter(result => 
+              result.operatorName === op.name && result.workCenter === workCenter
             );
             
             // Sort by observation count, then by UPH
             const bestUph = operatorUphForWorkCenter.sort((a, b) => 
-              (b.observationCount || 0) - (a.observationCount || 0) || b.uph - a.uph
+              b.observations - a.observations || b.unitsPerHour - a.unitsPerHour
             )[0];
             
             return {
               id: op.id,
               name: op.name,
               isActive: op.isActive,
-              averageUph: bestUph.uph,
-              observations: bestUph.observationCount,
+              averageUph: bestUph.unitsPerHour,
+              observations: bestUph.observations,
               isEstimated: true,
-              estimatedFrom: `${bestUph.productRouting} (same work center)`,
-              estimatedReason: `Based on ${op.name}'s performance in ${bestUph.productRouting}`,
+              estimatedFrom: `${bestUph.routing} (same work center)`,
+              estimatedReason: `Based on ${op.name}'s performance in ${bestUph.routing}`,
               estimatedHoursFor: (quantity: number) => {
-                if (bestUph.uph && bestUph.uph > 0) {
-                  return Number((quantity / bestUph.uph).toFixed(2));
+                if (bestUph.unitsPerHour && bestUph.unitsPerHour > 0) {
+                  return Number((quantity / bestUph.unitsPerHour).toFixed(2));
                 }
                 return null;
               }
