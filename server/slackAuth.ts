@@ -100,20 +100,31 @@ export async function setupSlackAuth(app: Express) {
     passport.authenticate("slack")
   );
 
-  app.get("/api/auth/slack/callback",
-    passport.authenticate("slack", {
-      successRedirect: "/",
-      failureRedirect: "/login",
-      failureMessage: true
-    }),
-    (err: any, req: any, res: any, next: any) => {
+  app.get("/api/auth/slack/callback", (req, res, next) => {
+    console.log("Slack callback received with query params:", req.query);
+    
+    passport.authenticate("slack", (err: any, user: any, info: any) => {
       if (err) {
-        console.error("Slack OAuth callback error:", err);
-        return res.redirect("/login?error=" + encodeURIComponent(err.message));
+        console.error("Slack authentication error:", err);
+        console.error("Error stack:", err.stack);
+        return res.redirect("/login?error=" + encodeURIComponent(err.message || "Authentication failed"));
       }
-      next();
-    }
-  );
+      
+      if (!user) {
+        console.error("No user returned from Slack auth. Info:", info);
+        return res.redirect("/login?error=" + encodeURIComponent(info?.message || "Authentication failed"));
+      }
+      
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          console.error("Login error:", loginErr);
+          return res.redirect("/login?error=" + encodeURIComponent("Login failed"));
+        }
+        console.log("User successfully logged in:", user.id);
+        return res.redirect("/");
+      });
+    })(req, res, next);
+  });
 
   app.get("/api/logout", (req, res) => {
     req.logout(() => {
