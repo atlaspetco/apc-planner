@@ -3400,6 +3400,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const data = await db.select().from(uphData).orderBy(uphData.productRouting, uphData.uph);
       
+      // Log sample data for debugging
+      if (data.length > 0) {
+        console.log(`Returning ${data.length} UPH records`);
+        console.log('Sample UPH record:', {
+          operatorName: data[0].operatorName,
+          workCenter: data[0].workCenter,
+          productRouting: data[0].productRouting,
+          uph: data[0].uph
+        });
+      }
+      
       res.json(data);
     } catch (error) {
       console.error("Error fetching UPH data:", error);

@@ -246,7 +246,7 @@ export async function bulkImportAllWorkCycles() {
         operations: [],
         routings: [],
         availableHours: 40,
-        lastActiveDate: new Date().toISOString()
+        lastActiveDate: new Date()
       });
       newOperatorsCreated++;
       console.log(`Created operator: ${operatorName}`);

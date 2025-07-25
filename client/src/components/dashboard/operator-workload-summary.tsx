@@ -185,18 +185,49 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
               console.log(`UPH data has "Evan Crosby": ${hasEvanInUph}`);
             }
             
-            const uphEntry = uphResults.find((entry: any) => 
+            // First try exact match
+            let uphEntry = uphResults.find((entry: any) => 
               entry.operatorName === operator.operatorName &&
               entry.workCenter === workCenter &&
               (entry.routing === routing || entry.productRouting === routing)
             );
             
+            // If no exact match, try to find same operator and work center (any routing)
+            if (!uphEntry) {
+              const workCenterMatches = uphResults.filter((entry: any) => 
+                entry.operatorName === operator.operatorName &&
+                entry.workCenter === workCenter
+              );
+              
+              if (workCenterMatches.length > 0) {
+                // Use average UPH for this work center
+                const avgUph = workCenterMatches.reduce((sum: number, e: any) => sum + (e.unitsPerHour || e.uph || 0), 0) / workCenterMatches.length;
+                uphEntry = { unitsPerHour: avgUph } as any;
+                console.log(`Using average UPH for ${operator.operatorName} - ${workCenter}: ${avgUph} (from ${workCenterMatches.length} other routings)`);
+              }
+            }
+            
+            // If still no match, try to find any UPH data for the work center
+            if (!uphEntry) {
+              const anyWorkCenterMatches = uphResults.filter((entry: any) => 
+                entry.workCenter === workCenter
+              );
+              
+              if (anyWorkCenterMatches.length > 0) {
+                // Use average UPH for this work center across all operators
+                const avgUph = anyWorkCenterMatches.reduce((sum: number, e: any) => sum + (e.unitsPerHour || e.uph || 0), 0) / anyWorkCenterMatches.length;
+                uphEntry = { unitsPerHour: avgUph } as any;
+                console.log(`Using work center average UPH for ${workCenter}: ${avgUph} (from ${anyWorkCenterMatches.length} records)`);
+              }
+            }
+            
             if (uphEntry && uphEntry.unitsPerHour > 0) {
-              estimatedHours = assignment.quantity / uphEntry.unitsPerHour;
-              productData.uph = uphEntry.unitsPerHour;
-              console.log(`Found UPH for ${operator.operatorName} - ${workCenter}/${routing}: ${uphEntry.unitsPerHour} UPH, Hours: ${estimatedHours}`);
+              const uphValue = uphEntry.unitsPerHour;
+              estimatedHours = assignment.quantity / uphValue;
+              productData.uph = uphValue;
+              console.log(`Calculated hours for ${operator.operatorName} - ${workCenter}/${routing}: ${estimatedHours.toFixed(2)}h (${assignment.quantity} units @ ${uphValue} UPH)`);
             } else {
-              console.log(`No UPH data found for ${operator.operatorName} - ${workCenter}/${routing}`);
+              console.log(`No UPH data found for ${operator.operatorName} - ${workCenter}/${routing}, using 0 hours`);
             }
           }
           
