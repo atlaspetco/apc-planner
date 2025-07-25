@@ -69,7 +69,14 @@ async function importWorkOrderConsolidatedCSV() {
     
     // Validate required fields
     const operator = firstCycle['work/cycles/operator/rec_name'];
-    const workCenter = firstCycle['work/cycles/work_center/category/name'];
+    const rawWorkCenter = firstCycle['work/cycles/work_center/category/name']; // Get raw category
+    
+    // Map work centers to 3-category system
+    let workCenter = rawWorkCenter;
+    if (rawWorkCenter === 'Sewing' || rawWorkCenter === 'Rope') {
+      workCenter = 'Assembly';
+    }
+    
     const routing = firstCycle['work/cycles/work/production/routing/name'];
     const productionQuantity = parseFloat(firstCycle['work/cycles/work/production/quantity_done']);
     
@@ -117,8 +124,8 @@ async function importWorkOrderConsolidatedCSV() {
       }
     }
     
-    // Extract operation from work/cycles/rec_name
-    const operation = firstCycle['work/cycles/rec_name']?.split(' | ')[0] || 'Unknown';
+    // Extract operation from work/operation/name field (not work/cycles/rec_name)
+    const operation = firstCycle['work/operation/name'] || 'Unknown';
     
     consolidatedWorkOrders.push({
       woNumber,
@@ -145,9 +152,9 @@ async function importWorkOrderConsolidatedCSV() {
     const batch = consolidatedWorkOrders.slice(i, i + batchSize);
     const insertData = batch.map((wo, index) => ({
       work_cycles_id: i + index + 1,
-      work_cycles_rec_name: wo.woNumber,
+      work_cycles_rec_name: wo.woNumber, // WO number for display
       work_cycles_operator_rec_name: wo.operator,
-      work_cycles_work_center_rec_name: wo.workCenter,
+      work_cycles_work_center_rec_name: wo.workCenter, // Use category (Assembly/Cutting/Packaging)
       duration_sec: wo.totalDurationSec,
       work_cycles_quantity_done: wo.productionQuantity,
       work_production_id: parseInt(wo.moNumber.replace('MO', '')),
@@ -155,7 +162,7 @@ async function importWorkOrderConsolidatedCSV() {
       work_production_number: wo.moNumber,
       work_production_create_date: wo.createDate,
       work_production_quantity: wo.productionQuantity,
-      work_operation_rec_name: wo.operation,
+      work_operation_rec_name: wo.operation, // Operation for display
       data_corrupted: false
     }));
     
