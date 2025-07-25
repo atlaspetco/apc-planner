@@ -467,3 +467,30 @@ export async function getCoreUphDetails(
     averageUph
   };
 }
+
+// Calculate all UPH values from work cycles (used by table-data endpoint)
+export async function calculateAllUphFromWorkCycles(): Promise<any[]> {
+  console.log('=== CALCULATING ALL UPH FROM WORK CYCLES ===');
+  
+  // Use the core calculator with no filters to get all UPH values
+  const coreResults = await calculateCoreUph({
+    bypassDateFilter: true // Get all historical data
+  });
+  
+  // Transform results to match the expected format for table-data endpoint
+  const transformedResults = coreResults.map(result => ({
+    operatorName: result.operatorName,
+    workCenter: result.workCenter,
+    productRouting: result.routing,
+    operation: result.workCenter,
+    uph: result.unitsPerHour,
+    observationCount: result.observations,
+    totalDurationHours: result.observations, // This is a placeholder
+    totalQuantity: Math.round(result.unitsPerHour * result.observations), // Approximate
+    dataSource: 'work_cycles'
+  }));
+  
+  console.log(`=== CALCULATED ${transformedResults.length} UPH VALUES ===`);
+  
+  return transformedResults;
+}
