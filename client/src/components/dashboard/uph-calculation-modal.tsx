@@ -147,7 +147,16 @@ export function UphCalculationModal({
                         <TableCell className="text-sm">
                           {cycle.createDate ? format(new Date(cycle.createDate), 'MMM d, yyyy') : 'N/A'}
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{cycle.moNumber}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          <a 
+                            href={`https://apc.fulfil.io/production.order/${cycle.productionId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline"
+                          >
+                            {cycle.moNumber}
+                          </a>
+                        </TableCell>
                         <TableCell className="font-mono text-sm">{cycle.woNumber}</TableCell>
                         <TableCell className="text-sm">{cycle.actualWorkCenter}</TableCell>
                         <TableCell className="text-sm">{cycle.operations}</TableCell>

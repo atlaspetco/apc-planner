@@ -19,6 +19,10 @@ export interface MoGroupData {
   totalDurationSeconds: number;
   moQuantity: number;
   cycleCount: number;
+  woNumber?: string;
+  createDate?: string;
+  actualWorkCenter?: string;
+  operations?: string;
 }
 
 // Core work center consolidation logic
@@ -404,7 +408,11 @@ export async function getCoreUphDetails(
         moNumber,
         totalDurationSeconds: workCenterDuration, // Use work center specific duration
         moQuantity: 0,
-        cycleCount: 0
+        cycleCount: 0,
+        woNumber: cycle.work_cycles_id ? `WO${cycle.work_cycles_id}` : 'N/A',
+        createDate: cycle.work_production_create_date || null,
+        actualWorkCenter: cycle.work_cycles_work_center_rec_name || workCenter,
+        operations: cycle.work_operation_rec_name || workCenter
       });
     }
     

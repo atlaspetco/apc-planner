@@ -3780,16 +3780,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routing as string
       );
       
-      // Convert to the expected format
+      // Convert to the expected format with all fields populated
       const moDetails = detailsResult.moGroupedData.map(mo => {
         const totalDurationHours = mo.totalDurationSeconds / 3600;
         const uph = totalDurationHours > 0 ? mo.moQuantity / totalDurationHours : 0;
+        
+        // Extract production ID from moNumber (e.g., MO124899 -> 124899)
+        const productionId = parseInt(mo.moNumber.replace('MO', ''), 10) || 0;
+        
         return {
+          productionId, // Add production ID for link
           moNumber: mo.moNumber,
+          woNumber: mo.woNumber || 'N/A', // Add work order number
           moQuantity: mo.moQuantity,
           totalDurationHours,
           uph: isFinite(uph) ? uph : 0,
-          cycleCount: mo.cycleCount
+          cycleCount: mo.cycleCount,
+          createDate: mo.createDate || null, // Add create date
+          actualWorkCenter: mo.actualWorkCenter || workCenter, // Add actual work center
+          operations: mo.operations || workCenter // Add operations
         };
       }).filter(mo => mo.uph > 0); // Filter out invalid UPH values
 
