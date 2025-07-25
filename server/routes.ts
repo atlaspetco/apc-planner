@@ -67,10 +67,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!manufacturingOrderResponse.ok) {
         console.error(`Fulfil API error: manufacturing_order=${manufacturingOrderResponse.status}`);
-        // Fallback to local database if API fails
+        // Fallback to local database if API fails, but filter to only active states
         const localOrders = await storage.getProductionOrders();
-        console.log(`Fallback: Returning ${localOrders.length} production orders from local database`);
-        return res.json(localOrders);
+        const activeOrders = localOrders.filter(order => 
+          order.state === 'waiting' || order.state === 'assigned' || order.state === 'running'
+        );
+        console.log(`Fallback: Returning ${activeOrders.length} active production orders (filtered from ${localOrders.length} total) from local database`);
+        return res.json(activeOrders);
       }
 
       const manufacturingOrdersData = await manufacturingOrderResponse.json();
