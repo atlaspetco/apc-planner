@@ -17,36 +17,60 @@ export async function populateAllProductionOrders() {
   }
 
   try {
-    // Use search_read to get ALL production orders without any filters
+    // Use search_read to get ALL production orders with pagination
     const endpoint = `${BASE_URL}/api/v2/model/production.order/search_read`;
     
     console.log("📋 Fetching ALL production orders from Fulfil...");
     
-    const response = await fetch(endpoint, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': FULFIL_API_KEY,
-      },
-      body: JSON.stringify({
-        "filters": [], // No filters - get ALL production orders
-        "fields": [
-          'id', 'rec_name', 'state', 'quantity', 
-          'product.code', 'product.name', 'product.rec_name',
-          'routing.name', 'routing.rec_name',
-          'planned_date', 'create_date'
-        ],
-        "limit": 10000 // High limit to get all orders
-      }),
-    });
+    let allOrders: any[] = [];
+    let offset = 0;
+    const limit = 500; // API limit
+    let hasMore = true;
     
-    if (!response.ok) {
-      console.error(`❌ Failed to fetch production orders: ${response.status} - ${await response.text()}`);
-      return { success: false, error: `API error: ${response.status}` };
+    while (hasMore) {
+      console.log(`📄 Fetching page ${Math.floor(offset / limit) + 1}...`);
+      
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': FULFIL_API_KEY,
+        },
+        body: JSON.stringify({
+          "filters": [], // No filters - get ALL production orders
+          "fields": [
+            'id', 'rec_name', 'state', 'quantity', 
+            'product.code', 'product.name', 'product.rec_name',
+            'routing.name', 'routing.rec_name',
+            'planned_date', 'create_date'
+          ],
+          "limit": limit,
+          "offset": offset
+        }),
+      });
+      
+      if (!response.ok) {
+        console.error(`❌ Failed to fetch production orders: ${response.status} - ${await response.text()}`);
+        return { success: false, error: `API error: ${response.status}` };
+      }
+      
+      const pageOrders = await response.json();
+      allOrders = [...allOrders, ...pageOrders];
+      
+      console.log(`✅ Fetched ${pageOrders.length} orders in this page (total: ${allOrders.length})`);
+      
+      // Check if there are more pages
+      hasMore = pageOrders.length === limit;
+      offset += limit;
+      
+      // Add a small delay to avoid rate limiting
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
     
-    const orders = await response.json();
-    console.log(`✅ Fetched ${orders.length} production orders from Fulfil`);
+    const orders = allOrders;
+    console.log(`✅ Fetched total of ${orders.length} production orders from Fulfil`);
     
     // Clear existing production orders
     console.log("🗑️ Clearing existing production orders...");
