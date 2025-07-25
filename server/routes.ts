@@ -3927,6 +3927,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     lastUpdate: null
   };
 
+  // Create updateImportStatus function and assign to global
+  const updateImportStatus = (updates: Partial<typeof importStatus>) => {
+    Object.assign(importStatus, updates);
+    importStatus.lastUpdate = Date.now();
+  };
+  
+  // Assign to global object for access from import modules
+  (global as any).updateImportStatus = updateImportStatus;
+
   // Enhanced import endpoint with proper workflow
   app.post("/api/fulfil/enhanced-import", async (req: Request, res: Response) => {
     try {
@@ -5156,6 +5165,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
               (importStatus.isImporting ? 'importing' : 
                (importStatus.isCalculating ? 'calculating' : 'idle')),
       duration: importStatus.startTime ? Date.now() - importStatus.startTime : 0
+    });
+  });
+
+  // Stop/reset import endpoint
+  app.post("/api/fulfil/stop-import", (req: Request, res: Response) => {
+    console.log("Stopping import and resetting status...");
+    
+    // Reset import status to idle state
+    importStatus = {
+      isImporting: false,
+      isCalculating: false,
+      currentOperation: '',
+      progress: 0,
+      totalItems: 0,
+      processedItems: 0,
+      errors: [],
+      lastError: null,
+      startTime: null,
+      lastUpdate: null
+    };
+    
+    res.json({
+      success: true,
+      message: "Import stopped and status reset"
     });
   });
 

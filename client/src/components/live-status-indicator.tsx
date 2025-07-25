@@ -117,9 +117,9 @@ export function LiveStatusIndicator() {
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span>Progress</span>
-                    <span>{importStatus.progress}%</span>
+                    <span>{Math.round((importStatus.processedItems / importStatus.totalItems) * 100)}%</span>
                   </div>
-                  <Progress value={importStatus.progress} className="h-2" />
+                  <Progress value={Math.round((importStatus.processedItems / importStatus.totalItems) * 100)} className="h-2" />
                 </div>
               )}
               

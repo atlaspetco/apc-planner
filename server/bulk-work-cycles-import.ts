@@ -33,6 +33,8 @@ export async function bulkImportAllWorkCycles() {
   let offset = 0;
   let hasMore = true;
   let highestId = 0;
+  let consecutiveErrors = 0;
+  const MAX_CONSECUTIVE_ERRORS = 3;
   
   // Get the highest work cycle ID we have
   const existingCycles = await db.select({ 
@@ -48,11 +50,12 @@ export async function bulkImportAllWorkCycles() {
   while (hasMore) {
     try {
       // Update progress
-      if (global.updateImportStatus) {
-        global.updateImportStatus({
+      if ((global as any).updateImportStatus) {
+        (global as any).updateImportStatus({
           isImporting: true,
           currentOperation: `Importing work cycles batch (offset: ${offset})`,
-          progress: Math.min((totalImported / 245885) * 100, 99),
+          processedItems: totalImported,
+          totalItems: 32894, // Expected total from CSV
           startTime: Date.now()
         });
       }
@@ -139,16 +142,17 @@ export async function bulkImportAllWorkCycles() {
         // Insert work cycle
         try {
           await db.insert(workCycles).values({
-            workCyclesId,
-            workCyclesOperatorRecName: operatorName,
-            workOperationRecName: cycle.work_operation_rec_name || null,
-            workCyclesWorkCenterRecName: workCenter,
-            workCyclesDuration: cycle.work_cycles_duration || 0,
-            workCyclesQuantity: cycle.work_cycles_quantity || 0,
-            workProductionRecName: cycle.work_production_rec_name || null,
-            workProductionRoutingRecName: cycle.work_production_routing_rec_name || null,
-            workProductionId: cycle.work_production_id?.toString() || null,
-            workCyclesEffectiveDate: cycle.work_cycles_effective_date || null
+            work_cycles_id: workCyclesId,
+            work_cycles_operator_rec_name: operatorName,
+            work_operation_rec_name: cycle.work_operation_rec_name || null,
+            work_cycles_work_center_rec_name: workCenter,
+            work_cycles_duration: cycle.work_cycles_duration || 0,
+            work_cycles_quantity: cycle.work_cycles_quantity || 0,
+            work_production_rec_name: cycle.work_production_rec_name || null,
+            work_production_routing_rec_name: cycle.work_production_routing_rec_name || null,
+            work_production_id: cycle.work_production_id?.toString() || null,
+            work_cycles_effective_date: cycle.work_cycles_effective_date || null,
+            state: cycle.state || null
           });
           
           totalImported++;
@@ -172,8 +176,29 @@ export async function bulkImportAllWorkCycles() {
         console.log(`Progress: Imported ${totalImported} cycles, skipped ${totalSkipped}, highest ID: ${highestId}`);
       }
 
+      // Reset consecutive errors on success
+      consecutiveErrors = 0;
+
     } catch (error) {
       console.error(`Error at offset ${offset}:`, error);
+      consecutiveErrors++;
+      
+      // Stop import after too many consecutive errors
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        console.error(`Stopping import after ${MAX_CONSECUTIVE_ERRORS} consecutive errors`);
+        hasMore = false;
+        
+        // Update status to show error
+        if ((global as any).updateImportStatus) {
+          (global as any).updateImportStatus({
+            isImporting: false,
+            lastError: `Import stopped after ${MAX_CONSECUTIVE_ERRORS} consecutive errors at offset ${offset}`,
+            currentOperation: 'Import failed'
+          });
+        }
+        break;
+      }
+      
       // Continue with next batch instead of failing completely
       offset += BATCH_SIZE;
       await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY * 2));
@@ -203,11 +228,12 @@ export async function bulkImportAllWorkCycles() {
   }
 
   // Clear import status
-  if (global.updateImportStatus) {
-    global.updateImportStatus({
+  if ((global as any).updateImportStatus) {
+    (global as any).updateImportStatus({
       isImporting: false,
       currentOperation: 'Bulk import completed',
-      progress: 100,
+      processedItems: totalImported,
+      totalItems: totalImported + totalSkipped,
       startTime: null
     });
   }
