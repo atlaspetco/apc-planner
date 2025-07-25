@@ -123,7 +123,7 @@ export function AutoAssignControls() {
         cleanup();
         setCurrentProgress(100);
         setTimeout(() => setShowProgress(false), 500);
-        return result;
+        return result as AssignmentResult;
       } catch (error) {
         cleanup();
         setShowProgress(false);
@@ -208,7 +208,10 @@ export function AutoAssignControls() {
 
   // Regenerate assignments mutation
   const regenerateMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/auto-assign/regenerate'),
+    mutationFn: async (): Promise<AssignmentResult> => {
+      const result = await apiRequest('POST', '/api/auto-assign/regenerate');
+      return result as AssignmentResult;
+    },
     onSuccess: (data: AssignmentResult) => {
       if (data.success) {
         setLastResult(data);
@@ -233,7 +236,10 @@ export function AutoAssignControls() {
 
   // Clear all assignments mutation
   const clearAllMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/auto-assign/clear-all'),
+    mutationFn: async (): Promise<{ cleared: number }> => {
+      const result = await apiRequest('POST', '/api/auto-assign/clear-all');
+      return result as { cleared: number };
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
