@@ -5765,7 +5765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const assignmentDetails = [];
 
       for (const { workOrderId, productionOrder, workOrder } of workOrdersToAssign) {
-        // Get UPH data using operator_uph table
+        // Get UPH data using uph_data table
         // Handle routing name variations (e.g., "LLA" vs "Lifetime Lite Leash")
         const routingVariations = [routing];
         if (routing === 'LLA') {
@@ -5775,9 +5775,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         const currentUphData = await db.execute(sql`
-          SELECT uph FROM operator_uph 
-          WHERE operator_operation_workcenter LIKE ${`%${operator.name}%${workCenter}%`}
-          AND routing_name IN (${sql.join(routingVariations.map(r => sql`${r}`), sql`, `)})
+          SELECT uph FROM uph_data 
+          WHERE operator_name = ${operator.name}
+          AND work_center = ${workCenter}
+          AND product_routing IN (${sql.join(routingVariations.map(r => sql`${r}`), sql`, `)})
           LIMIT 1
         `);
 
