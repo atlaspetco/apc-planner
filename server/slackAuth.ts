@@ -96,9 +96,12 @@ export async function setupSlackAuth(app: Express) {
   });
 
   // Auth routes
-  app.get("/api/auth/slack", 
-    passport.authenticate("slack")
-  );
+  app.get("/api/auth/slack", (req, res, next) => {
+    console.log("=== SLACK AUTH INITIATED ===");
+    console.log("Host:", req.hostname);
+    console.log("Full URL:", req.protocol + '://' + req.get('host') + req.originalUrl);
+    passport.authenticate("slack")(req, res, next);
+  });
 
   app.get("/api/auth/slack/callback", (req, res, next) => {
     console.log("=== SLACK CALLBACK HIT ===");
