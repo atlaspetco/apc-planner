@@ -84,6 +84,7 @@ async function getOperatorUPH(
       routingsToCheck.push('Lifetime Harness');
     }
     
+    // First try exact routing match
     for (const checkRouting of routingsToCheck) {
       const uphResults = await db
         .select()
@@ -119,6 +120,42 @@ async function getOperatorUPH(
         if (altUphResults.length > 0 && altUphResults[0].uph) {
           return altUphResults[0].uph;
         }
+      }
+    }
+
+    // If no exact routing match, fall back to average UPH for the work center
+    const avgUphResults = await db
+      .select({
+        avgUph: sql<number>`AVG(${uphData.uph})`
+      })
+      .from(uphData)
+      .where(
+        and(
+          eq(uphData.operatorId, operatorId),
+          eq(uphData.workCenter, workCenter)
+        )
+      );
+
+    if (avgUphResults.length > 0 && avgUphResults[0].avgUph) {
+      return avgUphResults[0].avgUph;
+    }
+
+    // Check alternate work centers for average
+    if (workCenter === "Assembly") {
+      const altAvgResults = await db
+        .select({
+          avgUph: sql<number>`AVG(${uphData.uph})`
+        })
+        .from(uphData)
+        .where(
+          and(
+            eq(uphData.operatorId, operatorId),
+            inArray(uphData.workCenter, ["Sewing", "Rope"])
+          )
+        );
+
+      if (altAvgResults.length > 0 && altAvgResults[0].avgUph) {
+        return altAvgResults[0].avgUph;
       }
     }
 
@@ -379,6 +416,8 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       
       // Get operators with experience in this routing
       const qualifiedOperators = [];
+      const operatorsWithRoutingExperience = [];
+      const operatorsWithWorkCenterExperience = [];
       
       // Get all unique work centers needed for this routing group
       const workCentersNeeded = new Set(workOrdersInGroup.map(wo => wo.workCenter));
@@ -410,12 +449,18 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
           routingsToCheck.push('Lifetime Harness');
         }
         
+        // Check for exact routing experience
         const hasRoutingExperience = Array.from(profile.uphData.keys()).some(key => 
           routingsToCheck.some(r => key.includes(r))
         );
         
+        // Check for work center experience (fallback if no routing experience)
+        const hasWorkCenterExperience = Array.from(workCentersNeeded).some(wc => 
+          Array.from(profile.uphData.keys()).some(key => key.startsWith(`${wc}-`))
+        );
+        
         if (hasRoutingExperience) {
-          qualifiedOperators.push({
+          operatorsWithRoutingExperience.push({
             id: opId,
             name: profile.name,
             currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
@@ -428,7 +473,30 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
                 observations: data.observations
               }))
           });
+        } else if (hasWorkCenterExperience) {
+          // Fallback to work center experience
+          operatorsWithWorkCenterExperience.push({
+            id: opId,
+            name: profile.name,
+            currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
+            remainingHours: profile.maxHours - profile.hoursAssigned,
+            uphPerformance: Array.from(profile.uphData.entries())
+              .filter(([key]) => Array.from(workCentersNeeded).some(wc => key.startsWith(`${wc}-`)))
+              .map(([key, data]) => ({
+                workCenterRouting: key,
+                uph: data.uph,
+                observations: data.observations
+              }))
+          });
         }
+      }
+      
+      // Prefer operators with exact routing experience, but fall back to work center experience
+      if (operatorsWithRoutingExperience.length > 0) {
+        qualifiedOperators.push(...operatorsWithRoutingExperience);
+      } else if (operatorsWithWorkCenterExperience.length > 0) {
+        console.log(`No operators with ${routing} experience, using operators with work center experience`);
+        qualifiedOperators.push(...operatorsWithWorkCenterExperience);
       }
       
       if (qualifiedOperators.length === 0) {
