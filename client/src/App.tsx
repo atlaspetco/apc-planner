@@ -8,18 +8,39 @@ import Dashboard from "@/pages/dashboard";
 import OperatorSettings from "@/pages/operator-settings";
 import UphAnalytics from "@/pages/uph-analytics";
 import FulfilSettings from "@/pages/fulfil-settings";
+import Landing from "@/pages/landing";
 import NotFound from "@/pages/not-found";
+import { useAuth } from "@/hooks/useAuth";
 
 function Router() {
+  const { isAuthenticated, isLoading } = useAuth();
+
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/operator-settings" component={OperatorSettings} />
-      <Route path="/uph-analytics" component={UphAnalytics} />
-      <Route path="/fulfil-settings" component={FulfilSettings} />
+      {isLoading || !isAuthenticated ? (
+        <Route path="/" component={Landing} />
+      ) : (
+        <>
+          <Route path="/" component={Dashboard} />
+          <Route path="/dashboard" component={Dashboard} />
+          <Route path="/operator-settings" component={OperatorSettings} />
+          <Route path="/uph-analytics" component={UphAnalytics} />
+          <Route path="/fulfil-settings" component={FulfilSettings} />
+        </>
+      )}
       <Route component={NotFound} />
     </Switch>
+  );
+}
+
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {isAuthenticated && !isLoading && <Navigation />}
+      <Router />
+    </div>
   );
 }
 
@@ -27,10 +48,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className="min-h-screen bg-gray-50">
-          <Navigation />
-          <Router />
-        </div>
+        <AppContent />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

@@ -28,11 +28,26 @@ import {
   insertOperatorSchema,
   insertBatchSchema
 } from "@shared/schema";
+import { setupAuth, isAuthenticated } from "./replitAuth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Auth middleware
+  await setupAuth(app);
+
+  // Auth routes
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
   
   // Main production orders endpoint - fetch active Manufacturing Orders using correct Fulfil API
-  app.get("/api/production-orders", async (req, res) => {
+  app.get("/api/production-orders", isAuthenticated, async (req, res) => {
     try {
       if (!process.env.FULFIL_ACCESS_TOKEN) {
         return res.status(400).json({ message: "Fulfil API key not configured" });
@@ -340,7 +355,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/production-orders/:id", async (req, res) => {
+  app.get("/api/production-orders/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid production order ID" });
@@ -352,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(productionOrder);
   });
 
-  app.post("/api/production-orders", async (req, res) => {
+  app.post("/api/production-orders", isAuthenticated, async (req, res) => {
     try {
       const validatedData = insertProductionOrderSchema.parse(req.body);
       const productionOrder = await storage.createProductionOrder(validatedData);
@@ -362,7 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/production-orders/:id", async (req, res) => {
+  app.patch("/api/production-orders/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid production order ID" });
@@ -375,7 +390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Work Orders
-  app.get("/api/work-orders", async (req, res) => {
+  app.get("/api/work-orders", isAuthenticated, async (req, res) => {
     // Force fresh data to prevent cache issues
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.set('Pragma', 'no-cache');
@@ -396,7 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/work-orders/by-production-order/:id", async (req, res) => {
+  app.get("/api/work-orders/by-production-order/:id", isAuthenticated, async (req, res) => {
     const productionOrderId = parseInt(req.params.id);
     if (isNaN(productionOrderId) || productionOrderId <= 0) {
       return res.status(400).json({ message: "Invalid production order ID" });
@@ -405,7 +420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(workOrders);
   });
 
-  app.get("/api/work-orders/:id", async (req, res) => {
+  app.get("/api/work-orders/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid work order ID" });
@@ -553,7 +568,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get work order assignments endpoint
-  app.get("/api/assignments", async (req: Request, res: Response) => {
+  app.get("/api/assignments", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db.js");
       const { workOrderAssignments, operators, productionOrders } = await import("../shared/schema.js");
@@ -779,7 +794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Operator assignment for dashboard work orders
-  app.post("/api/work-orders/assign-operator", async (req, res) => {
+  app.post("/api/work-orders/assign-operator", isAuthenticated, async (req, res) => {
     try {
       console.log("=== ASSIGNMENT DEBUG START ===");
       console.log("Assignment request body:", req.body);
@@ -947,7 +962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Operators
-  app.get("/api/operators", async (req, res) => {
+  app.get("/api/operators", isAuthenticated, async (req, res) => {
     const activeOnly = req.query.activeOnly !== "false";
     const operators = await storage.getOperators(activeOnly);
     
@@ -1000,7 +1015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(operatorsWithActivity);
   });
 
-  app.get("/api/operators/available", async (req, res) => {
+  app.get("/api/operators/available", isAuthenticated, async (req, res) => {
     const { workCenter, operation, routing } = req.query;
     
     if (!workCenter || !operation || !routing) {
@@ -1266,7 +1281,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return relationships[workCenter] || [];
   }
 
-  app.get("/api/operators/:id", async (req, res) => {
+  app.get("/api/operators/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid operator ID" });
@@ -1278,7 +1293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(operator);
   });
 
-  app.post("/api/operators", async (req, res) => {
+  app.post("/api/operators", isAuthenticated, async (req, res) => {
     try {
       const validatedData = insertOperatorSchema.parse(req.body);
       const operator = await storage.createOperator(validatedData);
@@ -1288,7 +1303,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/operators/:id", async (req, res) => {
+  app.patch("/api/operators/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid operator ID" });
@@ -1307,7 +1322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // UPH Data - Use core calculator for consistent calculations
-  app.get("/api/uph-data", async (req, res) => {
+  app.get("/api/uph-data", isAuthenticated, async (req, res) => {
     try {
       // Use core calculator directly
       const { calculateCoreUph } = await import("./uph-core-calculator.js");
@@ -1330,7 +1345,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // OLD UPH Data endpoint - remove this duplicate
-  app.get("/api/uph-data-old", async (req, res) => {
+  app.get("/api/uph-data-old", isAuthenticated, async (req, res) => {
     try {
       console.log("Calculating UPH data using core calculator...");
       
@@ -1365,7 +1380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/uph-data/operator/:operatorId", async (req, res) => {
+  app.get("/api/uph-data/operator/:operatorId", isAuthenticated, async (req, res) => {
     const operatorId = parseInt(req.params.operatorId);
     if (isNaN(operatorId) || operatorId <= 0) {
       return res.status(400).json({ message: "Invalid operator ID" });
@@ -1396,7 +1411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // keyed on (product_name, work_center_category, operator_id)
   
   // Get standardized UPH data with optional filters
-  app.get("/api/uph/standardized", async (req, res) => {
+  app.get("/api/uph/standardized", isAuthenticated, async (req, res) => {
     try {
       const { calculateStandardizedUph } = await import("./services/uphService.js");
       
@@ -1472,7 +1487,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Trigger manual UPH calculation job
-  app.post("/api/uph/standardized/calculate", async (req, res) => {
+  app.post("/api/uph/standardized/calculate", isAuthenticated, async (req, res) => {
     try {
       const { runUphCalculationJob, getJobStatus } = await import("./jobs/uphCron.js");
       
@@ -1505,7 +1520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get UPH calculation job status
-  app.get("/api/uph/standardized/job-status", async (req, res) => {
+  app.get("/api/uph/standardized/job-status", isAuthenticated, async (req, res) => {
     try {
       const { getJobStatus } = await import("./jobs/uphCron.js");
       const status = getJobStatus();
@@ -1525,7 +1540,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============= END NEW STANDARDIZED UPH ENDPOINTS =============
 
   // UPH Analysis and Calculation Endpoints
-  app.get("/api/uph/operator/:operatorId/analysis", async (req, res) => {
+  app.get("/api/uph/operator/:operatorId/analysis", isAuthenticated, async (req, res) => {
     try {
       const operatorId = Number(req.params.operatorId);
       const operator = await storage.getOperator(operatorId);
@@ -1576,7 +1591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Calculate efficiency for work order assignments
-  app.post("/api/uph/calculate-efficiency", async (req, res) => {
+  app.post("/api/uph/calculate-efficiency", isAuthenticated, async (req, res) => {
     try {
       const { operatorId, workCenter, operation, routing, quantity } = req.body;
       
@@ -1688,7 +1703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Seed UPH data for real operators
-  app.post("/api/seed-uph-data", async (req, res) => {
+  app.post("/api/seed-uph-data", isAuthenticated, async (req, res) => {
     try {
       // Get all operators (the real ones generated from work order data)
       const operators = await storage.getOperators(true);
@@ -1759,7 +1774,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get comprehensive production schema from Fulfil (operations + routings + work centers)
-  app.get("/api/fulfil/production-schema", async (req: Request, res: Response) => {
+  app.get("/api/fulfil/production-schema", isAuthenticated, async (req: Request, res: Response) => {
     try {
       console.log("Fetching comprehensive production schema from Fulfil...");
       
@@ -1859,7 +1874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Extract work centers and operations from existing work orders
-  app.get("/api/fulfil/extract-work-data", async (req: Request, res: Response) => {
+  app.get("/api/fulfil/extract-work-data", isAuthenticated, async (req: Request, res: Response) => {
     try {
       console.log("Extracting work centers and operations from Fulfil work orders...");
       
@@ -1925,7 +1940,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Extract operators directly from Fulfil employees
-  app.get("/api/fulfil/extract-operators", async (req, res) => {
+  app.get("/api/fulfil/extract-operators", isAuthenticated, async (req, res) => {
     try {
       console.log("Extracting real employees from Fulfil...");
       
@@ -2095,7 +2110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // API endpoint to completely rebuild all work cycles from Fulfil API
-  app.post("/api/work-cycles/complete-rebuild", async (req, res) => {
+  app.post("/api/work-cycles/complete-rebuild", isAuthenticated, async (req, res) => {
     try {
       console.log("🚀 Starting complete work cycles rebuild from API...");
       
@@ -2141,7 +2156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // API endpoint to rebuild corrupted work cycles data from Fulfil API
-  app.post("/api/work-cycles/rebuild-corrupted", async (req, res) => {
+  app.post("/api/work-cycles/rebuild-corrupted", isAuthenticated, async (req, res) => {
     try {
       console.log("🚀 Starting corrupted work cycles rebuild from API...");
       
@@ -2191,7 +2206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // API endpoint to check corruption status
-  app.get("/api/work-cycles/corruption-status", async (req, res) => {
+  app.get("/api/work-cycles/corruption-status", isAuthenticated, async (req, res) => {
     try {
       const corruptionStats = await db.execute(sql`
         SELECT 
@@ -2287,12 +2302,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Batches
-  app.get("/api/batches", async (req, res) => {
+  app.get("/api/batches", isAuthenticated, async (req, res) => {
     const batches = await storage.getBatches();
     res.json(batches);
   });
 
-  app.get("/api/batches/:id", async (req, res) => {
+  app.get("/api/batches/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ message: "Invalid batch ID" });
@@ -2304,7 +2319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(batch);
   });
 
-  app.post("/api/batches", async (req, res) => {
+  app.post("/api/batches", isAuthenticated, async (req, res) => {
     try {
       const validatedData = insertBatchSchema.parse(req.body);
       const batch = await storage.createBatch(validatedData);
@@ -2314,7 +2329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/batches/assign", async (req, res) => {
+  app.post("/api/batches/assign", isAuthenticated, async (req, res) => {
     try {
       const { productionOrderIds, batchName, priority } = batchAssignmentSchema.parse(req.body);
       
@@ -2340,7 +2355,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Dashboard summary data
-  app.get("/api/dashboard/summary", async (req, res) => {
+  app.get("/api/dashboard/summary", isAuthenticated, async (req, res) => {
     try {
       const productionOrders = await storage.getProductionOrders();
       const operators = await storage.getOperators(true);
@@ -2374,7 +2389,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const fulfilAPI = new FulfilAPIService();
 
   // Fulfil API settings and connection routes
-  app.get("/api/fulfil/settings", async (req, res) => {
+  app.get("/api/fulfil/settings", isAuthenticated, async (req, res) => {
     try {
       // Return current settings (without exposing the actual API key)
       res.json({
@@ -2388,7 +2403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/fulfil/settings", async (req, res) => {
+  app.post("/api/fulfil/settings", isAuthenticated, async (req, res) => {
     try {
       const { baseUrl, autoSync } = req.body;
       
@@ -2403,7 +2418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/fulfil/test-connection", async (req, res) => {
+  app.post("/api/fulfil/test-connection", isAuthenticated, async (req, res) => {
     try {
       if (!process.env.FULFIL_ACCESS_TOKEN) {
         return res.status(400).json({
@@ -5928,7 +5943,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Auto-assign endpoints
-  app.post("/api/auto-assign", async (req: Request, res: Response) => {
+  app.post("/api/auto-assign", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { autoAssignWorkOrders } = await import("./ai-auto-assign.js");
       const result = await autoAssignWorkOrders();
@@ -5942,7 +5957,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auto-assign/regenerate", async (req: Request, res: Response) => {
+  app.post("/api/auto-assign/regenerate", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { regenerateAssignments } = await import("./ai-auto-assign.js");
       const result = await regenerateAssignments();
@@ -5956,7 +5971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auto-assign/clear-all", async (req: Request, res: Response) => {
+  app.post("/api/auto-assign/clear-all", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { clearAllAssignments } = await import("./ai-auto-assign.js");
       const result = await clearAllAssignments();
@@ -5970,7 +5985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auto-assign/clear-filtered", async (req: Request, res: Response) => {
+  app.post("/api/auto-assign/clear-filtered", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { workCenter, routing } = req.body;
       const { clearAssignmentsByFilter } = await import("./ai-auto-assign.js");
@@ -5986,7 +6001,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send operator workload summary to Slack
-  app.post("/api/slack/send-workload", async (req, res) => {
+  app.post("/api/slack/send-workload", isAuthenticated, async (req, res) => {
     try {
       const { operatorId, workloadSummary } = req.body;
       
