@@ -96,15 +96,23 @@ export async function importWorkCyclesFinal(
           continue;
         }
         
-        // Extract numeric ID from work number (e.g., "WO10000" -> 10000)
-        const workNumberMatch = workNumber.match(/WO(\d+)/);
+        // Extract numeric ID from work number - handle different formats
+        let csvId: number;
+        
+        // Debug log for first few records
+        if (globalIndex < 5) {
+          console.log(`Row ${globalIndex + 1}: work_cycles_work_number value:`, workNumber);
+        }
+        
+        // Try to extract numeric ID - handle "WO12345" or just "12345"
+        const workNumberMatch = workNumber.match(/(?:WO)?(\d+)/);
         if (!workNumberMatch) {
           errors.push(`Row ${globalIndex + 1}: Invalid work number format "${workNumber}"`);
           skipped++;
           continue;
         }
         
-        const csvId = parseInt(workNumberMatch[1]);
+        csvId = parseInt(workNumberMatch[1]);
         
         // Check for existing record using work_cycles_id (the CSV ID)
         let existingById: any[] = [];
