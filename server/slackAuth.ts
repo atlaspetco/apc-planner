@@ -101,7 +101,9 @@ export async function setupSlackAuth(app: Express) {
   );
 
   app.get("/api/auth/slack/callback", (req, res, next) => {
-    console.log("Slack callback received with query params:", req.query);
+    console.log("=== SLACK CALLBACK HIT ===");
+    console.log("Query params:", req.query);
+    console.log("Headers:", req.headers);
     
     passport.authenticate("slack", (err: any, user: any, info: any) => {
       if (err) {
