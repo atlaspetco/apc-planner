@@ -1,0 +1,5 @@
+work/cycles/rec_name,work/cycles/operator/rec_name,work/cycles/work_center/category/name,work/cycles/work/production/routing/name,work/cycles/work/production/quantity_done,work/cycles/work/production/production_batch/name,work/cycles/work/production/planned_start_date,work/cycles/work/production/priority,work/cycles/work/rec_name,create_date,work/cycles/work/number,work/cycles/work/production/rec_name,work/cycles/duration,work/cycles/duration_sec
+Packaging | Jon Higgins | Packaging,Jon Higgins,Packaging,Lifetime Pouch,40,,2023-11-09,2,WO10000 | Packaging | MO15160,2023-11-10 15:37:10,WO10000,MO15160,0:17:09,"1,029"
+Cutting - Webbing | Courtney Banh | Cutting,Courtney Banh,Cutting,Lifetime Bandana,15,,2023-11-08,2,WO10002 | Cutting - Webbing | MO15602,2023-11-09 17:33:31,WO10002,MO15602,0:00:05,5
+Sewing | Courtney Banh | Assembly,Courtney Banh,Assembly,Lifetime Bandana,15,,2023-11-08,2,WO10003 | Sewing | MO15602,2023-11-09 15:40:07,WO10003,MO15602,1:30:31,"5,431"
+Packaging | Devin Cann | Packaging,Devin Cann,Packaging,Lifetime Bandana,15,,2023-11-08,2,WO10004 | Packaging | MO15602,2023-11-09 17:35:32,WO10004,MO15602,0:00:06,6
