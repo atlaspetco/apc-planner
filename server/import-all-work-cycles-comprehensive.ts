@@ -1,9 +1,6 @@
 import { db } from "./db";
 import { workCycles } from "../shared/schema";
 import { sql } from "drizzle-orm";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 interface FulfilWorkCycle {
   id: number;
