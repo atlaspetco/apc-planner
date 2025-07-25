@@ -8,17 +8,18 @@ const RATE_LIMIT_DELAY = 500; // 500ms between requests
 
 interface WorkCycleResponse {
   id: number;
-  work_cycles_id: string;
-  work_cycles_operator_rec_name: string;
-  work_operation_rec_name: string;
-  work_cycles_work_center_rec_name: string;
-  work_cycles_duration: number;
-  work_cycles_quantity: number;
-  work_production_rec_name: string;
-  work_production_routing_rec_name: string;
-  work_production_id: number;
-  work_cycles_effective_date: string;
-  state: string;
+  work: number;
+  "work.production": number;
+  "work.production.number": string;
+  "work.production.quantity": number;
+  "work.production.routing.rec_name": string;
+  "work.operation.rec_name": string;
+  "work.work_center.rec_name": string;
+  "operator.rec_name": string;
+  quantity_done: number;
+  duration: number;
+  effective_date: string;
+  create_date: string;
 }
 
 export async function bulkImportAllWorkCycles() {
@@ -71,16 +72,18 @@ export async function bulkImportAllWorkCycles() {
           filters: [["state", "=", "done"]],
           fields: [
             "id",
-            "work/cycles/id",
-            "work/cycles/operator/rec_name",
-            "work/operation/rec_name",
-            "work/cycles/work_center/rec_name",
-            "work/cycles/duration",
-            "work/cycles/quantity",
-            "work/production/rec_name",
-            "work/production/routing/rec_name",
-            "work/production/id",
-            "work/cycles/effective_date"
+            "work",
+            "work.production",
+            "work.production.number",
+            "work.production.quantity",
+            "work.production.routing.rec_name",
+            "work.operation.rec_name",
+            "work.work_center.rec_name",
+            "operator.rec_name",
+            "quantity_done",
+            "duration",
+            "effective_date",
+            "create_date"
           ],
           order: [["id", "ASC"]],
           limit: BATCH_SIZE,
@@ -103,7 +106,7 @@ export async function bulkImportAllWorkCycles() {
 
       // Process batch
       for (const cycle of data) {
-        const workCyclesId = cycle.work_cycles_id?.toString();
+        const workCyclesId = cycle.id?.toString();
         
         if (!workCyclesId || existingIds.has(workCyclesId)) {
           totalSkipped++;
@@ -116,8 +119,8 @@ export async function bulkImportAllWorkCycles() {
         }
 
         // Extract data with proper null handling
-        const operatorName = cycle.work_cycles_operator_rec_name || null;
-        const workCenter = cycle.work_cycles_work_center_rec_name || null;
+        const operatorName = cycle["operator.rec_name"] || null;
+        const workCenter = cycle["work.work_center.rec_name"] || null;
         
         // Track unique operators
         if (operatorName && workCenter) {
@@ -132,8 +135,8 @@ export async function bulkImportAllWorkCycles() {
 
         // Extract operation from rec_name
         let operation = null;
-        if (cycle.work_operation_rec_name) {
-          const parts = cycle.work_operation_rec_name.split(' | ');
+        if (cycle["work.operation.rec_name"]) {
+          const parts = cycle["work.operation.rec_name"].split(' | ');
           if (parts.length >= 2) {
             operation = parts[0];
           }
@@ -144,15 +147,15 @@ export async function bulkImportAllWorkCycles() {
           await db.insert(workCycles).values({
             work_cycles_id: workCyclesId,
             work_cycles_operator_rec_name: operatorName,
-            work_operation_rec_name: cycle.work_operation_rec_name || null,
+            work_operation_rec_name: cycle["work.operation.rec_name"] || null,
             work_cycles_work_center_rec_name: workCenter,
-            work_cycles_duration: cycle.work_cycles_duration || 0,
-            work_cycles_quantity: cycle.work_cycles_quantity || 0,
-            work_production_rec_name: cycle.work_production_rec_name || null,
-            work_production_routing_rec_name: cycle.work_production_routing_rec_name || null,
-            work_production_id: cycle.work_production_id?.toString() || null,
-            work_cycles_effective_date: cycle.work_cycles_effective_date || null,
-            state: cycle.state || null
+            work_cycles_duration: cycle.duration || 0,
+            work_cycles_quantity: cycle.quantity_done || 0,
+            work_production_rec_name: cycle["work.production.number"] || null,
+            work_production_routing_rec_name: cycle["work.production.routing.rec_name"] || null,
+            work_production_id: cycle["work.production"]?.toString() || null,
+            work_cycles_effective_date: cycle.effective_date || null,
+            state: null // state field is not in the response
           });
           
           totalImported++;
