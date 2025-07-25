@@ -3706,12 +3706,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Transform to response format
       const routings = Array.from(routingData.entries()).map(([routingName, routingOperators]) => {
         const operators = Array.from(routingOperators.entries()).map(([operatorId, workCenterData]) => {
-          // Get operator name from map or historical data - handle snake_case
-          const operatorRecord = uphResults.find(r => 
-            (r.operator_id === operatorId || r.operatorId === operatorId) && 
-            (r.product_routing === routingName || r.productRouting === routingName || r.routing === routingName)
-          );
-          const operatorName = operatorRecord?.operator_name || operatorRecord?.operatorName || operatorMap.get(operatorId) || `Operator ${operatorId}`;
+          // Get operator name from our map
+          const operatorName = allOperators.find(op => op.id === operatorId)?.name || `Operator ${operatorId}`;
           const workCenterPerformance: Record<string, number | null> = {};
           
           // Calculate total observations for this operator in this routing
@@ -3720,7 +3716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           allWorkCenters.forEach(workCenter => {
             const uphData = workCenterData[workCenter];
             if (uphData) {
-              // Use the exact UPH value from unified calculator (no additional averaging)
+              // Use the exact UPH value from core calculator
               workCenterPerformance[workCenter] = Math.round(uphData.uph * 100) / 100;
               totalObservations += uphData.observations || 0;
             } else {
@@ -3771,17 +3767,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
       
-      // Calculate summary statistics from historical UPH data
+      // Calculate summary statistics from core calculator results
       const workCenterUph = new Map<string, number[]>();
-      const uniqueOperators = new Set<number>();
+      const uniqueOperators = new Set<string>();
       
       uphResults.forEach(row => {
-        if (row.operatorId) {
-          uniqueOperators.add(row.operatorId);
-        }
+        uniqueOperators.add(row.operatorName);
         const existing = workCenterUph.get(row.workCenter) || [];
-        const uphValue = row.uph || row.unitsPerHour || 0; // Handle both field names
-        existing.push(uphValue);
+        existing.push(row.unitsPerHour);
         workCenterUph.set(row.workCenter, existing);
       });
 
