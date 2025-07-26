@@ -110,8 +110,14 @@ export async function setupSlackAuth(app: Express) {
     console.log("Token URL:", this._getAccessTokenUrl());
     console.log("Client ID:", this._clientId);
     console.log("Client Secret exists:", !!this._clientSecret);
+    console.log("Client Secret first 10 chars:", this._clientSecret?.substring(0, 10));
     console.log("Authorization code:", code);
     console.log("Params:", params);
+    console.log("Full token request URL:", this._getAccessTokenUrl() + "?" + 
+      "client_id=" + this._clientId + 
+      "&client_secret=" + (this._clientSecret ? "[REDACTED]" : "MISSING") +
+      "&code=" + code +
+      "&redirect_uri=" + (params.redirect_uri || "NOT_SET"));
     
     return originalGetOAuthAccessToken.call(this, code, params, (error: any, accessToken: any, refreshToken: any, results: any) => {
       if (error) {
@@ -119,6 +125,9 @@ export async function setupSlackAuth(app: Express) {
         console.error("Error data:", error.data);
       } else {
         console.log("Token exchange success!");
+        console.log("Access Token:", accessToken ? "Present" : "Missing");
+        console.log("Refresh Token:", refreshToken ? "Present" : "Missing");
+        console.log("Results:", JSON.stringify(results, null, 2));
       }
       callback(error, accessToken, refreshToken, results);
     });
