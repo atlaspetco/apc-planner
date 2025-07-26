@@ -142,56 +142,45 @@ export async function calculateCoreUph(
     console.log(`Date filtering bypassed: ${filteredCycles.length} cycles included`);
   }
   
-  // STEP 1: Group by Operator + Work Center + Routing + MO using INDIVIDUAL OPERATOR duration
+  // STEP 1: Group by work_production_id + operator + work_center + routing
   const moGroupedData = new Map<string, MoGroupData>();
   
   filteredCycles.forEach(cycle => {
     if (!cycle.work_cycles_operator_rec_name || 
         !cycle.work_cycles_work_center_rec_name || 
-        !cycle.work_production_number ||
-        !cycle.duration_sec ||
-        cycle.duration_sec <= 0) {
+        !cycle.work_production_id ||
+        !cycle.work_cycles_duration ||
+        cycle.work_cycles_duration <= 0 ||
+        !cycle.work_production_quantity) {
       return;
     }
     
     const consolidatedWC = consolidateWorkCenter(cycle.work_cycles_work_center_rec_name);
     if (!consolidatedWC) return;
     
-    const routing = routingMap.get(cycle.work_production_number) || 
-                   cycle.work_production_routing_rec_name || 
-                   'Unknown';
+    const routing = cycle.work_production_routing_rec_name || 'Unknown';
+    const productionId = cycle.work_production_id.toString();
                    
-    const groupKey = `${cycle.work_cycles_operator_rec_name}|${consolidatedWC}|${routing}|${cycle.work_production_number}`;
+    const groupKey = `${cycle.work_cycles_operator_rec_name}|${consolidatedWC}|${routing}|${productionId}`;
     
     if (!moGroupedData.has(groupKey)) {
       moGroupedData.set(groupKey, {
         operatorName: cycle.work_cycles_operator_rec_name,
         workCenter: consolidatedWC,
         routing,
-        moNumber: cycle.work_production_number,
-        totalDurationSeconds: 0, // Will accumulate individual operator's duration only
-        moQuantity: 0,
-        cycleCount: 0
+        moNumber: productionId, // Use production ID as MO identifier
+        totalDurationSeconds: 0,
+        moQuantity: cycle.work_production_quantity,
+        cycleCount: 0,
+        productionId: cycle.work_production_id
       });
-      
-      // Debug specific case
-      if (cycle.work_cycles_operator_rec_name === 'Devin Cann' && 
-          consolidatedWC === 'Packaging' && 
-          cycle.work_production_number === 'MO94699') {
-        console.log(`\n🔍 DEBUG MO ${cycle.work_production_number}: Using individual operator duration for ${cycle.work_cycles_operator_rec_name}`);
-      }
     }
     
     const group = moGroupedData.get(groupKey)!;
     group.cycleCount++;
     
-    // CRITICAL FIX: Add duration ONLY within the same work center for this operator
-    group.totalDurationSeconds += cycle.duration_sec;
-    
-    // Use work_production_quantity (total MO quantity from CSV)
-    if (group.moQuantity === 0 && cycle.work_production_quantity) {
-      group.moQuantity = cycle.work_production_quantity;
-    }
+    // Sum durations in seconds for this operator+work_center+production_id combination
+    group.totalDurationSeconds += cycle.work_cycles_duration;
   });
   
   // Calculate UPH per MO then average by operator/workCenter/routing
@@ -208,21 +197,11 @@ export async function calculateCoreUph(
     if (moData.moQuantity <= 0 || moData.totalDurationSeconds <= 0) return;
     
     const durationHours = moData.totalDurationSeconds / 3600;
-    
-    // No filtering - all data will be used as requested
-    // Frontend will handle all filtering through menu settings
-    
     const uphPerMo = moData.moQuantity / durationHours;
     
-    // Debug logging for specific case
-    if (moData.operatorName === 'Courtney Banh' && 
-        moData.workCenter === 'Assembly' && 
-        moData.routing === 'Lifetime Pouch') {
-      console.log(`🔍 MO ${moData.moNumber}: Quantity=${moData.moQuantity}, Duration=${durationHours.toFixed(2)}hrs, UPH=${uphPerMo.toFixed(2)}`);
-    }
+    console.log(`📊 Production ID ${moData.productionId}: ${moData.operatorName} ${moData.workCenter}/${moData.routing} - Quantity=${moData.moQuantity}, Duration=${durationHours.toFixed(2)}hrs, UPH=${uphPerMo.toFixed(2)}`);
     
-    // No UPH limit filtering - all values accepted
-    // Frontend will handle filtering through menu settings
+    // No UPH limit filtering - all values accepted as requested
     
     const operatorKey = `${moData.operatorName}|${moData.workCenter}|${moData.routing}`;
     
