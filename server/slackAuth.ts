@@ -61,8 +61,8 @@ export async function setupSlackAuth(app: Express) {
   
   console.log("Using callback URL:", callbackURL);
   
-  // Slack OAuth Strategy
-  passport.use('slack', new SlackStrategy({
+  // Slack OAuth Strategy with debugging
+  const strategy = new SlackStrategy({
     clientID: process.env.SLACK_CLIENT_ID!,
     clientSecret: process.env.SLACK_CLIENT_SECRET!,
     callbackURL: callbackURL,
@@ -99,7 +99,32 @@ export async function setupSlackAuth(app: Express) {
       console.error("Error in Slack auth callback:", error);
       return done(error, null);
     }
-  }));
+  });
+  
+  // Add debugging for OAuth2 token exchange
+  const oauth2 = (strategy as any)._oauth2;
+  const originalGetOAuthAccessToken = oauth2.getOAuthAccessToken;
+  
+  oauth2.getOAuthAccessToken = function(code: string, params: any, callback: any) {
+    console.log("=== OAUTH2 TOKEN EXCHANGE ===");
+    console.log("Token URL:", this._getAccessTokenUrl());
+    console.log("Client ID:", this._clientId);
+    console.log("Client Secret exists:", !!this._clientSecret);
+    console.log("Authorization code:", code);
+    console.log("Params:", params);
+    
+    return originalGetOAuthAccessToken.call(this, code, params, (error: any, accessToken: any, refreshToken: any, results: any) => {
+      if (error) {
+        console.error("Token exchange error:", error);
+        console.error("Error data:", error.data);
+      } else {
+        console.log("Token exchange success!");
+      }
+      callback(error, accessToken, refreshToken, results);
+    });
+  };
+  
+  passport.use('slack', strategy);
 
   passport.serializeUser((user: any, done) => {
     done(null, user);
