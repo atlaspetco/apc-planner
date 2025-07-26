@@ -903,20 +903,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log("Found operator:", operator.name);
       
-      // Find work order in live production orders data (not database since they're dynamic)
-      const productionOrdersUrl = `${req.protocol}://${req.get('host')}/api/production-orders`;
-      console.log("Fetching live production orders from:", productionOrdersUrl);
+      // Get production orders directly from Fulfil service
+      const { FulfilCurrentService } = await import("./fulfil-current.js");
+      const fulfil = new FulfilCurrentService();
+      
       try {
-        const fulfilResponse = await fetch(productionOrdersUrl);
-        console.log("Response status:", fulfilResponse.status);
+        const fulfilResult = await fulfil.getCurrentProductionOrders();
+        const fulfilData = fulfilResult.orders || [];
         
-        if (!fulfilResponse.ok) {
-          console.log("Response not OK, text:", await fulfilResponse.text());
-          return res.status(500).json({ message: "Failed to fetch production orders" });
-        }
-        
-        const fulfilData = await fulfilResponse.json();
-        console.log("Received data type:", typeof fulfilData, "Length:", Array.isArray(fulfilData) ? fulfilData.length : "not array");
+        console.log(`Fetched ${fulfilData.length} production orders from Fulfil service`);
         
         if (!Array.isArray(fulfilData) || fulfilData.length === 0) {
           console.log("No production orders found:", fulfilData);
@@ -981,20 +976,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Calculate estimated hours based on UPH data if available
         let estimatedHours = null;
         try {
-          const { uphData } = await import("../shared/schema.js");
-          const { and } = await import("drizzle-orm");
-          const uphResult = await db
-            .select()
-            .from(uphData)
-            .where(and(
-              eq(uphData.operatorId, operatorId),
-              eq(uphData.workCenter, foundWorkOrder.workCenter),
-              eq(uphData.productRouting, parentProductionOrder.routing)
-            ))
-            .limit(1);
+          // Get operator name for UPH lookup
+          const operatorName = operator.name;
+          const workCenter = foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter;
+          const routing = parentProductionOrder.routing || parentProductionOrder.routingName;
+          const quantity = req.body.quantity || parentProductionOrder.quantity;
           
-          if (uphResult.length > 0 && uphResult[0].uph > 0) {
-            estimatedHours = quantity / uphResult[0].uph;
+          // Query the uph_data table
+          const uphResult = await db.execute(sql`
+            SELECT uph, observation_count
+            FROM uph_data
+            WHERE operator_name = ${operatorName}
+              AND work_center = ${workCenter}
+              AND product_routing = ${routing}
+            LIMIT 1
+          `);
+          
+          if (uphResult.rows.length > 0 && uphResult.rows[0].uph > 0) {
+            estimatedHours = quantity / uphResult.rows[0].uph;
           }
         } catch (uphError) {
           console.log("Could not calculate estimated hours:", uphError);
