@@ -51,15 +51,20 @@ export default function OperatorSettings() {
 
   // Helper functions to get operator capabilities from UPH data
   const getOperatorWorkCentersWithData = (operatorName: string): string[] => {
-    if (!uphData?.routings) return [];
+    if (!uphData?.routings || !Array.isArray(uphData.routings)) return [];
     
     const workCenters = new Set<string>();
     
     uphData.routings.forEach((routing: any) => {
-      const operator = routing.operators?.find((op: any) => op.operatorName === operatorName);
-      if (operator?.workCenterPerformance) {
+      if (!routing.operators || !Array.isArray(routing.operators)) return;
+      
+      const operator = routing.operators.find((op: any) => 
+        op && op.operatorName === operatorName
+      );
+      
+      if (operator && operator.workCenterPerformance && typeof operator.workCenterPerformance === 'object') {
         Object.keys(operator.workCenterPerformance).forEach(wc => {
-          if (operator.workCenterPerformance[wc] !== null) {
+          if (operator.workCenterPerformance[wc] !== null && operator.workCenterPerformance[wc] !== undefined) {
             workCenters.add(wc);
             
             // If operator has Assembly data, they also have Sewing and Rope data
@@ -77,43 +82,60 @@ export default function OperatorSettings() {
   };
 
   const getOperatorRoutingsWithData = (operatorName: string): string[] => {
-    if (!uphData?.routings) return [];
+    if (!uphData?.routings || !Array.isArray(uphData.routings)) return [];
     
     return uphData.routings
-      .filter((routing: any) => 
-        routing.operators?.some((op: any) => op.operatorName === operatorName)
-      )
-      .map((routing: any) => routing.routingName);
+      .filter((routing: any) => {
+        if (!routing.operators || !Array.isArray(routing.operators)) return false;
+        return routing.operators.some((op: any) => 
+          op && op.operatorName === operatorName
+        );
+      })
+      .map((routing: any) => routing.routingName)
+      .filter((name: any) => name); // Filter out undefined routing names
   };
 
   const getOperatorOperationsWithData = (operatorName: string): string[] => {
-    if (!uphData?.routings) return [];
+    if (!uphData?.routings || !Array.isArray(uphData.routings)) return [];
     
     const operations = new Set<string>();
     
     // Search through UPH data to find operations this operator has actually performed
     uphData.routings.forEach((routing: any) => {
-      const operator = routing.operators?.find((op: any) => op.operatorName === operatorName);
-      if (operator?.workCenterPerformance) {
+      if (!routing.operators || !Array.isArray(routing.operators)) return;
+      
+      const operator = routing.operators.find((op: any) => 
+        op && op.operatorName === operatorName
+      );
+      
+      if (operator && operator.workCenterPerformance && typeof operator.workCenterPerformance === 'object') {
         // UPH data contains operation information in the operation field
         Object.entries(operator.workCenterPerformance).forEach(([workCenter, uphValue]: [string, any]) => {
           if (uphValue !== null && uphValue !== undefined) {
             // If this operator has UPH data for this work center, they can do all operations in that work center
             // Get operations for this work center from workCenterData
-            const workCenterInfo = workCenterData?.find((wc: any) => wc.workCenter === workCenter);
-            if (workCenterInfo?.operations) {
-              workCenterInfo.operations.forEach((op: string) => operations.add(op));
-            }
-            
-            // If operator has Assembly data, include Sewing and Rope operations
-            if (workCenter === 'Assembly') {
-              const sewingInfo = workCenterData?.find((wc: any) => wc.workCenter === 'Sewing');
-              if (sewingInfo?.operations) {
-                sewingInfo.operations.forEach((op: string) => operations.add(op));
+            if (workCenterData && Array.isArray(workCenterData)) {
+              const workCenterInfo = workCenterData.find((wc: any) => wc && wc.workCenter === workCenter);
+              if (workCenterInfo && workCenterInfo.operations && Array.isArray(workCenterInfo.operations)) {
+                workCenterInfo.operations.forEach((op: string) => {
+                  if (op) operations.add(op);
+                });
               }
-              const ropeInfo = workCenterData?.find((wc: any) => wc.workCenter === 'Rope');
-              if (ropeInfo?.operations) {
-                ropeInfo.operations.forEach((op: string) => operations.add(op));
+              
+              // If operator has Assembly data, include Sewing and Rope operations
+              if (workCenter === 'Assembly') {
+                const sewingInfo = workCenterData.find((wc: any) => wc && wc.workCenter === 'Sewing');
+                if (sewingInfo && sewingInfo.operations && Array.isArray(sewingInfo.operations)) {
+                  sewingInfo.operations.forEach((op: string) => {
+                    if (op) operations.add(op);
+                  });
+                }
+                const ropeInfo = workCenterData.find((wc: any) => wc && wc.workCenter === 'Rope');
+                if (ropeInfo && ropeInfo.operations && Array.isArray(ropeInfo.operations)) {
+                  ropeInfo.operations.forEach((op: string) => {
+                    if (op) operations.add(op);
+                  });
+                }
               }
             }
           }
@@ -149,12 +171,17 @@ export default function OperatorSettings() {
   };
 
   const getOperatorObservationCount = (operatorName: string): number => {
-    if (!uphData?.routings) return 0;
+    if (!uphData?.routings || !Array.isArray(uphData.routings)) return 0;
     
     let totalObservations = 0;
     uphData.routings.forEach((routing: any) => {
-      const operator = routing.operators?.find((op: any) => op.operatorName === operatorName);
-      if (operator?.totalObservations) {
+      if (!routing.operators || !Array.isArray(routing.operators)) return;
+      
+      const operator = routing.operators.find((op: any) => 
+        op && op.operatorName === operatorName
+      );
+      
+      if (operator && typeof operator.totalObservations === 'number') {
         totalObservations += operator.totalObservations;
       }
     });
