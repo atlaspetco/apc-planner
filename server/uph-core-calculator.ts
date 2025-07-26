@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 import { workCycles, productionOrders, operators } from "../shared/schema.js";
-import { eq, or, isNull } from "drizzle-orm";
+import { eq, or, isNull, sql } from "drizzle-orm";
 
 export interface UphCalculationResult {
   operatorName: string;
@@ -320,6 +320,13 @@ export async function getCoreUphDetails(
   moGroupedData: MoGroupData[];
   averageUph: number;
 }> {
+  console.log(`🚨🚨🚨 getCoreUphDetails STARTED: operator="${operatorName}", workCenter="${workCenter}", routing="${routing}"`);
+  
+  // URGENT DEBUG: Execute raw SQL to compare with ORM results
+  console.log(`🚨🚨🚨 EXECUTING RAW SQL TEST`);
+  const rawResult = await db.execute(sql`SELECT COUNT(*) as count FROM work_cycles WHERE work_cycles_operator_rec_name = 'Courtney Banh' AND (data_corrupted = false OR data_corrupted IS NULL)`);
+  console.log(`🚨 RAW SQL: Courtney Banh cycles = ${rawResult.rows[0]?.count || 0}`);
+  
   // Fetch all necessary data - EXCLUDE CORRUPTED RECORDS
   const allCycles = await db.select().from(workCycles).where(
     or(
@@ -328,6 +335,25 @@ export async function getCoreUphDetails(
     )
   );
   const allProductionOrders = await db.select().from(productionOrders);
+  
+  console.log(`🚨 ORM QUERY: Loaded ${allCycles.length} cycles total, ${allProductionOrders.length} production orders`);
+  
+  // Test: Check if Courtney Banh cycles are in the result
+  const courtneyTestCycles = allCycles.filter(c => c.work_cycles_operator_rec_name === 'Courtney Banh');
+  console.log(`🚨 ORM RESULT: Found ${courtneyTestCycles.length} Courtney Banh cycles in query result`);
+  
+  // Count cycles by operator for debugging
+  const operatorCounts = new Map<string, number>();
+  allCycles.forEach(cycle => {
+    if (cycle.work_cycles_operator_rec_name) {
+      operatorCounts.set(cycle.work_cycles_operator_rec_name, (operatorCounts.get(cycle.work_cycles_operator_rec_name) || 0) + 1);
+    }
+  });
+  
+  // Check specifically for Courtney Banh
+  const courtneyCount = operatorCounts.get('Courtney Banh') || 0;
+  console.log(`🚨 COURTNEY BANH cycle count: ${courtneyCount}`);
+  console.log(`🚨 First 10 operator counts:`, Array.from(operatorCounts.entries()).slice(0, 10));
   
   // Create MO quantity map
   const moQuantityMap = new Map<string, number>();
@@ -345,26 +371,68 @@ export async function getCoreUphDetails(
     }
   });
   
+  // CRITICAL DEBUG: Check if Courtney Banh exists before filtering
+  const courtneyCheck = allCycles.filter(c => c.work_cycles_operator_rec_name === 'Courtney Banh').length;
+  console.log(`🚨🚨 BEFORE FILTER: ${courtneyCheck} Courtney Banh cycles found in allCycles`);
+  
+  // CRITICAL: Early return with debug info for Courtney Banh test case
+  if (operatorName === 'Courtney Banh' && workCenter === 'Assembly' && routing === 'Lifetime Pouch') {
+    const courtneyTestCycles = allCycles.filter(c => c.work_cycles_operator_rec_name === 'Courtney Banh');
+    const sewingAssemblyCycles = courtneyTestCycles.filter(c => c.work_cycles_work_center_rec_name === 'Sewing / Assembly');
+    const lifetimePouchCycles = courtneyTestCycles.filter(c => c.work_production_routing_rec_name === 'Lifetime Pouch');
+    
+    return {
+      cycles: [],
+      moGroupedData: [],
+      averageUph: 0,
+      __debug: {
+        totalCyclesQueried: allCycles.length,
+        courtneyBanhTotal: courtneyTestCycles.length,
+        sewingAssemblyCount: sewingAssemblyCycles.length,
+        lifetimePouchCount: lifetimePouchCycles.length,
+        courtneyWorkCenters: [...new Set(courtneyTestCycles.map(c => c.work_cycles_work_center_rec_name))],
+        courtneyRoutings: [...new Set(courtneyTestCycles.map(c => c.work_production_routing_rec_name))].filter(r => r).slice(0, 10)
+      }
+    };
+  }
+
   // Filter cycles for this specific combination
   const filteredCycles = allCycles.filter(cycle => {
     if (!cycle.work_cycles_operator_rec_name || 
-        !cycle.work_cycles_work_center_rec_name || 
-        !cycle.work_production_number) {
+        !cycle.work_cycles_work_center_rec_name) {
       return false;
     }
     
     // Check operator
-    if (cycle.work_cycles_operator_rec_name !== operatorName) return false;
+    if (cycle.work_cycles_operator_rec_name !== operatorName) {
+      return false;
+    }
     
     // Check work center (with consolidation)
     const consolidatedWC = consolidateWorkCenter(cycle.work_cycles_work_center_rec_name);
-    if (consolidatedWC !== workCenter) return false;
+    if (consolidatedWC !== workCenter) {
+      // Debug logging for specific case
+      if (operatorName === 'Courtney Banh' && workCenter === 'Assembly' && routing === 'Lifetime Pouch') {
+        console.log(`🔍 Work center mismatch: "${cycle.work_cycles_work_center_rec_name}" consolidated to "${consolidatedWC}" vs expected "${workCenter}"`);
+      }
+      return false;
+    }
     
-    // Check routing
-    const cycleRouting = routingMap.get(cycle.work_production_number) || 
-                        cycle.work_production_routing_rec_name || 
-                        'Unknown';
-    if (cycleRouting !== routing) return false;
+    // Check routing - handle both production_orders table lookup and direct routing field
+    let cycleRouting: string;
+    if (cycle.work_production_number && routingMap.has(cycle.work_production_number)) {
+      cycleRouting = routingMap.get(cycle.work_production_number)!;
+    } else {
+      cycleRouting = cycle.work_production_routing_rec_name || 'Unknown';
+    }
+    
+    if (cycleRouting !== routing) {
+      // Debug logging for specific case
+      if (operatorName === 'Courtney Banh' && workCenter === 'Assembly' && routing === 'Lifetime Pouch') {
+        console.log(`🔍 Routing mismatch: "${cycleRouting}" vs expected "${routing}" (production_number: ${cycle.work_production_number})`);
+      }
+      return false;
+    }
     
     return true;
   });
@@ -374,7 +442,7 @@ export async function getCoreUphDetails(
   const moWorkCenterDurations = new Map<string, number>();
   
   filteredCycles.forEach(cycle => {
-    if (!cycle.work_production_number || !cycle.duration_sec || cycle.duration_sec <= 0) {
+    if (!cycle.duration_sec || cycle.duration_sec <= 0) {
       return;
     }
     
@@ -383,7 +451,8 @@ export async function getCoreUphDetails(
       return;
     }
     
-    const moNumber = cycle.work_production_number;
+    // Generate an MO number for cycles without production numbers
+    const moNumber = cycle.work_production_number || `CYCLE_${cycle.id}_${cycle.work_cycles_id || 'UNKNOWN'}`;
     const currentTotal = moWorkCenterDurations.get(moNumber) || 0;
     moWorkCenterDurations.set(moNumber, currentTotal + cycle.duration_sec);
   });
@@ -392,11 +461,12 @@ export async function getCoreUphDetails(
   const moGroupedMap = new Map<string, MoGroupData>();
   
   filteredCycles.forEach(cycle => {
-    if (!cycle.work_production_number || !cycle.duration_sec || cycle.duration_sec <= 0) {
+    if (!cycle.duration_sec || cycle.duration_sec <= 0) {
       return;
     }
     
-    const moNumber = cycle.work_production_number;
+    // Generate an MO number for cycles without production numbers
+    const moNumber = cycle.work_production_number || `CYCLE_${cycle.id}_${cycle.work_cycles_id || 'UNKNOWN'}`;
     
     if (!moGroupedMap.has(moNumber)) {
       // Use work center specific duration for this MO
@@ -466,7 +536,14 @@ export async function getCoreUphDetails(
   return {
     cycles: filteredCycles,
     moGroupedData,
-    averageUph
+    averageUph,
+    // DEBUG DIAGNOSTICS - Add diagnostic information to response
+    __debug: {
+      totalCyclesQueried: allCycles.length,
+      courtneyBanhCyclesFound: allCycles.filter(c => c.work_cycles_operator_rec_name === 'Courtney Banh').length,
+      filteredCyclesCount: filteredCycles.length,
+      uniqueOperatorsInQuery: [...new Set(allCycles.map(c => c.work_cycles_operator_rec_name))].slice(0, 10)
+    }
   };
 }
 

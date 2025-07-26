@@ -4006,6 +4006,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routing as string
       );
       
+      // TEMPORARY: Return debug info for Courtney Banh case
+      if (detailsResult.__debug) {
+        return res.json(detailsResult);
+      }
+      
       // Convert to the expected format with all fields populated
       const moDetails = detailsResult.moGroupedData.map(mo => {
         const totalDurationHours = mo.totalDurationSeconds / 3600;
@@ -4079,28 +4084,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Test UPH calculation endpoint
   app.get("/api/test/uph-calculation", async (req: Request, res: Response) => {
     try {
-      const { getCoreUphDetails } = await import("./uph-core-calculator.js");
+      const { db } = await import("./db.js");
+      const { workCycles } = await import("../shared/schema.js");
+      const { or, eq, isNull } = await import("drizzle-orm");
+      const { consolidateWorkCenter } = await import("./uph-core-calculator.js");
       
-      // Test the specific case
-      const result = await getCoreUphDetails(
-        "Courtney Banh",
-        "Assembly", 
-        "Lifetime Pouch"
+      // Query all cycles to test filtering logic
+      const allCycles = await db.select().from(workCycles).where(
+        or(
+          eq(workCycles.data_corrupted, false),
+          isNull(workCycles.data_corrupted)
+        )
       );
       
-      // Find MOs with 40 units
-      const fortyUnitMos = result.moGroupedData.filter(mo => mo.moQuantity === 40);
+      // Test Courtney Banh filtering step by step
+      const courtneyAllCycles = allCycles.filter(c => c.work_cycles_operator_rec_name === 'Courtney Banh');
+      const sewingAssemblyCycles = courtneyAllCycles.filter(c => c.work_cycles_work_center_rec_name === 'Sewing / Assembly');
+      const lifetimePouchCycles = courtneyAllCycles.filter(c => c.work_production_routing_rec_name === 'Lifetime Pouch');
+      
+      // Test consolidation on Sewing / Assembly
+      const consolidatedWC = consolidateWorkCenter('Sewing / Assembly');
+      
+      // Test the full filtering logic manually
+      const testMatch = sewingAssemblyCycles.filter(cycle => {
+        const consolidatedWC = consolidateWorkCenter(cycle.work_cycles_work_center_rec_name);
+        return consolidatedWC === 'Assembly' && cycle.work_production_routing_rec_name === 'Lifetime Pouch';
+      });
       
       res.json({
-        averageUph: result.averageUph,
-        totalMos: result.moGroupedData.length,
-        fortyUnitMos: fortyUnitMos.map(mo => ({
-          moNumber: mo.moNumber,
-          quantity: mo.moQuantity,
-          durationHours: (mo.totalDurationSeconds / 3600).toFixed(2),
-          calculatedUph: (mo.moQuantity / (mo.totalDurationSeconds / 3600)).toFixed(2)
-        })),
-        message: `Average UPH ${result.averageUph.toFixed(2)} is calculated from ${result.moGroupedData.length} MOs`
+        totalCycles: allCycles.length,
+        courtneyTotal: courtneyAllCycles.length,
+        sewingAssemblyCount: sewingAssemblyCycles.length,
+        lifetimePouchCount: lifetimePouchCycles.length,
+        consolidationTest: `"Sewing / Assembly" -> "${consolidatedWC}"`,
+        bothConditionsMatch: testMatch.length,
+        courtneyWorkCenters: [...new Set(courtneyAllCycles.map(c => c.work_cycles_work_center_rec_name))],
+        courtneyRoutings: [...new Set(courtneyAllCycles.map(c => c.work_production_routing_rec_name))].filter(r => r).slice(0, 10)
       });
     } catch (error) {
       console.error("Test UPH calculation error:", error);
