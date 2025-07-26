@@ -404,7 +404,8 @@ export default function UphAnalytics() {
     uphLoading,
     rawUphData,
     uphData,
-    hasRoutings: uphData?.routings?.length > 0
+    hasRoutings: uphData?.routings?.length > 0,
+    routingsLength: uphData?.routings?.length || 0
   });
 
   return (
@@ -530,7 +531,7 @@ export default function UphAnalytics() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {uphData?.routings && uphData.routings.length > 0 ? (
+          {(uphData?.routings && uphData.routings.length > 0) ? (
             <div className="space-y-4">
               {[...uphData.routings]
                 .sort((a, b) => {

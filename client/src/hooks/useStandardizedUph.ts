@@ -99,26 +99,18 @@ export function useUphCalculationJob() {
   const queryClient = useQueryClient();
   
   const calculateMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/uph/standardized/calculate"),
+    mutationFn: () => apiRequest("POST", "/api/uph/calculate"),
     onSuccess: () => {
-      // Invalidate all UPH queries to force refresh
+      // Invalidate UPH queries to force refresh
+      queryClient.invalidateQueries({ queryKey: ["/api/uph/table-data"] });
       queryClient.invalidateQueries({ queryKey: ["/api/uph/standardized"] });
-    }
-  });
-  
-  const statusQuery = useQuery({
-    queryKey: ["/api/uph/standardized/job-status"],
-    queryFn: () => apiRequest("GET", "/api/uph/standardized/job-status"),
-    refetchInterval: (data) => {
-      // Poll every 2 seconds while job is running
-      return data?.isRunning ? 2000 : false;
     }
   });
   
   return {
     calculate: calculateMutation.mutate,
-    isCalculating: calculateMutation.isPending || statusQuery.data?.isRunning,
-    status: statusQuery.data,
+    isCalculating: calculateMutation.isPending,
+    status: { isRunning: calculateMutation.isPending },
     error: calculateMutation.error
   };
 }
