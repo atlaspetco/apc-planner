@@ -254,9 +254,29 @@ export async function calculateCoreUph(
       };
     }
 
-    // No statistical outlier filtering - all values accepted
-    // Frontend will handle filtering through menu settings
+    // Apply statistical outlier detection
     let finalValues = group.moUphValues;
+    
+    // Filter extreme outliers (UPH > 1000)
+    finalValues = finalValues.filter(uph => uph <= 1000);
+    
+    if (finalValues.length > 3) {
+      // Calculate mean and standard deviation
+      const mean = finalValues.reduce((sum, uph) => sum + uph, 0) / finalValues.length;
+      const variance = finalValues.reduce((sum, uph) => sum + Math.pow(uph - mean, 2), 0) / finalValues.length;
+      const stdDev = Math.sqrt(variance);
+      
+      // Filter values outside 2 standard deviations
+      const lowerBound = mean - (2 * stdDev);
+      const upperBound = mean + (2 * stdDev);
+      
+      const beforeCount = finalValues.length;
+      finalValues = finalValues.filter(uph => uph >= lowerBound && uph <= upperBound);
+      
+      if (beforeCount !== finalValues.length) {
+        console.log(`📊 Outlier filter: ${group.operatorName} ${group.workCenter} ${group.routing}: ${beforeCount} → ${finalValues.length} values (removed ${beforeCount - finalValues.length} outliers)`);
+      }
+    }
 
     return {
       operatorName: group.operatorName,

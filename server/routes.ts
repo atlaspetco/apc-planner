@@ -846,6 +846,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }));
       
       console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
+      
+      // Add cache headers to prevent stale data
+      res.set({
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      
       res.json({ assignments: enrichedAssignments });
     } catch (error) {
       console.error('Error fetching work order assignments:', error);
@@ -5742,16 +5750,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Get all production orders from live API data
-      const productionOrdersUrl = `${req.protocol}://${req.get('host')}/api/production-orders`;
-      const fulfilResponse = await fetch(productionOrdersUrl);
+      // Get all production orders directly from Fulfil service
+      const { FulfilCurrentService } = await import('./fulfil-current.js');
+      const fulfilService = new FulfilCurrentService();
       
-      if (!fulfilResponse.ok) {
-        console.error("Failed to fetch production orders for smart bulk assignment");
-        return res.status(500).json({ error: "Failed to fetch production orders" });
+      let allProductionOrders = [];
+      try {
+        allProductionOrders = await fulfilService.getCurrentProductionOrders();
+      } catch (error) {
+        console.error("Failed to fetch production orders for smart bulk assignment:", error);
+        // Try local database as fallback
+        try {
+          allProductionOrders = await storage.getProductionOrders();
+        } catch (dbError) {
+          return res.status(500).json({ error: "Failed to fetch production orders" });
+        }
       }
-      
-      const allProductionOrders = await fulfilResponse.json();
       console.log(`Smart bulk assignment: Found ${allProductionOrders.length} total production orders`);
       
       const routingOrders = allProductionOrders.filter((po: any) => po.routing === routing || po.routingName === routing);
