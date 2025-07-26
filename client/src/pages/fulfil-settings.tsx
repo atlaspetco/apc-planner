@@ -48,6 +48,18 @@ export default function FulfilSettings() {
   
   const isConnected = connectionStatus?.connected ?? false;
 
+  // Import status tracking
+  const { data: importStatus } = useQuery<{
+    isImporting: boolean;
+    isCalculating: boolean;
+    currentOperation: string;
+    progress: number;
+    startTime: number | null;
+  }>({
+    queryKey: ["/api/fulfil/import-status"],
+    refetchInterval: 5000, // Check every 5 seconds
+  });
+
   const saveSettingsMutation = useMutation({
     mutationFn: async (settings: any) => {
       const response = await apiRequest("POST", "/api/fulfil/settings", settings);
@@ -182,6 +194,70 @@ export default function FulfilSettings() {
     onError: (error) => {
       console.error('Work Cycles CSV Upload Error:', error);
       // Error toasts are handled in handleFileUpload
+    },
+  });
+
+  const bulkImportMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/fulfil/bulk-import-work-cycles", {});
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Import Successful",
+        description: `Imported ${data.totalImported} work cycles`
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
+    },
+    onError: (error) => {
+      console.error('Bulk import error:', error);
+      let errorMessage = "Failed to import work cycles";
+      
+      if (error instanceof Error) {
+        if (error.message.includes("IMPORT_IN_PROGRESS")) {
+          errorMessage = "Another import is already running. Please wait for it to complete.";
+        } else if (error.message.includes("429")) {
+          errorMessage = "Import already in progress. Please wait for the current import to complete.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      toast({
+        title: "Import Failed", 
+        description: errorMessage,
+        variant: "destructive"
+      });
+    },
+  });
+
+  const reconcileMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/fulfil/reconcile-work-cycles", {});
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Reconciliation Complete",
+        description: `Reconciled ${data.totalReconciled} work orders. Data issues found: ${data.dataIssues}`
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
+    },
+    onError: (error) => {
+      console.error('Reconciliation error:', error);
+      toast({
+        title: "Reconciliation Failed",
+        description: error instanceof Error ? error.message : "Failed to reconcile work cycles",
+        variant: "destructive"
+      });
     },
   });
 
@@ -766,64 +842,41 @@ export default function FulfilSettings() {
             <div className="flex">
               <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 mr-2" />
               <div className="text-sm text-amber-700">
-                <strong>Database Status:</strong> Currently empty (0 work cycles). Use the import button below to fetch all work cycles from Fulfil API.
+                <strong>Database Status:</strong> {syncStats?.totalWorkCycles || 0} work cycles in database.
+                {importStatus?.isImporting && (
+                  <div className="mt-2 text-blue-700">
+                    <strong>Current Operation:</strong> {importStatus.currentOperation}
+                  </div>
+                )}
               </div>
             </div>
           </div>
           
           <Button
-            onClick={() => {
-              fetch('/api/fulfil/bulk-import-work-cycles', { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                  if (data.success) {
-                    toast({ 
-                      title: "Import Successful", 
-                      description: `Imported ${data.totalImported} work cycles` 
-                    });
-                    queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
-                  } else {
-                    throw new Error(data.message || 'Import failed');
-                  }
-                })
-                .catch(err => toast({ 
-                  title: "Error", 
-                  description: err.message || "Failed to import work cycles", 
-                  variant: "destructive" 
-                }));
-            }}
+            onClick={() => bulkImportMutation.mutate()}
+            disabled={bulkImportMutation.isPending || importStatus?.isImporting}
             className="w-full bg-green-600 hover:bg-green-700"
           >
-            <Database className="w-4 h-4 mr-2" />
-            Import All Work Cycles from API
+            {bulkImportMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Database className="w-4 h-4 mr-2" />
+            )}
+            {bulkImportMutation.isPending ? "Importing..." : "Import All Work Cycles from API"}
           </Button>
 
           <Button
-            onClick={() => {
-              fetch('/api/fulfil/reconcile-work-cycles', { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                  if (data.success) {
-                    toast({ 
-                      title: "Reconciliation Complete", 
-                      description: `Reconciled ${data.totalReconciled} work orders. Data issues found: ${data.dataIssues}` 
-                    });
-                    queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
-                  } else {
-                    throw new Error(data.error || 'Reconciliation failed');
-                  }
-                })
-                .catch(err => toast({ 
-                  title: "Error", 
-                  description: err.message || "Failed to reconcile work cycles", 
-                  variant: "destructive" 
-                }));
-            }}
+            onClick={() => reconcileMutation.mutate()}
+            disabled={reconcileMutation.isPending || importStatus?.isImporting}
             variant="outline"
             className="w-full"
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Reconcile Work Cycles with Fulfil API
+            {reconcileMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            {reconcileMutation.isPending ? "Reconciling..." : "Reconcile Work Cycles with Fulfil API"}
           </Button>
           
           <div className="text-xs text-gray-500 space-y-1 pt-2">

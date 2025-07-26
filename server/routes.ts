@@ -3246,6 +3246,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bulk import all work cycles from Fulfil API
   app.post("/api/fulfil/bulk-import-work-cycles", async (req: Request, res: Response) => {
     try {
+      // Check if already importing
+      if (global.importStatus?.isImporting) {
+        return res.status(429).json({
+          success: false,
+          message: "Import already in progress. Please wait for the current import to complete.",
+          error: "IMPORT_IN_PROGRESS"
+        });
+      }
+
       console.log("Starting bulk work cycles import...");
       
       // Set importing status
