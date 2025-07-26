@@ -3343,6 +3343,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Work cycle reconciliation endpoint
+  app.post('/api/fulfil/reconcile-work-cycles', isAuthenticated, async (req, res) => {
+    try {
+      console.log('Starting work cycle reconciliation from Fulfil API');
+      const { rebuildWorkOrderData } = await import('./reconcile-wo-mo.js');
+      const { FulfilAPIService } = await import('./fulfil-api.js');
+      
+      const apiService = new FulfilAPIService();
+      const summaries = await rebuildWorkOrderData(apiService);
+      console.log(`Work cycle reconciliation complete: ${summaries.length} work orders reconciled`);
+      
+      // Show some validation results
+      const mismatches = summaries.filter(s => s.totalQuantity === 0 || s.totalDurationHours === 0);
+      const averageUph = summaries
+        .filter(s => s.uph > 0)
+        .reduce((sum, s) => sum + s.uph, 0) / summaries.filter(s => s.uph > 0).length;
+      
+      res.json({ 
+        success: true, 
+        message: `Reconciled ${summaries.length} work orders`,
+        totalReconciled: summaries.length,
+        dataIssues: mismatches.length,
+        averageUph: averageUph || 0,
+        sample: summaries.slice(0, 5) // Show first 5 for verification
+      });
+    } catch (error) {
+      console.error('Error reconciling work cycles:', error);
+      res.status(500).json({ error: 'Failed to reconcile work cycles' });
+    }
+  });
+
   // Fetch newer work cycles from Fulfil API
   app.post("/api/fulfil/fetch-newer-work-cycles", async (req: Request, res: Response) => {
     try {

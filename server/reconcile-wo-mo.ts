@@ -1,6 +1,7 @@
 import { FulfilAPIService } from './fulfil-api.js';
 import { db } from './db.js';
 import { workOrders } from '../shared/schema.js';
+import { eq } from 'drizzle-orm';
 
 export interface WorkOrderSummary {
   woId: number;
@@ -60,7 +61,7 @@ export async function rebuildWorkOrderData(apiService?: FulfilAPIService): Promi
   for (const s of summaries) {
     await db.update(workOrders)
       .set({ totalCycleDuration: Math.round(s.totalDurationHours * 3600), quantityDone: s.totalQuantity })
-      .where(workOrders.id.eq(s.woId));
+      .where(eq(workOrders.id, s.woId));
   }
 
   return summaries;

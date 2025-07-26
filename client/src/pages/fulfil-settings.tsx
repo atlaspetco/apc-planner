@@ -797,6 +797,34 @@ export default function FulfilSettings() {
             <Database className="w-4 h-4 mr-2" />
             Import All Work Cycles from API
           </Button>
+
+          <Button
+            onClick={() => {
+              fetch('/api/fulfil/reconcile-work-cycles', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                  if (data.success) {
+                    toast({ 
+                      title: "Reconciliation Complete", 
+                      description: `Reconciled ${data.totalReconciled} work orders. Data issues found: ${data.dataIssues}` 
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
+                  } else {
+                    throw new Error(data.error || 'Reconciliation failed');
+                  }
+                })
+                .catch(err => toast({ 
+                  title: "Error", 
+                  description: err.message || "Failed to reconcile work cycles", 
+                  variant: "destructive" 
+                }));
+            }}
+            variant="outline"
+            className="w-full"
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Reconcile Work Cycles with Fulfil API
+          </Button>
           
           <div className="text-xs text-gray-500 space-y-1 pt-2">
             <p>• This will fetch all completed work cycles from Fulfil API</p>
