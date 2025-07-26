@@ -646,7 +646,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       allProductionOrders.forEach(po => {
         if (po.workOrders && Array.isArray(po.workOrders)) {
           po.workOrders.forEach((wo: any) => {
-            // Ensure we're using numeric IDs for consistency
+            // Map by work order number (e.g., 33915) extracted from rec_name "WO33915"
+            // Work orders have rec_name like "WO33915 | Cutting | MO204084"
+            const woMatch = wo.rec_name?.match(/WO(\d+)/);
+            if (woMatch) {
+              const woNumber = parseInt(woMatch[1], 10);
+              workOrderMap.set(woNumber, {
+                workOrder: wo,
+                productionOrder: po
+              });
+            }
+            
+            // Also map by ID in case that's being used
             const woId = typeof wo.id === 'string' ? parseInt(wo.id, 10) : wo.id;
             workOrderMap.set(woId, {
               workOrder: wo,
