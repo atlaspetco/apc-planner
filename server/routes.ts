@@ -1113,6 +1113,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get current UPH data from the database (cached results from core calculator)
       const currentUphData = await db.select().from(uphData);
       
+      console.log(`📊 Loaded ${currentUphData.length} UPH records from database`);
+      
       // Build UPH map from cached data using operator name as key
       const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
       
@@ -1125,6 +1127,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           operator: uph.operatorName || ''
         });
       });
+      
+      // Debug: Show some example keys
+      console.log(`🔑 Sample UPH keys:`, [...uphMap.keys()].slice(0, 5));
 
       // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
       const qualifiedOperators = allOperators
@@ -1192,6 +1197,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Debug logging for filtering
       console.log(`Qualified operators for ${workCenter}/${routing}${operation ? '/' + operation : ''}: ${qualifiedOperators.length} operators`, 
         qualifiedOperators.map(op => `${op.name}(${op.averageUph}UPH)`));
+      
+      // Debug: Log the UPH data keys being checked
+      console.log(`🔍 Searching for exact matches with workCenter="${workCenter}", routing="${routing}"`);
+      console.log(`📊 Available UPH data keys:`, [...uphMap.keys()].filter(key => key.includes(workCenter as string)).slice(0, 10));
       
       // NEW FEATURE: "Next Closest Operator" Estimation
       // If no operators have exact UPH data, find operators with similar data as estimates
