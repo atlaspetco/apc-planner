@@ -646,8 +646,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       allProductionOrders.forEach(po => {
         if (po.workOrders && Array.isArray(po.workOrders)) {
           po.workOrders.forEach((wo: any) => {
-            // Map by work order number (e.g., 33915) extracted from rec_name "WO33915"
-            // Work orders have rec_name like "WO33915 | Cutting | MO204084"
+            // The work order ID is what's stored in assignments table
+            const woId = typeof wo.id === 'string' ? parseInt(wo.id, 10) : wo.id;
+            workOrderMap.set(woId, {
+              workOrder: wo,
+              productionOrder: po
+            });
+            
+            // Also map by work order number extracted from rec_name just in case
             const woMatch = wo.rec_name?.match(/WO(\d+)/);
             if (woMatch) {
               const woNumber = parseInt(woMatch[1], 10);
@@ -656,13 +662,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 productionOrder: po
               });
             }
-            
-            // Also map by ID in case that's being used
-            const woId = typeof wo.id === 'string' ? parseInt(wo.id, 10) : wo.id;
-            workOrderMap.set(woId, {
-              workOrder: wo,
-              productionOrder: po
-            });
           });
         }
       });
@@ -680,11 +679,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           workOrderNumber: sampleWO.rec_name?.match(/WO(\d+)/)?.[1]
         });
         
-        // Show all work order numbers we have
+        // Show all work order IDs and numbers we have
+        const allWorkOrderIds = [];
         const allWorkOrderNumbers = [];
         allProductionOrders.forEach(po => {
           if (po.workOrders) {
             po.workOrders.forEach(wo => {
+              // Collect the actual work order IDs
+              const woId = typeof wo.id === 'string' ? parseInt(wo.id, 10) : wo.id;
+              allWorkOrderIds.push(woId);
+              
+              // Also collect WO numbers from rec_name
               const woMatch = wo.rec_name?.match(/WO(\d+)/);
               if (woMatch) {
                 allWorkOrderNumbers.push(parseInt(woMatch[1], 10));
@@ -692,8 +697,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         });
-        console.log(`All work order numbers in production orders: ${allWorkOrderNumbers.slice(0, 20).join(', ')}...`);
-        console.log(`Total work order count: ${allWorkOrderNumbers.length}`);
+        console.log(`All work order IDs in production orders: ${allWorkOrderIds.slice(0, 20).join(', ')}...`);
+        console.log(`All work order numbers from rec_name: ${allWorkOrderNumbers.slice(0, 20).join(', ')}...`);
+        console.log(`Total work order count: ${allWorkOrderIds.length}`);
+        
+        // Check if assignments match any of these
+        const assignmentIds = assignments.map(a => a.workOrderId);
+        const matchingIds = assignmentIds.filter(id => allWorkOrderIds.includes(id));
+        console.log(`Assignments that match work order IDs: ${matchingIds.length} out of ${assignmentIds.length}`);
       }
       
       // Debug: Check if there's an ID type mismatch
