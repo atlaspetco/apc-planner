@@ -4006,9 +4006,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routing as string
       );
       
-      // TEMPORARY: Return debug info for Courtney Banh case
-      if (detailsResult.__debug) {
-        return res.json(detailsResult);
+      console.log(`🔧 Processing ${detailsResult.moGroupedData?.length || 0} MO groups from core calculator`);
+      
+      // Check if we have actual data to process
+      if (!detailsResult.moGroupedData || detailsResult.moGroupedData.length === 0) {
+        return res.json({
+          cycles: [],
+          summary: {
+            averageUph: 0,
+            totalQuantity: 0,
+            totalDurationHours: 0,
+            totalCycles: 0,
+            moCount: 0,
+            operatorName,
+            workCenter,
+            routing
+          }
+        });
       }
       
       // Convert to the expected format with all fields populated
