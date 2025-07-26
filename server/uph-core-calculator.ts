@@ -375,26 +375,7 @@ export async function getCoreUphDetails(
   const courtneyCheck = allCycles.filter(c => c.work_cycles_operator_rec_name === 'Courtney Banh').length;
   console.log(`🚨🚨 BEFORE FILTER: ${courtneyCheck} Courtney Banh cycles found in allCycles`);
   
-  // CRITICAL: Early return with debug info for Courtney Banh test case
-  if (operatorName === 'Courtney Banh' && workCenter === 'Assembly' && routing === 'Lifetime Pouch') {
-    const courtneyTestCycles = allCycles.filter(c => c.work_cycles_operator_rec_name === 'Courtney Banh');
-    const sewingAssemblyCycles = courtneyTestCycles.filter(c => c.work_cycles_work_center_rec_name === 'Sewing / Assembly');
-    const lifetimePouchCycles = courtneyTestCycles.filter(c => c.work_production_routing_rec_name === 'Lifetime Pouch');
-    
-    return {
-      cycles: [],
-      moGroupedData: [],
-      averageUph: 0,
-      __debug: {
-        totalCyclesQueried: allCycles.length,
-        courtneyBanhTotal: courtneyTestCycles.length,
-        sewingAssemblyCount: sewingAssemblyCycles.length,
-        lifetimePouchCount: lifetimePouchCycles.length,
-        courtneyWorkCenters: [...new Set(courtneyTestCycles.map(c => c.work_cycles_work_center_rec_name))],
-        courtneyRoutings: [...new Set(courtneyTestCycles.map(c => c.work_production_routing_rec_name))].filter(r => r).slice(0, 10)
-      }
-    };
-  }
+
 
   // Filter cycles for this specific combination
   const filteredCycles = allCycles.filter(cycle => {
@@ -437,12 +418,17 @@ export async function getCoreUphDetails(
     return true;
   });
   
+  // Debug log after filtering
+  if (operatorName === 'Courtney Banh' && workCenter === 'Assembly' && routing === 'Lifetime Pouch') {
+    console.log(`🚨 AFTER FILTERING: Found ${filteredCycles.length} matching cycles`);
+  }
+  
   // STEP 1: Calculate total duration for each MO per work center
   // Only sum durations for the specific work center we're calculating
   const moWorkCenterDurations = new Map<string, number>();
   
   filteredCycles.forEach(cycle => {
-    if (!cycle.duration_sec || cycle.duration_sec <= 0) {
+    if (!cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
       return;
     }
     
@@ -454,14 +440,14 @@ export async function getCoreUphDetails(
     // Generate an MO number for cycles without production numbers
     const moNumber = cycle.work_production_number || `CYCLE_${cycle.id}_${cycle.work_cycles_id || 'UNKNOWN'}`;
     const currentTotal = moWorkCenterDurations.get(moNumber) || 0;
-    moWorkCenterDurations.set(moNumber, currentTotal + cycle.duration_sec);
+    moWorkCenterDurations.set(moNumber, currentTotal + cycle.work_cycles_duration);
   });
   
   // STEP 2: Group by MO using TOTAL MO duration
   const moGroupedMap = new Map<string, MoGroupData>();
   
   filteredCycles.forEach(cycle => {
-    if (!cycle.duration_sec || cycle.duration_sec <= 0) {
+    if (!cycle.work_cycles_duration || cycle.work_cycles_duration <= 0) {
       return;
     }
     
