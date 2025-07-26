@@ -54,7 +54,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
 
   // Fetch UPH data for more accurate time calculations
   const { data: uphResults } = useQuery<UphEntry[] | undefined>({
-    queryKey: ["/api/uph/historical"],
+    queryKey: ["/api/uph-data"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
   

@@ -1399,7 +1399,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // UPH Data - Use core calculator for consistent calculations
-  app.get("/api/uph-data", isAuthenticated, async (req, res) => {
+  app.get("/api/uph-data", async (req, res) => {
     try {
       // Use core calculator directly
       const { calculateCoreUph } = await import("./uph-core-calculator.js");
