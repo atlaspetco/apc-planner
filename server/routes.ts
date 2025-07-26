@@ -668,8 +668,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       console.log(`WorkOrderMap populated with ${workOrderMap.size} entries`);
-      console.log(`Sample work order IDs: ${Array.from(workOrderMap.keys()).slice(0, 10).join(', ')}`);
+      console.log(`Sample work order IDs from map: ${Array.from(workOrderMap.keys()).slice(0, 10).join(', ')}`);
       console.log(`Sample assignment work order IDs: ${assignments.slice(0, 10).map(a => a.workOrderId).join(', ')}`);
+      
+      // Debug: Show sample work order data
+      if (allProductionOrders.length > 0 && allProductionOrders[0].workOrders?.length > 0) {
+        const sampleWO = allProductionOrders[0].workOrders[0];
+        console.log(`Sample work order structure:`, {
+          id: sampleWO.id,
+          rec_name: sampleWO.rec_name,
+          workOrderNumber: sampleWO.rec_name?.match(/WO(\d+)/)?.[1]
+        });
+        
+        // Show all work order numbers we have
+        const allWorkOrderNumbers = [];
+        allProductionOrders.forEach(po => {
+          if (po.workOrders) {
+            po.workOrders.forEach(wo => {
+              const woMatch = wo.rec_name?.match(/WO(\d+)/);
+              if (woMatch) {
+                allWorkOrderNumbers.push(parseInt(woMatch[1], 10));
+              }
+            });
+          }
+        });
+        console.log(`All work order numbers in production orders: ${allWorkOrderNumbers.slice(0, 20).join(', ')}...`);
+        console.log(`Total work order count: ${allWorkOrderNumbers.length}`);
+      }
       
       // Debug: Check if there's an ID type mismatch
       if (workOrderMap.size > 0 && assignments.length > 0) {
