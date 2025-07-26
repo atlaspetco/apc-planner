@@ -62,13 +62,11 @@ export async function setupSlackAuth(app: Express) {
     callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`,
     scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar'],
     skipUserProfile: false
-  }, async (accessToken: string, refreshToken: string, params: any, profile: any, done: any) => {
+  }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
     try {
       console.log("=== SLACK STRATEGY SUCCESS ===");
       console.log("Access Token:", accessToken ? "Present" : "Missing");
-      console.log("Refresh Token:", refreshToken ? "Present" : "Missing");
-      console.log("Params:", params);
-      console.log("Profile:", profile);
+      console.log("Profile:", JSON.stringify(profile, null, 2));
       
       if (!profile || !profile.user) {
         console.error("No profile data received");
@@ -115,20 +113,42 @@ export async function setupSlackAuth(app: Express) {
   app.get("/api/auth/slack/callback", (req, res, next) => {
     console.log("=== SLACK CALLBACK HIT ===");
     console.log("Query params:", req.query);
-    console.log("Headers:", req.headers);
+    console.log("Code present:", !!req.query.code);
+    console.log("State present:", !!req.query.state);
+    console.log("Error in query:", req.query.error);
     
-    passport.authenticate("slack", (err: any, user: any, info: any) => {
+    if (req.query.error) {
+      console.error("OAuth error from Slack:", req.query.error);
+      const errorDesc = req.query.error_description || req.query.error;
+      return res.redirect("/?error=" + encodeURIComponent(errorDesc as string));
+    }
+    
+    passport.authenticate("slack", { session: false }, (err: any, user: any, info: any) => {
+      console.log("=== PASSPORT AUTHENTICATE CALLBACK ===");
+      
       if (err) {
-        console.error("Slack authentication error:", err);
+        console.error("Slack authentication error:", err.message || err);
+        console.error("Error type:", err.constructor.name);
         console.error("Error stack:", err.stack);
+        
+        // Check for specific error types
+        if (err.message?.includes("Failed to obtain access token")) {
+          console.error("Token exchange failed. Possible issues:");
+          console.error("1. Client ID/Secret mismatch");
+          console.error("2. Redirect URL mismatch");
+          console.error("3. Authorization code already used");
+        }
+        
         return res.redirect("/?error=" + encodeURIComponent(err.message || "Authentication failed"));
       }
       
       if (!user) {
-        console.error("No user returned from Slack auth. Info:", info);
-        return res.redirect("/?error=" + encodeURIComponent(info?.message || "Authentication failed"));
+        console.error("No user returned from Slack auth");
+        console.error("Info object:", info);
+        return res.redirect("/?error=" + encodeURIComponent(info?.message || "No user data received"));
       }
       
+      console.log("User data received, logging in...");
       req.logIn(user, (loginErr) => {
         if (loginErr) {
           console.error("Login error:", loginErr);
