@@ -55,21 +55,30 @@ export async function setupSlackAuth(app: Express) {
     callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`
   });
 
-  // Use development URL for testing
-  const domain = process.env.REPLIT_DOMAINS?.split(',')[0] || 'apc-planner.replit.app';
-  const callbackURL = `https://${domain}/api/auth/slack/callback`;
+  // Get all domains from environment
+  const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
   
-  console.log("Using callback URL:", callbackURL);
+  // Always include production domain
+  if (!domains.includes('apc-planner.replit.app')) {
+    domains.push('apc-planner.replit.app');
+  }
   
-  // Slack OAuth Strategy with debugging
-  const strategy = new SlackStrategy({
-    clientID: process.env.SLACK_CLIENT_ID!,
-    clientSecret: process.env.SLACK_CLIENT_SECRET!,
-    callbackURL: callbackURL,
-    scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar'],
-    skipUserProfile: false,
-    passReqToCallback: false
-  }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+  console.log("Available domains for callbacks:", domains);
+  
+  // Create a strategy for each domain
+  domains.forEach((domain) => {
+    const callbackURL = `https://${domain}/api/auth/slack/callback`;
+    console.log("Registering callback URL:", callbackURL);
+    
+    // Slack OAuth Strategy
+    const strategy = new SlackStrategy({
+      clientID: process.env.SLACK_CLIENT_ID!,
+      clientSecret: process.env.SLACK_CLIENT_SECRET!,
+      callbackURL: callbackURL,
+      scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar'],
+      skipUserProfile: false,
+      passReqToCallback: false
+    }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
     try {
       console.log("=== SLACK STRATEGY SUCCESS ===");
       console.log("Access Token:", accessToken ? "Present" : "Missing");
@@ -133,7 +142,52 @@ export async function setupSlackAuth(app: Express) {
     });
   };
   
-  passport.use('slack', strategy);
+    // Register strategy with domain-specific name
+    passport.use(`slack:${domain}`, strategy);
+  });
+  
+  // Also register default strategy for production domain
+  const prodDomain = 'apc-planner.replit.app';
+  const prodStrategy = new SlackStrategy({
+    clientID: process.env.SLACK_CLIENT_ID!,
+    clientSecret: process.env.SLACK_CLIENT_SECRET!,
+    callbackURL: `https://${prodDomain}/api/auth/slack/callback`,
+    scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar'],
+    skipUserProfile: false,
+    passReqToCallback: false
+  }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+    try {
+      console.log("=== SLACK STRATEGY SUCCESS (Production) ===");
+      console.log("Access Token:", accessToken ? "Present" : "Missing");
+      console.log("Profile:", JSON.stringify(profile, null, 2));
+      
+      if (!profile || !profile.user) {
+        console.error("No profile data received");
+        return done(new Error("No profile data received"), null);
+      }
+      
+      // Create user object for session
+      const user = {
+        id: profile.user.id,
+        email: profile.user.email,
+        name: profile.user.real_name || profile.user.name,
+        image: profile.user.image_192,
+        team: profile.team.id,
+        teamName: profile.team.name,
+        accessToken
+      };
+      
+      // Store user in database
+      await upsertUser(profile);
+      
+      return done(null, user);
+    } catch (error) {
+      console.error("Error in Slack auth callback:", error);
+      return done(error, null);
+    }
+  });
+  
+  passport.use('slack', prodStrategy);
 
   passport.serializeUser((user: any, done) => {
     done(null, user);
@@ -148,11 +202,17 @@ export async function setupSlackAuth(app: Express) {
     console.log("=== SLACK AUTH INITIATED ===");
     console.log("Host:", req.hostname);
     console.log("Full URL:", req.protocol + '://' + req.get('host') + req.originalUrl);
-    passport.authenticate("slack")(req, res, next);
+    
+    // Use domain-specific strategy if exists, otherwise use default
+    const strategyName = domains.includes(req.hostname) ? `slack:${req.hostname}` : 'slack';
+    console.log("Using strategy:", strategyName);
+    
+    passport.authenticate(strategyName)(req, res, next);
   });
 
   app.get("/api/auth/slack/callback", (req, res, next) => {
     console.log("=== SLACK CALLBACK HIT ===");
+    console.log("Host:", req.hostname);
     console.log("Query params:", req.query);
     console.log("Code present:", !!req.query.code);
     console.log("State present:", !!req.query.state);
@@ -164,7 +224,11 @@ export async function setupSlackAuth(app: Express) {
       return res.redirect("/?error=" + encodeURIComponent(errorDesc as string));
     }
     
-    passport.authenticate("slack", { session: false }, (err: any, user: any, info: any) => {
+    // Use domain-specific strategy if exists, otherwise use default
+    const strategyName = domains.includes(req.hostname) ? `slack:${req.hostname}` : 'slack';
+    console.log("Using strategy for callback:", strategyName);
+    
+    passport.authenticate(strategyName, (err: any, user: any, info: any) => {
       console.log("=== PASSPORT AUTHENTICATE CALLBACK ===");
       
       if (err) {
