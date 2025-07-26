@@ -280,14 +280,18 @@ Return a JSON array of reassignments:
 
 export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
   try {
-    // Step 1: Get all production orders with embedded work orders
-    const response = await fetch('http://localhost:5000/api/production-orders');
+    // Step 1: Get all production orders directly from Fulfil service
+    const { FulfilCurrentService } = await import('./fulfil-current.js');
+    const fulfilService = new FulfilCurrentService();
     
-    if (!response.ok) {
-      throw new Error(`Failed to fetch production orders: ${response.status} ${response.statusText}`);
+    let allProductionOrders = [];
+    try {
+      allProductionOrders = await fulfilService.getCurrentProductionOrders();
+      console.log(`Auto-assign: Fetched ${allProductionOrders.length} production orders from Fulfil`);
+    } catch (error) {
+      console.error("Failed to fetch production orders for auto-assign:", error);
+      throw new Error("Failed to fetch production orders from Fulfil API");
     }
-    
-    const allProductionOrders = await response.json();
     
     const allWorkOrders = [];
     
