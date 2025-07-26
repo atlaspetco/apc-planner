@@ -5749,19 +5749,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Get all production orders directly from Fulfil service
-      const { FulfilCurrentService } = await import('./fulfil-current.js');
-      const fulfilService = new FulfilCurrentService();
-      
+      // Get all production orders from the API endpoint (which has better caching)
       let allProductionOrders = [];
       try {
-        allProductionOrders = await fulfilService.getCurrentProductionOrders();
+        // Use the same endpoint that the dashboard uses (which is working)
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const response = await fetch(`${baseUrl}/api/production-orders`, {
+          headers: {
+            'Cookie': req.headers.cookie || ''
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          allProductionOrders = data.productionOrders || [];
+          console.log(`Smart bulk assignment: Fetched ${allProductionOrders.length} production orders from API`);
+        } else {
+          throw new Error(`API returned ${response.status}`);
+        }
       } catch (error) {
         console.error("Failed to fetch production orders for smart bulk assignment:", error);
-        // Try local database as fallback
+        // Try direct Fulfil service as fallback
         try {
-          allProductionOrders = await storage.getProductionOrders();
-        } catch (dbError) {
+          const { FulfilCurrentService } = await import('./fulfil-current.js');
+          const fulfilService = new FulfilCurrentService();
+          allProductionOrders = await fulfilService.getCurrentProductionOrders();
+        } catch (fulfilError) {
+          console.error("Direct Fulfil service also failed:", fulfilError);
           return res.status(500).json({ error: "Failed to fetch production orders" });
         }
       }
