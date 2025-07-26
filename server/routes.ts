@@ -5762,7 +5762,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (response.ok) {
           const data = await response.json();
-          allProductionOrders = data.productionOrders || [];
+          // The API returns the array directly, not wrapped in an object
+          allProductionOrders = Array.isArray(data) ? data : [];
           console.log(`Smart bulk assignment: Fetched ${allProductionOrders.length} production orders from API`);
         } else {
           throw new Error(`API returned ${response.status}`);
