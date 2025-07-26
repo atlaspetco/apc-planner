@@ -23,18 +23,19 @@ interface OperatorData {
 }
 
 interface UphEntry {
-  id: number;
-  operatorId: number;
-  operator: string; // The operator name
+  id?: number;
+  operatorId?: number;
+  operatorName: string; // The operator name
   workCenter: string;
-  routing: string; // The product routing
-  operation: string;
-  unitsPerHour: number; // The UPH value
-  observations: number;
-  totalQuantity: number;
-  totalHours: number;
-  dataSource: string;
-  lastCalculated: string;
+  productRouting: string; // The product routing
+  operation?: string;
+  uph: number; // The UPH value
+  observationCount?: number;
+  observations?: number;
+  totalQuantity?: number;
+  totalHours?: number;
+  dataSource?: string;
+  lastCalculated?: string;
 }
 
 interface OperatorWorkloadSummaryProps {
