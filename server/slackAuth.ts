@@ -55,8 +55,9 @@ export async function setupSlackAuth(app: Express) {
     callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`
   });
 
-  // Use the production URL that matches the Slack app configuration
-  const callbackURL = `https://apc-planner.replit.app/api/auth/slack/callback`;
+  // Use development URL for testing
+  const domain = process.env.REPLIT_DOMAINS?.split(',')[0] || 'apc-planner.replit.app';
+  const callbackURL = `https://${domain}/api/auth/slack/callback`;
   
   console.log("Using callback URL:", callbackURL);
   
