@@ -3797,16 +3797,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current UPH table data for dashboard display
+  // Get current UPH table data for dashboard display - USE CACHED DATABASE VALUES FOR SPEED
   app.get("/api/uph/table-data", async (req, res) => {
     try {
-      // Use core calculator directly for consistent results with details page
-      const { calculateCoreUph } = await import("./uph-core-calculator.js");
-      const uphResults = await calculateCoreUph({ bypassDateFilter: true });
+      console.log('📊 UPH Table Data: Loading from cached database values...');
+      
+      // Get pre-calculated UPH data from database - FAST!
+      const { uphData } = await import("../shared/schema.js");
+      const uphResults = await db.select().from(uphData);
+      
+      console.log(`📊 Loaded ${uphResults.length} cached UPH calculations from database`);
+      
+      // Transform database records to expected core calculator format
+      const transformedResults = uphResults.map(record => ({
+        operatorName: record.operator_name,
+        workCenter: record.work_center,
+        routing: record.product_routing,
+        unitsPerHour: record.uph,
+        observations: record.observation_count
+      }));
       
       const allOperators = await db.select().from(operators);
       
-      if (uphResults.length === 0) {
+      if (transformedResults.length === 0) {
         return res.json({
           routings: [],
           summary: {
@@ -3823,15 +3836,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create operator name mapping
       const operatorMap = new Map(allOperators.map(op => [op.id, op.name]));
       
-      // Get unique work centers and routings
+      // Get unique work centers and routings from cached data
       const allWorkCenters = ['Cutting', 'Assembly', 'Packaging']; // Standard consolidated work centers
-      const allRoutings = Array.from(new Set(uphResults.map(row => row.routing))).sort();
+      const allRoutings = Array.from(new Set(transformedResults.map(row => row.routing))).sort();
       
       // Group UPH data by routing, then by operator
       const routingData = new Map<string, Map<number, Record<string, { uph: number; observations: number }>>>();
       
-      // Build the routing data structure from core calculator results
-      uphResults.forEach(row => {
+      // Build the routing data structure from cached database results
+      transformedResults.forEach(row => {
         // Core calculator returns: operatorName, workCenter, routing, unitsPerHour, observations
         const routing = row.routing;
         const operatorName = row.operatorName;
@@ -3932,11 +3945,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
       
-      // Calculate summary statistics from core calculator results
+      // Calculate summary statistics from cached database results
       const workCenterUph = new Map<string, number[]>();
       const uniqueOperators = new Set<string>();
       
-      uphResults.forEach(row => {
+      transformedResults.forEach(row => {
         uniqueOperators.add(row.operatorName);
         const existing = workCenterUph.get(row.workCenter) || [];
         existing.push(row.unitsPerHour);
@@ -3954,7 +3967,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         routings: routings.sort((a, b) => a.routingName.localeCompare(b.routingName)),
         summary: {
           totalOperators: uniqueOperators.size,
-          totalCombinations: uphResults.length,
+          totalCombinations: transformedResults.length,
           totalRoutings: allRoutings.length,
           avgUphByCeter: avgUphByCenter
         },
