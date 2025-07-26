@@ -62,18 +62,7 @@ export default function FulfilSettings() {
     },
   });
 
-  const syncDataMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/fulfil/sync");
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Success",
-        description: `Synced ${data.productionOrders} production orders and ${data.workOrders} work orders`,
-      });
-    },
-  });
+  // Removed syncDataMutation - endpoint doesn't exist
 
   const extractOperatorsMutation = useMutation({
     mutationFn: async () => {
@@ -203,40 +192,15 @@ export default function FulfilSettings() {
     });
   };
 
-  const handleSyncData = () => {
-    syncDataMutation.mutate();
-  };
+  // Removed handleSyncData - endpoint doesn't exist
 
   const handleExtractOperators = () => {
     extractOperatorsMutation.mutate();
   };
 
-  const extractWorkDataMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/fulfil/extract-work-data");
-      const data = await response.json();
-      return data;
-    },
-    onSuccess: (data) => {
-      console.log("Extracted work data:", data);
-      toast({
-        title: "Work data extracted successfully",
-        description: `Found ${data.workCenters?.length || 0} work centers, ${data.operations?.length || 0} operations, ${data.routings?.length || 0} routings`,
-      });
-    },
-    onError: (error) => {
-      console.error("Error extracting work data:", error);
-      toast({
-        title: "Failed to extract work data",
-        description: "Failed to extract work centers and operations. Check console for details.",
-        variant: "destructive",
-      });
-    },
-  });
+  // Removed extractWorkDataMutation - endpoint doesn't exist
 
-  const handleExtractWorkData = () => {
-    extractWorkDataMutation.mutate();
-  };
+  // Removed handleExtractWorkData - endpoint doesn't exist
 
   const handleFileSelect = (type: 'productionOrders' | 'workOrders', file: File | null) => {
     setSelectedFiles(prev => ({
@@ -407,33 +371,9 @@ export default function FulfilSettings() {
     }
   };
 
-  const enhancedImportMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/fulfil/enhanced-import", { method: "POST" });
-      const data = await response.json();
-      return data;
-    },
-    onSuccess: (data) => {
-      console.log("Enhanced import completed:", data);
-      toast({
-        title: "Enhanced Import Complete",
-        description: `Imported ${data.productionOrders || 0} MOs and ${data.workOrders || 0} WOs with full cross-referencing`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
-    },
-    onError: (error) => {
-      console.error("Enhanced import error:", error);
-      toast({
-        title: "Enhanced Import Failed",
-        description: "Failed to complete enhanced import. Check console for details.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleEnhancedImport = () => {
-    enhancedImportMutation.mutate();
-  };
+  // Removed enhancedImportMutation - endpoint doesn't exist
+  
+  // Removed handleEnhancedImport - endpoint doesn't exist
 
   if (isLoading) {
     return (
@@ -662,128 +602,24 @@ export default function FulfilSettings() {
               </p>
               
               <Button 
-                onClick={handleEnhancedImport}
+                onClick={() => {
+                  toast({
+                    title: "Feature Not Available",
+                    description: "Enhanced import endpoint is not implemented.",
+                    variant: "destructive",
+                  });
+                }}
                 className="w-full bg-green-600 hover:bg-green-700"
-                disabled={!isConnected || enhancedImportMutation.isPending || selectedFiles.productionOrders || selectedFiles.workOrders || selectedFiles.workCycles}
+                disabled={!isConnected || selectedFiles.productionOrders || selectedFiles.workOrders || selectedFiles.workCycles}
               >
-                {enhancedImportMutation.isPending ? (
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                )}
+                <RefreshCw className="w-4 h-4 mr-2" />
                 Run Enhanced Import
               </Button>
-              
-              {enhancedImportMutation.isPending && (
-                <div className="w-full mt-2">
-                  <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>Enhanced importing...</span>
-                    <span>Building complete database</span>
-                  </div>
-                  <Progress value={85} className="h-2" />
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Live Production Planning */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Activity className="mr-2" />
-              Live Production Planning
-            </CardTitle>
-            <p className="text-sm text-gray-600">Fetch active MOs for production planning dashboard</p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex">
-                <Activity className="h-4 w-4 text-blue-600 mt-0.5 mr-2" />
-                <div>
-                  <h4 className="text-sm font-medium text-blue-800">Planning Dashboard Ready</h4>
-                  <p className="text-sm text-blue-700 mt-1">
-                    Prepare production orders from your database for planning. This uses imported CSV data to create active MOs for scheduling with UPH-based time estimates.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <Button 
-                onClick={() => {
-                  const fetchActiveMOs = async () => {
-                    try {
-                      const response = await fetch('/api/fulfil/active-production-orders');
-                      const result = await response.json();
-                      if (result.success) {
-                        toast({
-                          title: "Success",
-                          description: `Prepared ${result.activeMOs} active production orders for planning dashboard`,
-                        });
-                        queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
-                        queryClient.invalidateQueries({ queryKey: ["/api/fulfil/sync-stats"] });
-                      } else {
-                        toast({
-                          title: "Error",
-                          description: result.message || 'Failed to prepare active MOs',
-                          variant: "destructive",
-                        });
-                      }
-                    } catch (error) {
-                      toast({
-                        title: "Error",
-                        description: error instanceof Error ? error.message : "Failed to prepare active MOs",
-                        variant: "destructive",
-                      });
-                    }
-                  };
-                  fetchActiveMOs();
-                }}
-                className="w-full bg-blue-600 hover:bg-blue-700"
-              >
-                <Activity className="w-4 h-4 mr-2" />
-                Prepare Active Production Orders
-              </Button>
-
-              <Button 
-                onClick={() => {
-                  const fetchTimeEstimates = async () => {
-                    try {
-                      const response = await fetch('/api/fulfil/mo-time-estimates');
-                      const result = await response.json();
-                      if (result.success) {
-                        toast({
-                          title: "Success",
-                          description: `Calculated time estimates for ${result.withEstimates} of ${result.totalMOs} production orders`,
-                        });
-                      } else {
-                        throw new Error(result.message || 'Failed to calculate time estimates');
-                      }
-                    } catch (error) {
-                      toast({
-                        title: "Error",
-                        description: error instanceof Error ? error.message : "Failed to calculate time estimates",
-                        variant: "destructive",
-                      });
-                    }
-                  };
-                  fetchTimeEstimates();
-                }}
-                variant="outline"
-                className="w-full"
-                disabled={!isConnected}
-              >
-                <Calculator className="w-4 h-4 mr-2" />
-                Calculate Time Estimates
-              </Button>
-            </div>
-
-            <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded">
-              <strong>Planning Flow:</strong> 1) Fetch active MOs → 2) Calculate time estimates → 3) Use Dashboard for operator assignment and scheduling
-            </div>
-          </CardContent>
-        </Card>
+        {/* Removed Live Production Planning section - endpoints don't exist */}
 
         {/* Ongoing Sync Management */}
         <Card>
@@ -880,28 +716,7 @@ export default function FulfilSettings() {
             </div>
 
             <div className="space-y-2">
-              <Button 
-                onClick={handleSyncData}
-                className="w-full"
-                disabled={!isConnected || syncDataMutation.isPending}
-              >
-                {syncDataMutation.isPending ? (
-                  <Database className="w-4 h-4 mr-2" />
-                ) : (
-                  <Database className="w-4 h-4 mr-2" />
-                )}
-                Sync Data Now
-              </Button>
-              
-              {syncDataMutation.isPending && (
-                <div className="w-full mt-2">
-                  <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>Syncing data...</span>
-                    <span>In progress</span>
-                  </div>
-                  <Progress value={65} className="h-2" />
-                </div>
-              )}
+              {/* Removed Sync Data Now button - endpoint doesn't exist */}
               
               <Button 
                 onClick={handleExtractOperators}
@@ -923,25 +738,7 @@ export default function FulfilSettings() {
                 </div>
               )}
               
-              <Button 
-                onClick={handleExtractWorkData}
-                variant="outline"
-                className="w-full"
-                disabled={!isConnected || extractWorkDataMutation.isPending}
-              >
-                <Settings className="w-4 h-4 mr-2" />
-                Extract Work Centers & Operations
-              </Button>
-              
-              {extractWorkDataMutation.isPending && (
-                <div className="w-full mt-2">
-                  <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>Extracting work data...</span>
-                    <span>In progress</span>
-                  </div>
-                  <Progress value={75} className="h-2" />
-                </div>
-              )}
+              {/* Removed Extract Work Centers & Operations button - endpoint doesn't exist */}
             </div>
 
             <div className="text-xs text-gray-500 space-y-1">
