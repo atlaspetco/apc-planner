@@ -55,13 +55,19 @@ export async function setupSlackAuth(app: Express) {
     callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`
   });
 
+  // Use the production URL that matches the Slack app configuration
+  const callbackURL = `https://apc-planner.replit.app/api/auth/slack/callback`;
+  
+  console.log("Using callback URL:", callbackURL);
+  
   // Slack OAuth Strategy
   passport.use('slack', new SlackStrategy({
     clientID: process.env.SLACK_CLIENT_ID!,
     clientSecret: process.env.SLACK_CLIENT_SECRET!,
-    callbackURL: `https://apc-planner.replit.app/api/auth/slack/callback`,
+    callbackURL: callbackURL,
     scope: ['identity.basic', 'identity.email', 'identity.team', 'identity.avatar'],
-    skipUserProfile: false
+    skipUserProfile: false,
+    passReqToCallback: false
   }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
     try {
       console.log("=== SLACK STRATEGY SUCCESS ===");
