@@ -658,6 +658,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`WorkOrderMap populated with ${workOrderMap.size} entries`);
       console.log(`Sample work order IDs: ${Array.from(workOrderMap.keys()).slice(0, 10).join(', ')}`);
+      console.log(`Sample assignment work order IDs: ${assignments.slice(0, 10).map(a => a.workOrderId).join(', ')}`);
+      
+      // Debug: Check if there's an ID type mismatch
+      if (workOrderMap.size > 0 && assignments.length > 0) {
+        const firstMapKey = Array.from(workOrderMap.keys())[0];
+        const firstAssignmentId = assignments[0].workOrderId;
+        console.log(`WorkOrderMap key type: ${typeof firstMapKey}, value: ${firstMapKey}`);
+        console.log(`Assignment ID type: ${typeof firstAssignmentId}, value: ${firstAssignmentId}`);
+        
+        // Check if any assignment IDs exist in the map
+        const matchingAssignments = assignments.filter(a => workOrderMap.has(a.workOrderId));
+        console.log(`Found ${matchingAssignments.length} assignments with matching work orders in the map`);
+      }
       
       // Enrich assignments with production order data
       const enrichedAssignments = await Promise.all(assignments.map(async (assignment) => {
