@@ -93,9 +93,11 @@ export function OperatorWorkloadDetailModal({
       const moData = assignmentsByMO.get(assignment.moNumber || 'Unknown');
       const moQuantity = moData?.moQuantity || assignment.quantity || 0;
       
-      // Calculate estimated hours based on UPH data if available
-      let estimatedHours = 0; // No fallback
-      if (uphResults && moQuantity > 0) {
+      // Use pre-calculated estimated hours from assignment if available
+      let estimatedHours = assignment.estimatedHours || 0;
+      
+      // If no pre-calculated hours, try to calculate from UPH data
+      if (estimatedHours === 0 && uphResults && moQuantity > 0) {
         const uphEntry = uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
@@ -104,9 +106,9 @@ export function OperatorWorkloadDetailModal({
         
         if (uphEntry && uphEntry.uph > 0) {
           estimatedHours = moQuantity / uphEntry.uph;
-          console.log(`Modal: Found UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH`);
+          console.log(`Modal: Calculated hours from UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH`);
         } else {
-          console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}`);
+          console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}, using pre-calculated hours`);
         }
       }
       

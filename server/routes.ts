@@ -841,7 +841,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           quantity: proportionalQuantity,
           productionOrderId: productionOrder.id,
           productName: productionOrder.productName || 'Unknown',
-          moNumber: productionOrder.moNumber || 'Unknown'
+          moNumber: productionOrder.moNumber || 'Unknown',
+          estimatedHours: assignment.estimatedHours || 0 // Include estimated hours from assignment
         };
       }));
       
