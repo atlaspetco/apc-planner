@@ -125,15 +125,17 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
       }
       if (operator) {
         operator.totalAssignments++;
-        // Store complete assignment data for the modal
-        operator.assignments.push({
+        // Store assignment data for later hours calculation
+        const assignmentData = {
           ...assignment,
           // Ensure all required fields are present
           productRouting: assignment.productRouting || assignment.routing || 'Unknown',
           workCenter: assignment.workCenter || 'Unknown',
           quantity: assignment.quantity || 0,
-          productionOrderId: assignment.productionOrderId || null
-        });
+          productionOrderId: assignment.productionOrderId || null,
+          estimatedHours: 0 // Will be calculated below
+        };
+        operator.assignments.push(assignmentData);
         
         // Aggregate by product routing
         const routing = assignment.productRouting || assignment.routing || 'Unknown';
@@ -234,6 +236,8 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           
           productData.estimatedHours += estimatedHours;
           operator.totalEstimatedHours += estimatedHours;
+          // Store the calculated hours in the assignment data
+          assignmentData.estimatedHours = estimatedHours;
         } else {
           // Debug why work order is finished
           console.log(`Skipping finished work order for ${operator.operatorName}: ${routing}`);
