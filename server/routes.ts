@@ -3810,12 +3810,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Transform database records to expected core calculator format
       const transformedResults = uphResults.map(record => ({
-        operatorName: record.operator_name,
-        workCenter: record.work_center,
-        routing: record.product_routing,
+        operatorName: record.operatorName,
+        workCenter: record.workCenter,
+        routing: record.productRouting,
         unitsPerHour: record.uph,
-        observations: record.observation_count
-      }));
+        observations: record.observationCount
+      })).filter(record => record.operatorName && record.workCenter && record.routing); // Filter out undefined records
       
       const allOperators = await db.select().from(operators);
       
