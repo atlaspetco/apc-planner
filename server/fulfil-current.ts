@@ -42,231 +42,124 @@ export class FulfilCurrentService {
         return [];
       }
 
-      // Step 1: Get ALL production orders using pagination
-      let allOrders: any[] = [];
-      let page = 1;
-      let hasMore = true;
-      
-      // Use correct production.order schema with search_read
-      const endpoint = `${this.baseUrl}/api/v2/model/production.order/search_read`;
-      console.log(`Fetching production orders using correct production.order schema...`);
+      // Fetch work orders directly - they contain all the data we need
+      const endpoint = `${this.baseUrl}/api/v2/model/production.work/search_read`;
+      console.log(`Fetching work orders directly...`);
       
       const response = await fetch(endpoint, {
         method: 'PUT',
         headers: this.headers,
         body: JSON.stringify({
           "filters": [
-            ['state', 'in', ['assigned', 'running', 'done', 'finished']]
+            ['state', 'in', ['request', 'draft', 'waiting', 'assigned', 'running']]
           ],
           "fields": [
-            'id', 'rec_name', 'number', 'state', 'quantity', 'quantity_done', 'quantity_remaining',
-            'planned_date', 'priority', 'product.rec_name', 'product.code', 'product_code',
-            'routing.rec_name', 'bom.rec_name'
+            'id',
+            'production',
+            'production.rec_name',
+            'production.state',
+            'production.quantity',
+            'production.planned_date',
+            'production.product.rec_name',
+            'production.product.code',
+            'production.routing.rec_name',
+            'rec_name',
+            'work_center.rec_name',
+            'operation.rec_name', 
+            'quantity_done',
+            'state',
+            'employee.rec_name',
+            'employee.id'
           ]
         }),
         signal: AbortSignal.timeout(15000)
       });
 
       if (response.status !== 200) {
-        console.error(`Production schema fetch failed with status ${response.status}`);
+        console.error(`Work order fetch failed with status ${response.status}`);
         const errorText = await response.text();
         console.error(`Error details: ${errorText}`);
         return [];
       }
 
-      allOrders = await response.json();
-      if (!Array.isArray(allOrders)) {
-        console.error("Unexpected response format:", allOrders);
+      const workOrders = await response.json();
+      if (!Array.isArray(workOrders)) {
+        console.error("Unexpected response format:", workOrders);
         return [];
       }
 
-      console.log(`Found total of ${allOrders.length} assigned production orders using production.order schema`);
-      const orders = allOrders;
+      console.log(`Found ${workOrders.length} work orders`);
       
-      // orders array is already populated from pagination above
-      if (!Array.isArray(orders)) {
-        console.error("Unexpected response format:", orders);
-        return [];
-      }
+      // Group work orders by production order
+      const productionOrdersMap = new Map<number, any>();
       
-      // Step 2: Fetch work orders for all production orders  
-      console.log("Fetching work orders for all production orders...");
-      let allWorkOrders: any[] = [];
-      
-      try {
-        const woEndpoint = `${this.baseUrl}/api/v2/model/production.work/search_read`;
+      for (const wo of workOrders) {
+        const productionId = wo['production'];
+        if (!productionId) continue;
         
-        // Process ALL production orders now that individual calls work
-        console.log(`Fetching work orders for all ${orders.length} production orders`);
-        console.log('First 5 MO IDs:', orders.slice(0, 5).map(o => ({ id: o.id, rec_name: o.rec_name })));
-        
-        // Log MO195423 details if found
-        const mo195423 = orders.find(o => o.rec_name === 'MO195423');
-        if (mo195423) {
-          console.log('Found MO195423 in orders:', {
-            id: mo195423.id,
-            rec_name: mo195423.rec_name,
-            state: mo195423.state
+        // Get or create production order entry
+        if (!productionOrdersMap.has(productionId)) {
+          productionOrdersMap.set(productionId, {
+            id: productionId,
+            moNumber: wo['production.rec_name'] || `MO${productionId}`,
+            rec_name: wo['production.rec_name'] || `MO${productionId}`,
+            state: wo['production.state'] || 'unknown',
+            quantity: wo['production.quantity'] || 0,
+            planned_date: wo['production.planned_date'],
+            productName: wo['production.product.rec_name'] || 'Unknown Product',
+            product_code: wo['production.product.code'] || '',
+            routing: wo['production.routing.rec_name'] || 'Unknown',
+            routingName: wo['production.routing.rec_name'] || 'Unknown',
+            workOrders: []
           });
         }
         
-        for (const order of orders) {
-          try {
-            // Add special logging for MO195423
-            if (order.rec_name === 'MO195423' || order.id === 190554) {
-              console.log(`DEBUG: Fetching work orders for MO195423 (ID: ${order.id}, rec_name: ${order.rec_name})`);
-            }
-            
-            const woResponse = await fetch(woEndpoint, {
-              method: 'PUT',
-              headers: this.headers,
-              body: JSON.stringify({
-                "filters": [
-                  ['production', '=', order.id]
-                ],
-                "fields": [
-                  'id',
-                  'production',
-                  'rec_name',
-                  'work_center.rec_name',
-                  'operation.rec_name', 
-                  'quantity_done',
-                  'state',
-                  'employee.rec_name',
-                  'employee.id',
-                  'operator.rec_name',
-                  'operator.id'
-                ]
-              }),
-              signal: AbortSignal.timeout(10000)
-            });
-
-            if (woResponse.status === 200) {
-              const orderWorkOrders = await woResponse.json();
-              
-              // Special debug for MO195423
-              if (order.rec_name === 'MO195423' || order.id === 190554) {
-                console.log(`DEBUG MO195423 work orders (${orderWorkOrders.length} found):`, orderWorkOrders.map(wo => ({
-                  id: wo.id,
-                  state: wo.state,
-                  rec_name: wo.rec_name,
-                  employee: wo['employee.rec_name'],
-                  operator: wo['operator.rec_name']
-                })));
-              }
-              
-              allWorkOrders = allWorkOrders.concat(orderWorkOrders);
-              console.log(`${order.rec_name}: Found ${orderWorkOrders.length} work orders`);
-            } else {
-              const errorText = await woResponse.text();
-              console.log(`${order.rec_name} failed: ${woResponse.status} - ${errorText}`);
-            }
-            
-            // Small delay between requests
-            await new Promise(resolve => setTimeout(resolve, 200));
-          } catch (error) {
-            console.log(`Error fetching work orders for ${order.rec_name}:`, error);
-          }
-        }
-
-        console.log(`Successfully fetched ${allWorkOrders.length} work orders total from all production orders`);
-        // Log sample work orders to verify
-        if (allWorkOrders.length > 0) {
-          console.log("Sample work orders:", allWorkOrders.slice(0, 3).map(wo => ({
-            id: wo.id,
-            state: wo.state,
-            rec_name: wo.rec_name,
-            production: wo.production
-          })));
-        } else {
-          console.log("WARNING: No work orders fetched from API!");
-        }
-      } catch (error) {
-        console.log("Failed to fetch work orders:", error);
-      }
-
-      // Step 3: Group work orders by production order and create enriched data
-      const productionOrdersMap = new Map();
-      
-      // Process production orders with authentic schema fields
-      orders.forEach((po: any) => {
-        const productName = po['product.rec_name'] || po.product?.rec_name || po.rec_name;
-        const productCode = po['product.code'] || po.product_code || po.product?.code || `PROD-${po.id}`;
-        const routingName = po['routing.rec_name'] || po.routing?.rec_name || 'Standard';
-        const bomName = po['bom.rec_name'] || po.bom?.rec_name || routingName;
+        // Map work center names to our 3 categories
+        const originalWorkCenter = wo['work_center.rec_name'] || 'Unknown';
+        let mappedWorkCenter = originalWorkCenter;
         
-        productionOrdersMap.set(po.id, {
-          id: po.id.toString(),
-          rec_name: po.rec_name || po.number || `MO${po.id}`,
-          state: po.state || 'assigned',
-          quantity: po.quantity || 1,
-          quantity_done: po.quantity_done || 0,
-          quantity_remaining: po.quantity_remaining || po.quantity || 1,
-          product_name: productName,
-          product_code: productCode,
-          routing_name: routingName,
-          bom_name: bomName,
-          priority: po.priority || 'Normal',
-          planned_date: po.planned_date || new Date().toISOString().split('T')[0],
-          work_orders: []
+        if (originalWorkCenter.includes('Sewing') || originalWorkCenter.includes('Rope')) {
+          mappedWorkCenter = 'Assembly';
+        } else if (originalWorkCenter.includes('Cutting')) {
+          mappedWorkCenter = 'Cutting';
+        } else if (originalWorkCenter.includes('Packaging')) {
+          mappedWorkCenter = 'Packaging';
+        }
+        
+        // Add work order to production order
+        const productionOrder = productionOrdersMap.get(productionId);
+        productionOrder.workOrders.push({
+          id: wo.id.toString(),
+          workCenter: mappedWorkCenter,
+          originalWorkCenter: originalWorkCenter,
+          operation: wo['operation.rec_name'] || 'Unknown',
+          state: wo.state,
+          quantity: wo.quantity_done || 0,
+          employee_name: wo['employee.rec_name'] || wo['operator.rec_name'] || null,
+          employee_id: wo['employee.id'] || wo['operator.id'] || null
         });
-      });
+      }
       
-      // Then add work orders to their respective production orders
-      allWorkOrders.forEach((wo: any) => {
-        const productionId = wo.production;
-        if (productionOrdersMap.has(productionId)) {
-          // Map Fulfil work center names to expected frontend names
-          const rawWorkCenter = wo['work_center.rec_name'] || 'Unknown';
-          const rawOperation = wo['operation.rec_name'] || wo.rec_name || 'Unknown Operation';
-          let mappedWorkCenter = 'Unknown';
-          
-          // Enhanced mapping logic based on both work center and operation
-          if (rawWorkCenter.toLowerCase().includes('cutting') || 
-              rawOperation.toLowerCase().includes('cutting') ||
-              rawOperation.toLowerCase().includes('cut')) {
-            mappedWorkCenter = 'Cutting';
-          } else if (rawWorkCenter.toLowerCase().includes('sewing') || 
-                    rawWorkCenter.toLowerCase().includes('assembly') ||
-                    rawOperation.toLowerCase().includes('sewing') ||
-                    rawOperation.toLowerCase().includes('assembly')) {
-            mappedWorkCenter = 'Assembly';
-          } else if (rawWorkCenter.toLowerCase().includes('packaging') ||
-                    rawOperation.toLowerCase().includes('packaging') ||
-                    rawOperation.toLowerCase().includes('grommet') ||
-                    rawOperation.toLowerCase().includes('snap')) {
-            mappedWorkCenter = 'Packaging';
-          }
-          
-          // Debug logging for F3-SNAP products
-          const po = productionOrdersMap.get(productionId);
-          if (po && po.product_code && po.product_code.includes('F3-SNAP')) {
-            console.log(`F3-SNAP Work Order Debug - ${po.rec_name}: WO${wo.id} | Work Center: "${rawWorkCenter}" -> "${mappedWorkCenter}" | Operation: "${rawOperation}"`);
-          }
-          
-          productionOrdersMap.get(productionId).work_orders.push({
-            id: wo.id.toString(),
-            work_center: mappedWorkCenter,
-            operation: rawOperation,
-            quantity_done: wo.quantity_done || 0,
-            state: wo.state || 'pending',
-            employee_name: wo['employee.rec_name'] || null,
-            employee_id: wo['employee.id'] || null
-          });
-        }
-      });
-
-      const enrichedOrders = Array.from(productionOrdersMap.values());
+      // Convert to production orders
+      const productionOrders: CurrentProductionOrder[] = Array.from(productionOrdersMap.values()).map(po => ({
+        id: po.id,
+        moNumber: po.moNumber,
+        productName: po.productName,
+        quantity: po.quantity,
+        status: po.state,
+        state: po.state,
+        routing: po.routing,
+        routingName: po.routingName,
+        dueDate: po.planned_date || new Date().toISOString(),
+        fulfilId: po.id,
+        rec_name: po.rec_name,
+        planned_date: po.planned_date,
+        product_code: po.product_code,
+        workOrders: po.workOrders
+      }));
       
-      // Log results
-      enrichedOrders.forEach(po => {
-        if (po.work_orders.length > 0) {
-          console.log(`MO ${po.rec_name} (ID: ${po.id}) has ${po.work_orders.length} work orders`);
-        }
-      });
-
-      console.log(`Returning ${enrichedOrders.length} production orders with work orders`);
-      return enrichedOrders;
+      console.log(`Converted to ${productionOrders.length} production orders from work orders`);
+      return productionOrders;
 
     } catch (error) {
       console.error("Error fetching current production orders:", error);
