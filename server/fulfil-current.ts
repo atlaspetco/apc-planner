@@ -67,9 +67,7 @@ export class FulfilCurrentService {
             'work_center.rec_name',
             'operation.rec_name', 
             'quantity_done',
-            'state',
-            'employee.rec_name',
-            'employee.id'
+            'state'
           ]
         }),
         signal: AbortSignal.timeout(15000)
@@ -135,8 +133,8 @@ export class FulfilCurrentService {
           operation: wo['operation.rec_name'] || 'Unknown',
           state: wo.state,
           quantity: wo.quantity_done || 0,
-          employee_name: wo['employee.rec_name'] || wo['operator.rec_name'] || null,
-          employee_id: wo['employee.id'] || wo['operator.id'] || null
+          employee_name: null,
+          employee_id: null
         });
       }
       
