@@ -93,11 +93,9 @@ export function OperatorWorkloadDetailModal({
       const moData = assignmentsByMO.get(assignment.moNumber || 'Unknown');
       const moQuantity = moData?.moQuantity || assignment.quantity || 0;
       
-      // Use pre-calculated estimated hours from assignment if available
-      let estimatedHours = assignment.estimatedHours || 0;
-      
-      // If no pre-calculated hours, try to calculate from UPH data
-      if (estimatedHours === 0 && uphResults && moQuantity > 0) {
+      // Calculate estimated hours from UPH data
+      let estimatedHours = 0;
+      if (uphResults && moQuantity > 0) {
         const uphEntry = uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
@@ -108,7 +106,20 @@ export function OperatorWorkloadDetailModal({
           estimatedHours = moQuantity / uphEntry.uph;
           console.log(`Modal: Calculated hours from UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH`);
         } else {
-          console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}, using pre-calculated hours`);
+          // Try to find same operator and work center (any routing)
+          const workCenterMatches = uphResults.filter((entry: any) => 
+            entry.operatorName === operator.operatorName &&
+            entry.workCenter === assignment.workCenter
+          );
+          
+          if (workCenterMatches.length > 0) {
+            // Use average UPH for this work center
+            const avgUph = workCenterMatches.reduce((sum: number, e: any) => sum + (e.uph || 0), 0) / workCenterMatches.length;
+            estimatedHours = moQuantity / avgUph;
+            console.log(`Modal: Using average UPH for ${operator.operatorName} - ${assignment.workCenter}: ${avgUph.toFixed(2)} (from ${workCenterMatches.length} other routings)`);
+          } else {
+            console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}, using 0 hours`);
+          }
         }
       }
       
