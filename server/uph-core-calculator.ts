@@ -163,14 +163,23 @@ export async function calculateCoreUph(
                    
     const groupKey = `${cycle.work_cycles_operator_rec_name}|${consolidatedWC}|${routing}|${productionId}`;
     
+    // Get the correct MO number from production orders table
+    const actualMoNumber = moQuantityMap.has(`MO${productionId}`) ? `MO${productionId}` : 
+                          allProductionOrders.find(po => po.id === cycle.work_production_id)?.mo_number || 
+                          `CYCLE_${cycle.work_cycles_id}`;
+    
+    // Get the correct quantity - prefer production orders table over work cycles
+    const actualQuantity = allProductionOrders.find(po => po.id === cycle.work_production_id)?.quantity || 
+                          cycle.work_production_quantity;
+    
     if (!moGroupedData.has(groupKey)) {
       moGroupedData.set(groupKey, {
         operatorName: cycle.work_cycles_operator_rec_name,
         workCenter: consolidatedWC,
         routing,
-        moNumber: productionId, // Use production ID as MO identifier
+        moNumber: actualMoNumber, // Use actual MO number from production orders
         totalDurationSeconds: 0,
-        moQuantity: cycle.work_production_quantity,
+        moQuantity: actualQuantity, // Use actual quantity from production orders
         cycleCount: 0,
         productionId: cycle.work_production_id
       });
