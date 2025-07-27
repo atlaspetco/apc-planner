@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, Clock, TrendingUp, Expand } from 'lucide-react';
+import { Users, Clock, TrendingUp, Expand, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OperatorWorkloadDetailModal } from './operator-workload-detail-modal';
 
@@ -41,9 +41,10 @@ interface UphEntry {
 interface OperatorWorkloadSummaryProps {
   assignments: Map<number, any>;
   assignmentsData?: any;
+  isCalculating?: boolean;
 }
 
-export function OperatorWorkloadSummary({ assignments, assignmentsData }: OperatorWorkloadSummaryProps) {
+export function OperatorWorkloadSummary({ assignments, assignmentsData, isCalculating = false }: OperatorWorkloadSummaryProps) {
   const [selectedOperator, setSelectedOperator] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   // Fetch operator data for workload calculations
@@ -301,7 +302,17 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
 
   return (
     <>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 relative">
+        {/* Loading overlay */}
+        {isCalculating && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center rounded-lg z-10">
+            <div className="flex items-center space-x-3 text-blue-600">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <span className="text-lg font-medium">Calculating operator workload...</span>
+            </div>
+          </div>
+        )}
+        
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Users className="text-blue-600 w-5 h-5" />

@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCaching, setIsCaching] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
 
   const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
@@ -66,6 +67,16 @@ export default function Dashboard() {
       console.error('Cache hours error:', error);
     } finally {
       setIsCaching(false);
+    }
+  };
+
+  const handleAssignmentChange = async () => {
+    setIsAssigning(true);
+    try {
+      await refetchAssignments();
+    } finally {
+      // Add a small delay to show the spinner since calculations happen quickly
+      setTimeout(() => setIsAssigning(false), 1000);
     }
   };
 
@@ -223,13 +234,17 @@ export default function Dashboard() {
       {/* Main content */}
       <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Operator Workload Summary */}
-        <OperatorWorkloadSummary assignments={assignmentsMap} assignmentsData={assignmentsData} />
+        <OperatorWorkloadSummary 
+          assignments={assignmentsMap} 
+          assignmentsData={assignmentsData} 
+          isCalculating={isCaching || isLoadingAssignments || isAssigning}
+        />
         
         <ProductionGrid 
           productionOrders={filteredOrders}
           isLoading={isLoadingPOs}
           assignments={assignmentsMap}
-          onAssignmentChange={refetchAssignments}
+          onAssignmentChange={handleAssignmentChange}
         />
       </div>
 
