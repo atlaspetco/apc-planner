@@ -105,7 +105,8 @@ export function OperatorDropdown({
         const params = new URLSearchParams({
           workCenter,
           ...(routing && { routing }),
-          ...(operation && { operation })
+          ...(operation && { operation }),
+          _t: Date.now().toString() // Cache busting
         });
         
         const response = await fetch(`/api/operators/qualified?${params}`);
