@@ -112,6 +112,12 @@ export function OperatorDropdown({
         const data = await response.json();
         
         if (response.ok && data.operators) {
+          console.log(`OPERATOR DROPDOWN DATA for ${workCenter}/${routing}:`, data.operators.map(op => ({
+            name: op.name,
+            isEstimated: op.isEstimated,
+            hasPerformanceData: op.hasPerformanceData,
+            averageUph: op.averageUph
+          })));
           setQualifiedOperators(data.operators);
         } else {
           // Don't log errors for normal operation, just handle gracefully
@@ -265,6 +271,7 @@ export function OperatorDropdown({
                                 <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
                                   {operatorDetails.isEstimated ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
                                 </span>
+                                {console.log(`DEBUG ${operatorDetails.name}: isEstimated=${operatorDetails.isEstimated}, hasPerformanceData=${operatorDetails.hasPerformanceData}`)}
                               </div>
                             ) : (
                               <Badge variant="outline" className="text-xs px-1 py-0">
