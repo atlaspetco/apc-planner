@@ -230,16 +230,9 @@ export async function calculateCoreUph(
   });
   
   // Apply statistical outlier detection before calculating averages
-  const results = Array.from(operatorGroupedData.values()).map(group => {
+  const rawResults = Array.from(operatorGroupedData.values()).map(group => {
     if (group.moUphValues.length === 0) {
-      return {
-        operatorName: group.operatorName,
-        workCenter: group.workCenter,
-        routing: group.routing,
-        unitsPerHour: 0,
-        observations: 0,
-        moUphValues: []
-      };
+      return null; // Return null for empty groups
     }
 
     // Apply statistical outlier detection
@@ -266,6 +259,12 @@ export async function calculateCoreUph(
       }
     }
 
+    // MINIMUM OBSERVATION THRESHOLD: Require at least 10 observations for reliable UPH
+    if (group.totalObservations < 10) {
+      console.log(`📊 Minimum observation filter: ${group.operatorName} ${group.workCenter} ${group.routing}: ${group.totalObservations} observations < 10 minimum - EXCLUDED`);
+      return null; // Mark for removal
+    }
+
     return {
       operatorName: group.operatorName,
       workCenter: group.workCenter,
@@ -278,7 +277,10 @@ export async function calculateCoreUph(
     };
   });
   
-  console.log(`=== CORE UPH CALCULATOR COMPLETE: ${results.length} results ===`);
+  // Filter out null results (those that didn't meet minimum observation threshold)
+  const results = rawResults.filter((result): result is UphCalculationResult => result !== null);
+  
+  console.log(`=== CORE UPH CALCULATOR COMPLETE: ${results.length} results (filtered from ${rawResults.length} raw) ===`);
   
   // Save corrected UPH results to database
   const { db: database } = await import("./db.js");
