@@ -45,7 +45,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleCacheHours = async () => {
+  const handleCalculateHours = async () => {
     setIsCaching(true);
     try {
       const response = await fetch('/api/assignments/cache-hours', {
@@ -166,15 +166,16 @@ export default function Dashboard() {
                 <span>Refresh</span>
               </Button>
               
-              {/* Cache Hours button */}
+              {/* Calculate workload hours button */}
               <Button 
                 variant="outline"
-                onClick={handleCacheHours}
+                onClick={handleCalculateHours}
                 disabled={isCaching}
                 className="flex items-center space-x-2"
+                title="Calculate expected hours for all assigned work orders"
               >
                 <Clock className={`w-4 h-4 ${isCaching ? 'animate-spin' : ''}`} />
-                <span>Cache Hours</span>
+                <span>Calculate Hours</span>
               </Button>
               
               {/* Auto-assign controls */}
