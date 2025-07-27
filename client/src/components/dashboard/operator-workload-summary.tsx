@@ -154,7 +154,13 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData, isCalcul
         }
         
         const productData = operator.productSummary.get(key);
-        productData.totalQuantity += assignment.quantity || 0;
+        const assignmentQuantity = assignment.quantity || 0;
+        productData.totalQuantity += assignmentQuantity;
+        
+        // Debug quantity aggregation for Evan Crosby
+        if (operator.operatorName === "Evan Crosby" && routing === "Lifetime Collar" && workCenter === "Cutting") {
+          console.log(`📦 Quantity aggregation for Evan (${routing}/${workCenter}): Adding ${assignmentQuantity}, total now ${productData.totalQuantity}`);
+        }
         
         // Only include hours for non-finished work orders
         // Debug workOrderState for Evan
