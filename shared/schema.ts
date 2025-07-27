@@ -124,7 +124,8 @@ export const workOrderAssignments = pgTable("work_order_assignments", {
   isActive: boolean("is_active").default(true),
   isAutoAssigned: boolean("is_auto_assigned").default(false), // Track if assignment was made by AI
   autoAssignReason: text("auto_assign_reason"), // AI's reasoning for the assignment
-  autoAssignConfidence: real("auto_assign_confidence") // Confidence score (0-1)
+  autoAssignConfidence: real("auto_assign_confidence"), // Confidence score (0-1)
+  estimatedHours: real("estimated_hours") // Cached calculated hours for performance
 });
 
 export const uphData = pgTable("uph_data", {

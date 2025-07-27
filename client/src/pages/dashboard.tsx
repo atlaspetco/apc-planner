@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw, Factory, AlertCircle } from "lucide-react";
+import { RefreshCw, Factory, AlertCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MultiSelect } from "@/components/ui/multiselect";
@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [routingFilter, setRoutingFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCaching, setIsCaching] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
 
   const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
@@ -41,6 +42,30 @@ export default function Dashboard() {
       console.log('Dashboard refresh completed - updated with waiting, assigned, and running MOs');
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleCacheHours = async () => {
+    setIsCaching(true);
+    try {
+      const response = await fetch('/api/assignments/cache-hours', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Cache hours completed:', result);
+        // Refresh assignments to get updated cached hours
+        await refetchAssignments();
+      } else {
+        console.error('Cache hours failed:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Cache hours error:', error);
+    } finally {
+      setIsCaching(false);
     }
   };
 
@@ -139,6 +164,17 @@ export default function Dashboard() {
               >
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span>Refresh</span>
+              </Button>
+              
+              {/* Cache Hours button */}
+              <Button 
+                variant="outline"
+                onClick={handleCacheHours}
+                disabled={isCaching}
+                className="flex items-center space-x-2"
+              >
+                <Clock className={`w-4 h-4 ${isCaching ? 'animate-spin' : ''}`} />
+                <span>Cache Hours</span>
               </Button>
               
               {/* Auto-assign controls */}

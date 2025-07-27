@@ -93,9 +93,18 @@ export function OperatorWorkloadDetailModal({
       const moData = assignmentsByMO.get(assignment.moNumber || 'Unknown');
       const moQuantity = moData?.moQuantity || assignment.quantity || 0;
       
-      // Calculate estimated hours from UPH data
+      // Calculate estimated hours - prioritize cached values first
       let estimatedHours = 0;
-      if (uphResults && moQuantity > 0) {
+      let sourceType = "none";
+      
+      // 1. First priority: Use cached estimatedHours from assignment if available
+      if (assignment.estimatedHours && assignment.estimatedHours > 0) {
+        estimatedHours = assignment.estimatedHours;
+        sourceType = "cached";
+        console.log(`Modal: Using cached hours for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${estimatedHours.toFixed(2)}h (cached)`);
+      }
+      // 2. Second priority: Calculate from UPH data if quantity available and no cached value
+      else if (uphResults && moQuantity > 0) {
         const uphEntry = uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&
@@ -104,7 +113,8 @@ export function OperatorWorkloadDetailModal({
         
         if (uphEntry && uphEntry.uph > 0) {
           estimatedHours = moQuantity / uphEntry.uph;
-          console.log(`Modal: Calculated hours from UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH`);
+          sourceType = "uph_exact";
+          console.log(`Modal: Calculated hours from UPH for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${uphEntry.uph} UPH = ${estimatedHours.toFixed(2)}h`);
         } else {
           // Try to find same operator and work center (any routing)
           const workCenterMatches = uphResults.filter((entry: any) => 
@@ -116,7 +126,8 @@ export function OperatorWorkloadDetailModal({
             // Use average UPH for this work center
             const avgUph = workCenterMatches.reduce((sum: number, e: any) => sum + (e.uph || 0), 0) / workCenterMatches.length;
             estimatedHours = moQuantity / avgUph;
-            console.log(`Modal: Using average UPH for ${operator.operatorName} - ${assignment.workCenter}: ${avgUph.toFixed(2)} (from ${workCenterMatches.length} other routings)`);
+            sourceType = "uph_average";
+            console.log(`Modal: Using average UPH for ${operator.operatorName} - ${assignment.workCenter}: ${avgUph.toFixed(2)} (from ${workCenterMatches.length} other routings) = ${estimatedHours.toFixed(2)}h`);
           } else {
             console.log(`Modal: No UPH data for ${operator.operatorName} - ${assignment.workCenter}/${routing}, using 0 hours`);
           }

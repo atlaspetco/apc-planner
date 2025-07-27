@@ -585,7 +585,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isAutoAssigned: workOrderAssignments.isAutoAssigned,
           autoAssignReason: workOrderAssignments.autoAssignReason,
           autoAssignConfidence: workOrderAssignments.autoAssignConfidence,
-          assignedBy: workOrderAssignments.assignedBy
+          assignedBy: workOrderAssignments.assignedBy,
+          estimatedHours: workOrderAssignments.estimatedHours
         })
         .from(workOrderAssignments)
         .leftJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
@@ -974,30 +975,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`Created new assignment for work order ${workOrderId} to operator ${operator.name}`);
         }
         
-        // Calculate estimated hours based on UPH data if available
-        let estimatedHours = null;
-        try {
-          // Get operator name for UPH lookup
-          const operatorName = operator.name;
-          const workCenter = foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter;
-          const routing = parentProductionOrder.routing || parentProductionOrder.routingName;
-          const quantity = req.body.quantity || parentProductionOrder.quantity;
+        // Calculate and cache estimated hours for this assignment
+        const { uphData } = await import("../shared/schema.js");
+        const uphResults = await db.select().from(uphData);
+        const uphEntry = uphResults.find(entry => 
+          entry.operatorName === operator.name &&
+          entry.workCenter === foundWorkOrder.operation?.split(' - ')[0] &&
+          entry.productRouting === parentProductionOrder.routing
+        );
+        
+        let estimatedHours = 0;
+        if (uphEntry && uphEntry.uph > 0 && foundWorkOrder.quantity > 0) {
+          estimatedHours = foundWorkOrder.quantity / uphEntry.uph;
           
-          // Query the uph_data table
-          const uphResult = await db.execute(sql`
-            SELECT uph, observation_count
-            FROM uph_data
-            WHERE operator_name = ${operatorName}
-              AND work_center = ${workCenter}
-              AND product_routing = ${routing}
-            LIMIT 1
-          `);
+          // Update the assignment with calculated hours
+          await db
+            .update(workOrderAssignments)
+            .set({ estimatedHours })
+            .where(eq(workOrderAssignments.workOrderId, workOrderId));
           
-          if (uphResult.rows.length > 0 && uphResult.rows[0].uph > 0) {
-            estimatedHours = quantity / uphResult.rows[0].uph;
-          }
-        } catch (uphError) {
-          console.log("Could not calculate estimated hours:", uphError);
+          console.log(`✅ Cached ${estimatedHours.toFixed(2)}h for ${operator.name} - ${foundWorkOrder.operation}/${parentProductionOrder.routing}`);
         }
 
         // Return success with assignment details in expected format
@@ -6270,5 +6267,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   const httpServer = createServer(app);
+  // Cache estimated hours for all assignments endpoint
+  app.post('/api/assignments/cache-hours', isAuthenticated, async (req, res) => {
+    try {
+      console.log('🔄 Starting to cache estimated hours for all assignments...');
+
+      const { db } = await import("./db.js");
+      const { workOrderAssignments, operators, activeWorkOrders, uphData } = await import("../shared/schema.js");
+      const { eq } = await import("drizzle-orm");
+
+      // Get all active assignments with work order details
+      const assignmentsWithDetails = await db
+        .select({
+          assignmentId: workOrderAssignments.id,
+          workOrderId: workOrderAssignments.workOrderId,
+          operatorId: workOrderAssignments.operatorId,
+          estimatedHours: workOrderAssignments.estimatedHours,
+          operatorName: operators.name,
+          workCenter: activeWorkOrders.workCenter,
+          operation: activeWorkOrders.operation,
+          routing: activeWorkOrders.routing,
+          quantity: activeWorkOrders.quantity,
+        })
+        .from(workOrderAssignments)
+        .innerJoin(operators, eq(workOrderAssignments.operatorId, operators.id))
+        .innerJoin(activeWorkOrders, eq(workOrderAssignments.workOrderId, activeWorkOrders.id))
+        .where(eq(workOrderAssignments.isActive, true));
+
+      // Get UPH data for calculations
+      const uphResults = await db.select().from(uphData);
+      const uphMap = new Map();
+      uphResults.forEach((entry) => {
+        const key = `${entry.operatorName}-${entry.workCenter}-${entry.productRouting}`;
+        uphMap.set(key, entry);
+      });
+
+      let updatedCount = 0;
+      let skippedCount = 0;
+
+      for (const assignment of assignmentsWithDetails) {
+        // Skip if already has cached hours
+        if (assignment.estimatedHours && assignment.estimatedHours > 0) {
+          skippedCount++;
+          continue;
+        }
+
+        let calculatedHours = 0;
+        const key = `${assignment.operatorName}-${assignment.workCenter}-${assignment.routing}`;
+        const uphEntry = uphMap.get(key);
+
+        if (uphEntry && uphEntry.uph > 0 && assignment.quantity > 0) {
+          calculatedHours = assignment.quantity / uphEntry.uph;
+          console.log(`✅ Found exact UPH match: ${assignment.operatorName} - ${assignment.workCenter}/${assignment.routing} = ${calculatedHours.toFixed(2)}h`);
+        } else {
+          // Try work center average as fallback
+          const workCenterMatches = uphResults.filter(entry => 
+            entry.operatorName === assignment.operatorName &&
+            entry.workCenter === assignment.workCenter
+          );
+          
+          if (workCenterMatches.length > 0) {
+            const avgUph = workCenterMatches.reduce((sum, e) => sum + (e.uph || 0), 0) / workCenterMatches.length;
+            if (avgUph > 0) {
+              calculatedHours = assignment.quantity / avgUph;
+              console.log(`🔄 Used work center average: ${assignment.operatorName} - ${assignment.workCenter} avg = ${calculatedHours.toFixed(2)}h`);
+            }
+          }
+        }
+
+        if (calculatedHours > 0) {
+          await db
+            .update(workOrderAssignments)
+            .set({ estimatedHours: calculatedHours })
+            .where(eq(workOrderAssignments.id, assignment.assignmentId));
+          
+          updatedCount++;
+        }
+      }
+
+      console.log(`🎯 Caching complete: ${updatedCount} updated, ${skippedCount} skipped`);
+      res.json({ 
+        success: true, 
+        message: `Cached estimated hours for ${updatedCount} assignments`,
+        updated: updatedCount,
+        skipped: skippedCount
+      });
+    } catch (error) {
+      console.error('Error caching estimated hours:', error);
+      res.status(500).json({ message: 'Failed to cache estimated hours' });
+    }
+  });
+
   return httpServer;
 }
