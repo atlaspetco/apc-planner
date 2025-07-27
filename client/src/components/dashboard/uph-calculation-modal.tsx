@@ -150,7 +150,7 @@ export function UphCalculationModal({
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           <a 
-                            href={`https://apc.fulfil.io/v2/erp/model/production/${cycle.productionId}`}
+                            href={`https://apc.fulfil.io/client/#/model/production/${cycle.productionId}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-800 underline"
