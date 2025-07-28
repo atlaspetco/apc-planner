@@ -1547,8 +1547,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         operators: allOperatorsForResponse,
-        totalQualified: qualifiedOperators.length,
-        totalEstimated: estimatedOperators.length,
+        totalQualified: allOperatorsForResponse.filter(op => !op.isEstimated).length,
+        totalEstimated: allOperatorsForResponse.filter(op => op.isEstimated).length,
         filters: { workCenter, routing, operation }
       });
     } catch (error) {
