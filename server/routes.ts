@@ -1148,9 +1148,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allOperators = await db.select().from(operators).where(eq(operators.isActive, true));
       
       // Get current UPH data from the database (cached results from core calculator)
-      const currentUphData = await db.select().from(uphData);
+      let currentUphData = await db.select().from(uphData);
+      
+      // Fix race condition: If UPH data is incomplete (likely being recalculated), wait and retry
+      if (currentUphData.length < 300) {
+        console.log(`⚠️ UPH data incomplete (${currentUphData.length} records), waiting 500ms and retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        currentUphData = await db.select().from(uphData);
+        console.log(`🔄 Retry result: ${currentUphData.length} UPH records`);
+      }
       
       console.log(`📊 Loaded ${currentUphData.length} UPH records from database`);
+      
+      // Debug logging for LLA routing timing issues
+      if (routing === 'LLA') {
+        console.log(`🔍 LLA Backend Debug: workCenter=${workCenter}, uphRecords=${currentUphData.length}, timestamp=${new Date().toISOString()}`);
+      }
       
       // Build UPH map from cached data using operator name as key
       const uphMap = new Map<string, { uph: number; observations: number; operator: string }>();
