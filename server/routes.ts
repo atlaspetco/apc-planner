@@ -933,46 +933,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const fulfil = new FulfilCurrentService();
         
         // Get current production orders from Fulfil
-        const workOrderData = await fulfil.getCurrentWorkOrders();
-        console.log(`Got ${workOrderData.length} work orders from Fulfil`);
-        
-        // Convert work orders to production orders
-        const productionOrdersMap = new Map();
-        
-        workOrderData.forEach(wo => {
-          const moId = wo.production?.id;
-          const moNumber = wo.production?.rec_name || 'Unknown';
-          
-          if (!moId) return;
-          
-          if (!productionOrdersMap.has(moId)) {
-            productionOrdersMap.set(moId, {
-              id: moId,
-              moNumber: moNumber,
-              productName: wo.production?.product?.rec_name || 'Unknown Product',
-              quantity: wo.production?.quantity || 0,
-              status: wo.production?.state || 'Unknown',
-              routing: wo.production?.routing?.name || 'Unknown',
-              routingName: wo.production?.routing?.name || 'Unknown',
-              dueDate: wo.production?.planned_date || new Date().toISOString(),
-              fulfilId: moId,
-              rec_name: moNumber,
-              workOrders: []
-            });
-          }
-          
-          // Add work order to the production order
-          productionOrdersMap.get(moId).workOrders.push({
-            id: wo.id,
-            workCenter: wo.work_center?.name || 'Unknown',
-            operation: wo.operation?.name || 'Unknown Operation',
-            state: wo.state,
-            employee: wo.employee
-          });
-        });
-        
-        const productionOrders = Array.from(productionOrdersMap.values());
-        console.log(`Converted to ${productionOrders.length} production orders`);
+        const productionOrders = await fulfil.getCurrentProductionOrders();
+        console.log(`Got ${productionOrders.length} production orders from Fulfil`);
         
         if (productionOrders.length === 0) {
           console.log("No production orders found");
