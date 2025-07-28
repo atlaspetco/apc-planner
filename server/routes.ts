@@ -1150,12 +1150,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get current UPH data from the database (cached results from core calculator)
       let currentUphData = await db.select().from(uphData);
       
-      // Fix race condition: If UPH data is incomplete (likely being recalculated), wait and retry
-      if (currentUphData.length < 300) {
-        console.log(`⚠️ UPH data incomplete (${currentUphData.length} records), waiting 500ms and retrying...`);
+      // Fix race condition: If UPH data is incomplete (likely being recalculated), wait and retry until complete
+      let retryCount = 0;
+      const maxRetries = 10; // Maximum 10 retries (5 seconds total wait)
+      while (currentUphData.length < 300 && retryCount < maxRetries) {
+        console.log(`⚠️ UPH data incomplete (${currentUphData.length} records), waiting 500ms and retrying... (attempt ${retryCount + 1}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, 500));
         currentUphData = await db.select().from(uphData);
-        console.log(`🔄 Retry result: ${currentUphData.length} UPH records`);
+        retryCount++;
+        console.log(`🔄 Retry ${retryCount} result: ${currentUphData.length} UPH records`);
+      }
+      
+      // Log final result
+      if (currentUphData.length >= 300) {
+        console.log(`✅ UPH data complete: ${currentUphData.length} records after ${retryCount} retries`);
+      } else {
+        console.log(`⚠️ UPH data still incomplete after ${maxRetries} retries: ${currentUphData.length} records`);
       }
       
       console.log(`📊 Loaded ${currentUphData.length} UPH records from database`);
