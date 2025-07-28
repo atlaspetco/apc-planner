@@ -136,6 +136,21 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
 
   const groupedOrders = groupOrdersByRouting(productionOrders);
 
+  // Debug logging for Lifetime Slip Collar
+  const lifetimeSlipCollarOrders = productionOrders.filter(po => po.routing === 'Lifetime Slip Collar');
+  if (lifetimeSlipCollarOrders.length > 0) {
+    console.log('🔍 Lifetime Slip Collar Debug:', {
+      orderCount: lifetimeSlipCollarOrders.length,
+      orders: lifetimeSlipCollarOrders.map(o => ({
+        moNumber: o.moNumber,
+        routing: o.routing,
+        workOrderCount: o.workOrders?.length || 0,
+        assemblyWorkOrders: o.workOrders?.filter(wo => wo.workCenter === 'Assembly')?.length || 0,
+        allWorkOrders: o.workOrders?.map(wo => ({ id: wo.id, workCenter: wo.workCenter, operation: wo.operation })) || []
+      }))
+    });
+  }
+
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div className="overflow-x-auto">
@@ -209,6 +224,18 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
                       
+                      // Debug logging for Lifetime Slip Collar Assembly specifically
+                      if (routing === 'Lifetime Slip Collar' && workCenter === 'Assembly') {
+                        console.log(`🔍 Lifetime Slip Collar Assembly workCenter filtering:`, {
+                          routing,
+                          workCenter,
+                          allWorkOrdersByCenter: Object.keys(allWorkOrdersByCenter),
+                          workOrdersInCenter: workOrdersInCenter?.length || 0,
+                          workOrderIds: workOrdersInCenter?.map(wo => wo.id) || [],
+                          willRenderDropdown: workOrdersInCenter && workOrdersInCenter.length > 0
+                        });
+                      }
+                      
                       // Calculate total quantity across MOs that have operations in this work center
                       const totalUniqueQuantity = orders.reduce((sum, order) => {
                         const hasWO = order.workOrders?.some(wo => wo.workCenter === workCenter);
@@ -240,6 +267,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 workOrderStates={workOrdersInCenter.map(wo => wo.state)}
                                 finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
                                 assignments={assignments}
+                                debug={routing === 'Lifetime Slip Collar' && workCenter === 'Assembly'}
                                 onAssign={async (operatorId) => {
                                   try {
                                     // Use smart bulk assignment endpoint

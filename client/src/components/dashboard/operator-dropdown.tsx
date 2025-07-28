@@ -30,6 +30,7 @@ interface OperatorDropdownProps {
   assignments?: Map<number, any>; // For bulk assignment display
   onAssignmentChange?: (workOrderId: number, operatorId: number | null, estimatedHours: number | null) => void;
   onAssign?: (operatorId: number) => void; // For bulk assignment
+  debug?: boolean; // For debugging specific combinations
   className?: string;
 }
 
@@ -56,6 +57,7 @@ export function OperatorDropdown({
   assignments,
   onAssignmentChange,
   onAssign,
+  debug,
   className
 }: OperatorDropdownProps) {
   
@@ -90,6 +92,17 @@ export function OperatorDropdown({
       workOrderIds,
       assignedOperators: uniqueOperators,
       displayText: uniqueOperators.length === 1 ? `${uniqueOperators[0]} assigned` : `${uniqueOperators.length} operators assigned`
+    });
+  }
+  
+  // Specific debug for Lifetime Slip Collar Assembly
+  if (debug && routing === 'Lifetime Slip Collar' && workCenter === 'Assembly') {
+    console.log(`🔍 DEBUG Lifetime Slip Collar Assembly:`, {
+      workOrderIds,
+      assignments: assignments ? Array.from(assignments.entries()) : 'no assignments map',
+      bulkAssignmentInfo,
+      uniqueOperators,
+      hasAssignments: uniqueOperators.length > 0
     });
   }
   
