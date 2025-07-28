@@ -1200,56 +1200,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`📋 Available routings for ${workCenter}:`, workCenterRoutings.slice(0, 10));
       }
 
-      // Filter operators based on work center settings AND UPH data availability
+      // STRICT VALIDATION: Only operators with actual UPH performance data for the specific work center + routing combination
       const qualifiedOperators = allOperators
         .filter(op => {
-          // First check if operator has required work center enabled
-          if (!op.workCenters || !Array.isArray(op.workCenters)) {
-            return false;
-          }
-          
-          let hasRequiredWorkCenter = false;
-          if (workCenter === 'Assembly') {
-            // Assembly includes Sewing and Rope
-            hasRequiredWorkCenter = op.workCenters.includes('Assembly') || 
-                                   op.workCenters.includes('Sewing') || 
-                                   op.workCenters.includes('Rope');
-          } else {
-            hasRequiredWorkCenter = op.workCenters.includes(workCenter as string);
-          }
-          
-          if (!hasRequiredWorkCenter) {
-            return false;
-          }
-
-          // Check if operator has the specific routing enabled
-          if (!op.routings || !Array.isArray(op.routings)) {
-            return false;
-          }
-          
           // Handle product name mapping for variants
           let effectiveRouting = routing as string || '';
           if (routing === 'Lifetime Air Harness') {
             effectiveRouting = 'Lifetime Harness';
           }
           
-          // Check if operator has this routing enabled
-          const hasRequiredRouting = op.routings.includes(effectiveRouting);
-          if (!hasRequiredRouting) {
-            console.log(`❌ ${op.name} does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
-            return false;
-          }
-
-          // Support Assembly grouping which aggregates Sewing and Rope
+          // STRICT: Check if operator has ACTUAL UPH data for this exact work center + routing combination
           const workCenterKeys = workCenter === 'Assembly'
             ? ['Assembly', 'Sewing', 'Rope']
             : [workCenter as string];
 
-          const hasUphData = workCenterKeys.some(wc =>
+          const hasExactUphData = workCenterKeys.some(wc =>
             uphMap.has(`${op.name}-${wc}-${effectiveRouting}`)
           );
 
-          return hasUphData;
+          if (!hasExactUphData) {
+            console.log(`❌ ${op.name} has no UPH performance data for ${workCenter}/${effectiveRouting}`);
+            return false;
+          }
+
+          console.log(`✅ ${op.name} qualified with actual UPH performance data for ${workCenter}/${effectiveRouting}`);
+          return true;
         })
         .map(op => {
           let effectiveRouting = routing as string || '';
@@ -1300,260 +1275,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`🔍 Searching for exact matches with workCenter="${workCenter}", routing="${routing}"`);
       console.log(`📊 Available UPH data keys:`, [...uphMap.keys()].filter(key => key.includes(workCenter as string)).slice(0, 10));
       
-      // IMPROVED LOGIC: Include operators with any work center experience
-      // This reduces the number of "estimated" operators shown
-      const workCenterExperiencedOperators = allOperators
-        .filter(op => {
-          // Skip if already in qualified list
-          if (qualifiedOperators.some(q => q.id === op.id)) return false;
-          
-          // First check if operator has required work center enabled
-          if (!op.workCenters || !Array.isArray(op.workCenters)) {
-            return false;
-          }
-          
-          let hasRequiredWorkCenter = false;
-          if (workCenter === 'Assembly') {
-            // Assembly includes Sewing and Rope
-            hasRequiredWorkCenter = op.workCenters.includes('Assembly') || 
-                                   op.workCenters.includes('Sewing') || 
-                                   op.workCenters.includes('Rope');
-          } else {
-            hasRequiredWorkCenter = op.workCenters.includes(workCenter as string);
-          }
-          
-          if (!hasRequiredWorkCenter) {
-            return false;
-          }
-          
-          // Check if operator has the specific routing enabled
-          if (!op.routings || !Array.isArray(op.routings)) {
-            return false;
-          }
-          
-          // Handle product name mapping for variants
-          let effectiveRouting = routing as string || '';
-          if (routing === 'Lifetime Air Harness') {
-            effectiveRouting = 'Lifetime Harness';
-          }
-          
-          // Check if operator has this routing enabled
-          const hasRequiredRouting = op.routings.includes(effectiveRouting);
-          if (!hasRequiredRouting) {
-            console.log(`❌ ${op.name} (work center experience) does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
-            return false;
-          }
-          
-          // Check if operator has ANY UPH data for this work center
-          const hasWorkCenterData = currentUphData.some(uph => 
-            uph.operatorName === op.name && uph.workCenter === workCenter
-          );
-          
-          return hasWorkCenterData;
-        })
-        .map(op => {
-          // Get their best UPH data for this work center
-          const workCenterUphData = currentUphData
-            .filter(uph => uph.operatorName === op.name && uph.workCenter === workCenter)
-            .sort((a, b) => (b.observationCount || 0) - (a.observationCount || 0) || b.uph - a.uph);
-          
-          const bestData = workCenterUphData[0];
-          
-          return {
-            id: op.id,
-            name: op.name,
-            isActive: op.isActive,
-            averageUph: bestData.uph,
-            observations: bestData.observationCount,
-            hasPerformanceData: true,
-            isEstimated: false, // Don't mark as estimated since they have real work center data
-            workCenterExperience: true, // Flag to indicate this is based on work center experience
-            experienceFrom: bestData.productRouting,
-            estimatedHoursFor: (quantity: number) => {
-              if (bestData.uph && bestData.uph > 0) {
-                return Number((quantity / bestData.uph).toFixed(2));
-              }
-              return null;
-            }
-          };
-        });
-      
-      console.log(`📊 Found ${workCenterExperiencedOperators.length} operators with work center experience for ${workCenter}`);
-      
-      // NEW FEATURE: "Next Closest Operator" Estimation
-      // Only use estimates if we have no qualified operators AND no work center experienced operators
-      let estimatedOperators: any[] = [];
-      
-      if (qualifiedOperators.length === 0 && workCenterExperiencedOperators.length === 0) {
-        console.log(`🔍 No direct UPH data found for ${workCenter}/${routing}, searching for estimates...`);
-        
-        // Debug: Log available UPH data
-        console.log(`📊 Available UPH data:`, currentUphData.map(u => `${u.operatorName}-${u.workCenter}-${u.productRouting}`));
-        
-        // Strategy 1: Same work center, different routing
-        const sameWorkCenterOperators = allOperators
-          .filter(op => {
-            // First check if operator has required work center enabled
-            if (!op.workCenters || !Array.isArray(op.workCenters)) {
-              return false;
-            }
-            
-            let hasRequiredWorkCenter = false;
-            if (workCenter === 'Assembly') {
-              // Assembly includes Sewing and Rope
-              hasRequiredWorkCenter = op.workCenters.includes('Assembly') || 
-                                     op.workCenters.includes('Sewing') || 
-                                     op.workCenters.includes('Rope');
-            } else {
-              hasRequiredWorkCenter = op.workCenters.includes(workCenter as string);
-            }
-            
-            if (!hasRequiredWorkCenter) {
-              return false;
-            }
-            
-            // Check if operator has the specific routing enabled
-            if (!op.routings || !Array.isArray(op.routings)) {
-              return false;
-            }
-            
-            // Handle product name mapping for variants
-            let effectiveRouting = routing as string || '';
-            if (routing === 'Lifetime Air Harness') {
-              effectiveRouting = 'Lifetime Harness';
-            }
-            
-            // Check if operator has this routing enabled
-            const hasRequiredRouting = op.routings.includes(effectiveRouting);
-            if (!hasRequiredRouting) {
-              console.log(`❌ ${op.name} (estimated) does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
-              return false;
-            }
-            
-            // Find any UPH data for this operator + work center combination
-            const operatorUphForWorkCenter = currentUphData.filter(uph => 
-              uph.operatorName === op.name && uph.workCenter === workCenter
-            );
-            
-            console.log(`🔍 Checking ${op.name} for ${workCenter}: found ${operatorUphForWorkCenter.length} UPH records`);
-            if (operatorUphForWorkCenter.length > 0) {
-              console.log(`  - Records: ${operatorUphForWorkCenter.map(u => u.productRouting).join(', ')}`);
-            }
-            
-            return operatorUphForWorkCenter.length > 0;
-          })
-          .map(op => {
-            // Find the best UPH data for this operator + work center (highest observations)
-            const operatorUphForWorkCenter = currentUphData.filter(uph => 
-              uph.operatorName === op.name && uph.workCenter === workCenter
-            );
-            
-            // Sort by observation count, then by UPH
-            const bestUph = operatorUphForWorkCenter.sort((a, b) => 
-              (b.observationCount || 0) - (a.observationCount || 0) || b.uph - a.uph
-            )[0];
-            
-            return {
-              id: op.id,
-              name: op.name,
-              isActive: op.isActive,
-              averageUph: bestUph.uph,
-              observations: bestUph.observationCount,
-              isEstimated: true,
-              estimatedFrom: `${bestUph.productRouting} (same work center)`,
-              estimatedReason: `Based on ${op.name}'s performance in ${bestUph.productRouting}`,
-              estimatedHoursFor: (quantity: number) => {
-                if (bestUph.uph && bestUph.uph > 0) {
-                  return Number((quantity / bestUph.uph).toFixed(2));
-                }
-                return null;
-              }
-            };
-          });
-        
-        estimatedOperators = sameWorkCenterOperators;
-        console.log(`📊 Found ${estimatedOperators.length} operators with same work center estimates`);
-        
-        // Strategy 2: If still no estimates, try related work centers
-        if (estimatedOperators.length === 0) {
-          const relatedWorkCenters = getRelatedWorkCenters(workCenter as string);
-          
-          for (const relatedWC of relatedWorkCenters) {
-            const relatedOperators = allOperators
-              .filter(op => {
-                const hasRelatedWorkCenter = op.workCenters?.includes(relatedWC);
-                if (!hasRelatedWorkCenter) return false;
-                
-                // Check if operator has the specific routing enabled
-                if (!op.routings || !Array.isArray(op.routings)) {
-                  return false;
-                }
-                
-                // Handle product name mapping for variants
-                let effectiveRouting = routing as string || '';
-                if (routing === 'Lifetime Air Harness') {
-                  effectiveRouting = 'Lifetime Harness';
-                }
-                
-                // Check if operator has this routing enabled
-                const hasRequiredRouting = op.routings.includes(effectiveRouting);
-                if (!hasRequiredRouting) {
-                  console.log(`❌ ${op.name} (related work center) does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
-                  return false;
-                }
-                
-                const operatorUphForRelated = currentUphData.filter(uph => 
-                  uph.operatorName === op.name && uph.workCenter === relatedWC
-                );
-                
-                return operatorUphForRelated.length > 0;
-              })
-              .map(op => {
-                const operatorUphForRelated = currentUphData.filter(uph => 
-                  uph.operatorName === op.name && uph.workCenter === relatedWC
-                );
-                
-                const bestUph = operatorUphForRelated.sort((a, b) => 
-                  (b.observationCount || 0) - (a.observationCount || 0) || b.uph - a.uph
-                )[0];
-                
-                return {
-                  id: op.id,
-                  name: op.name,
-                  isActive: op.isActive,
-                  averageUph: bestUph.uph * 0.8, // Apply 20% penalty for cross-work-center estimate
-                  observations: bestUph.observationCount,
-                  isEstimated: true,
-                  estimatedFrom: `${relatedWC}/${bestUph.productRouting}`,
-                  estimatedReason: `Based on ${op.name}'s performance in related work center (${relatedWC})`,
-                  estimatedHoursFor: (quantity: number) => {
-                    const adjustedUph = bestUph.uph * 0.8;
-                    if (adjustedUph && adjustedUph > 0) {
-                      return Number((quantity / adjustedUph).toFixed(2));
-                    }
-                    return null;
-                  }
-                };
-              });
-            
-            if (relatedOperators.length > 0) {
-              estimatedOperators = relatedOperators;
-              console.log(`📊 Found ${estimatedOperators.length} operators with related work center estimates (${relatedWC})`);
-              break;
-            }
-          }
-        }
-      }
-      
-      // Combine operators with priority:
-      // 1. If we have exact matches, ONLY show those
-      // 2. If no exact matches, show work center experienced operators
-      // 3. If neither, show estimates
-      const allOperatorsForResponse = qualifiedOperators.length > 0 
-        ? qualifiedOperators 
-        : workCenterExperiencedOperators.length > 0 
-          ? workCenterExperiencedOperators
-          : estimatedOperators;
+      // Only return operators with exact UPH performance data - no fallbacks or estimates
+      const allOperatorsForResponse = qualifiedOperators;
       
       // Sort by UPH descending
       allOperatorsForResponse.sort((a, b) => b.averageUph - a.averageUph);
