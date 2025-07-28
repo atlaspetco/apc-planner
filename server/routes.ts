@@ -1120,14 +1120,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const key = `${uph.operatorName}-${uph.workCenter}-${uph.productRouting}`;
         uphMap.set(key, {
           uph: uph.uph,
-          observations: uph.observationCount || uph.observation_count || 0,
+          observations: uph.observationCount,
           operator: uph.operatorName || ''
         });
-        
-        // Debug UPH map population for Evan
-        if (uph.operatorName === "Evan Crosby" && uph.workCenter === "Cutting" && uph.productRouting === "Lifetime Collar") {
-          console.log(`🔧 Added to UPH map: "${key}" -> UPH: ${uph.uph}, observations: ${uph.observationCount || uph.observation_count}`);
-        }
       });
       
       // Debug: Show some example keys
@@ -1156,7 +1151,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           // Only include operators who have actual performance data for this combination
-          return hasUphData;
+          if (!hasUphData) return false;
+          
+          // If operator has historical UPH data, they are qualified
+          // We prioritize actual performance data over current settings
+          return true;
         })
         .map(op => {
           // Handle product name mapping for variants
@@ -1200,25 +1199,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`🔍 Searching for exact matches with workCenter="${workCenter}", routing="${routing}"`);
       console.log(`📊 Available UPH data keys:`, [...uphMap.keys()].filter(key => key.includes(workCenter as string)).slice(0, 10));
       
-      // If we found qualified operators with real data, return them immediately
-      if (qualifiedOperators.length > 0) {
-        console.log(`✅ Found ${qualifiedOperators.length} operators with real UPH data for ${workCenter}/${routing}`);
-        return res.json({ operators: qualifiedOperators });
-      }
-
-      // FALLBACK: "Next Closest Operator" Estimation only when no exact matches exist
+      // NEW FEATURE: "Next Closest Operator" Estimation
       // If no operators have exact UPH data, find operators with similar data as estimates
       let estimatedOperators: any[] = [];
       
-      console.log(`⚠️ No exact UPH matches found for ${workCenter}/${routing}, falling back to estimates...`);
-      console.log(`🔍 No direct UPH data found for ${workCenter}/${routing}, searching for estimates...`);
+      if (qualifiedOperators.length === 0) {
+        console.log(`🔍 No direct UPH data found for ${workCenter}/${routing}, searching for estimates...`);
         
         // Debug: Log available UPH data
         console.log(`📊 Available UPH data:`, currentUphData.map(u => `${u.operatorName}-${u.workCenter}-${u.productRouting}`));
-        
-        // Strategy 1: Same work center, different routing - but let's check if we already have exact matches being missed
-        console.log(`🚨 DEBUGGING: Looking for ${workCenter}/${routing} in UPH data`);
-        console.log(`🚨 Available for ${workCenter}:`, currentUphData.filter(u => u.workCenter === workCenter).map(u => `${u.operatorName}-${u.productRouting}`));
         
         // Strategy 1: Same work center, different routing
         const sameWorkCenterOperators = allOperators
@@ -1324,6 +1313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         }
+      }
       
       // Combine qualified and estimated operators
       const allOperatorsForResponse = [...qualifiedOperators, ...estimatedOperators]

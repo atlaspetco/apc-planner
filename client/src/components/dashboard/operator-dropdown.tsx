@@ -105,20 +105,13 @@ export function OperatorDropdown({
         const params = new URLSearchParams({
           workCenter,
           ...(routing && { routing }),
-          ...(operation && { operation }),
-          _t: Date.now().toString() // Cache busting
+          ...(operation && { operation })
         });
         
         const response = await fetch(`/api/operators/qualified?${params}`);
         const data = await response.json();
         
         if (response.ok && data.operators) {
-          console.log(`OPERATOR DROPDOWN DATA for ${workCenter}/${routing}:`, data.operators.map(op => ({
-            name: op.name,
-            isEstimated: op.isEstimated,
-            hasPerformanceData: op.hasPerformanceData,
-            averageUph: op.averageUph
-          })));
           setQualifiedOperators(data.operators);
         } else {
           // Don't log errors for normal operation, just handle gracefully
@@ -255,10 +248,6 @@ export function OperatorDropdown({
                       // Find the operator details for single bulk assignment
                       const operatorName = uniqueOperators[0];
                       const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
-                      
-                      // Debug name matching
-                      console.log(`BULK ASSIGNMENT LOOKUP: Looking for "${operatorName}" in:`, qualifiedOperators.map(op => op.name));
-                      console.log(`BULK ASSIGNMENT RESULT:`, operatorDetails ? {name: operatorDetails.name, isEstimated: operatorDetails.isEstimated, averageUph: operatorDetails.averageUph} : 'NOT FOUND');
                       return operatorDetails ? (
                         <div className="flex items-center justify-between w-full min-w-0">
                           <div className="flex items-center space-x-1">
@@ -269,14 +258,13 @@ export function OperatorDropdown({
                             {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
                               <div className="flex items-center space-x-1">
                                 {quantity > 0 && (
-                                  <span className={`font-normal ${operatorDetails.isEstimated === true ? 'text-orange-600' : 'text-green-700'}`}>
-                                    {operatorDetails.isEstimated === true ? '~' : ''}{calculateEstimatedTime(operatorDetails.averageUph)}
+                                  <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                                    {operatorDetails.isEstimated ? '~' : ''}{calculateEstimatedTime(operatorDetails.averageUph)}
                                   </span>
                                 )}
-                                <span className={`font-normal ${operatorDetails.isEstimated === true ? 'text-orange-600' : 'text-green-700'}`}>
-                                  {operatorDetails.isEstimated === true ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
+                                <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                                  {operatorDetails.isEstimated ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
                                 </span>
-                                {console.log(`DEBUG ${operatorDetails.name}: isEstimated=${operatorDetails.isEstimated}, hasPerformanceData=${operatorDetails.hasPerformanceData}`)}
                               </div>
                             ) : (
                               <Badge variant="outline" className="text-xs px-1 py-0">
@@ -305,12 +293,12 @@ export function OperatorDropdown({
                       {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
                         <div className="flex items-center space-x-1">
                           {quantity > 0 && (
-                            <span className={`font-normal ${currentOperator.isEstimated === true ? 'text-orange-600' : 'text-green-700'}`}>
-                              {currentOperator.isEstimated === true ? '~' : ''}{calculateEstimatedTime(currentOperator.averageUph)}
+                            <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                              {currentOperator.isEstimated ? '~' : ''}{calculateEstimatedTime(currentOperator.averageUph)}
                             </span>
                           )}
-                          <span className={`font-normal ${currentOperator.isEstimated === true ? 'text-orange-600' : 'text-green-700'}`}>
-                            {currentOperator.isEstimated === true ? '~' : ''}{currentOperator.averageUph.toFixed(1)} UPH
+                          <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                            {currentOperator.isEstimated ? '~' : ''}{currentOperator.averageUph.toFixed(1)} UPH
                           </span>
                         </div>
                       ) : (
@@ -372,7 +360,7 @@ export function OperatorDropdown({
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center space-x-1">
                     <span className="truncate">{formatOperatorName(operator.name)}</span>
-                    {operator.isEstimated === true && (
+                    {operator.isEstimated && (
                       <Badge variant="outline" className="text-xs px-1 py-0 bg-orange-50 text-orange-600 border-orange-200">
                         Est
                       </Badge>
@@ -381,12 +369,12 @@ export function OperatorDropdown({
                   <div className="flex items-center space-x-2 ml-2">
                     {operator.observations > 0 && operator.averageUph > 0 ? (
                       <>
-                        <span className={`text-xs ${operator.isEstimated === true ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                          {operator.isEstimated === true ? '~' : ''}{operator.averageUph.toFixed(1)} UPH
+                        <span className={`text-xs ${operator.isEstimated ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                          {operator.isEstimated ? '~' : ''}{operator.averageUph.toFixed(1)} UPH
                         </span>
                         {quantity > 0 && (
-                          <span className={`text-xs ${operator.isEstimated === true ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                            • {operator.isEstimated === true ? '~' : ''}{calculateEstimatedTime(operator.averageUph)}
+                          <span className={`text-xs ${operator.isEstimated ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                            • {operator.isEstimated ? '~' : ''}{calculateEstimatedTime(operator.averageUph)}
                           </span>
                         )}
                       </>
@@ -397,7 +385,7 @@ export function OperatorDropdown({
                     )}
                   </div>
                 </div>
-                {operator.isEstimated === true && operator.estimatedFrom && (
+                {operator.isEstimated && operator.estimatedFrom && (
                   <div className="text-xs text-orange-500 mt-1 px-1">
                     Based on {operator.estimatedFrom}
                   </div>
