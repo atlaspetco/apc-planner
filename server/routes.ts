@@ -927,15 +927,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Get production orders directly from the API endpoint
+      // Get production orders using the same logic as the production-orders endpoint
       try {
-        const productionOrdersResponse = await fetch(`http://localhost:${process.env.PORT || 5000}/api/production-orders`);
-        const productionOrders = await productionOrdersResponse.json();
+        const { FulfilCurrentService } = await import("./fulfil-current.js");
+        const fulfil = new FulfilCurrentService();
         
-        console.log(`Fetched ${productionOrders?.length || 0} production orders from API endpoint`);
+        // Get current production orders from Fulfil
+        const workOrderData = await fulfil.getCurrentWorkOrders();
+        console.log(`Got ${workOrderData.length} work orders from Fulfil`);
         
-        if (!Array.isArray(productionOrders) || productionOrders.length === 0) {
-          console.log("No production orders found from API");
+        // Convert work orders to production orders
+        const productionOrdersMap = new Map();
+        
+        workOrderData.forEach(wo => {
+          const moId = wo.production?.id;
+          const moNumber = wo.production?.rec_name || 'Unknown';
+          
+          if (!moId) return;
+          
+          if (!productionOrdersMap.has(moId)) {
+            productionOrdersMap.set(moId, {
+              id: moId,
+              moNumber: moNumber,
+              productName: wo.production?.product?.rec_name || 'Unknown Product',
+              quantity: wo.production?.quantity || 0,
+              status: wo.production?.state || 'Unknown',
+              routing: wo.production?.routing?.name || 'Unknown',
+              routingName: wo.production?.routing?.name || 'Unknown',
+              dueDate: wo.production?.planned_date || new Date().toISOString(),
+              fulfilId: moId,
+              rec_name: moNumber,
+              workOrders: []
+            });
+          }
+          
+          // Add work order to the production order
+          productionOrdersMap.get(moId).workOrders.push({
+            id: wo.id,
+            workCenter: wo.work_center?.name || 'Unknown',
+            operation: wo.operation?.name || 'Unknown Operation',
+            state: wo.state,
+            employee: wo.employee
+          });
+        });
+        
+        const productionOrders = Array.from(productionOrdersMap.values());
+        console.log(`Converted to ${productionOrders.length} production orders`);
+        
+        if (productionOrders.length === 0) {
+          console.log("No production orders found");
           return res.status(500).json({ message: "No production orders available for assignment" });
         }
         
