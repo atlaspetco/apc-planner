@@ -123,14 +123,14 @@ export function AutoAssignControls() {
         cleanup();
         setCurrentProgress(100);
         setTimeout(() => setShowProgress(false), 500);
-        return result as AssignmentResult;
+        return result;
       } catch (error) {
         cleanup();
         setShowProgress(false);
         throw error;
       }
     },
-    onSuccess: (data: AssignmentResult) => {
+    onSuccess: (data: any) => {
       setLastResult(data);
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
@@ -208,11 +208,11 @@ export function AutoAssignControls() {
 
   // Regenerate assignments mutation
   const regenerateMutation = useMutation({
-    mutationFn: async (): Promise<AssignmentResult> => {
+    mutationFn: async () => {
       const result = await apiRequest('POST', '/api/auto-assign/regenerate');
-      return result as AssignmentResult;
+      return result;
     },
-    onSuccess: (data: AssignmentResult) => {
+    onSuccess: (data: any) => {
       if (data.success) {
         setLastResult(data);
         setShowResults(true);
@@ -236,17 +236,17 @@ export function AutoAssignControls() {
 
   // Clear all assignments mutation
   const clearAllMutation = useMutation({
-    mutationFn: async (): Promise<{ cleared: number }> => {
+    mutationFn: async () => {
       const result = await apiRequest('POST', '/api/auto-assign/clear-all');
-      return result as { cleared: number };
+      return result;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
       
       toast({
         title: "Assignments Cleared",
-        description: `Cleared ${data.cleared} assignments`,
+        description: `Cleared ${data.cleared || 0} assignments`,
       });
     },
     onError: (error) => {
