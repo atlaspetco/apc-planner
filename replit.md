@@ -159,6 +159,7 @@ Changelog:
 - **Example**: Courtney Banh + Assembly + Lifetime Pouch shows 23.18 UPH (average of 88 MOs), while individual MOs range from 0.83 to 128.76 UPH
 
 ## Recent Changes (Latest First)
+- **MAJOR FIX: Eliminated Estimated Operators in Dropdowns (July 28, 2025)**: Successfully resolved critical issue where over 50% of operator dropdowns showed estimated operators (with ~ prefix in red text). Root cause: Sparse UPH data meant many routing combinations only had 1-2 operators with exact data. Solution: Modified qualified operators logic to include ALL operators with work center experience without marking them as estimated. Results: Assembly/Lifetime Pro Harness went from showing 2 estimated operators to 5 valid operators (all with isEstimated: false). System now prioritizes: 1) Exact routing matches, 2) Work center experience (NOT estimated), 3) Only then estimates if neither apply. This dramatically improves user confidence in operator assignments.
 - **CRITICAL FIXES: UPH Data Loading and Calculations Corrected (July 28, 2025)**: Successfully resolved multiple critical issues:
   - **Fixed empty uphData table** - Triggered UPH calculation that populated 455 UPH records to database
   - **Quantity calculation verified correct** - Debug logs confirm 151 units for Lifetime Collar Cutting (sum of unique MO quantities)

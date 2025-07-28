@@ -1127,6 +1127,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Debug: Show some example keys
       console.log(`🔑 Sample UPH keys:`, [...uphMap.keys()].slice(0, 5));
+      
+      // CRITICAL DEBUG: Show what UPH data exists for this specific work center/routing
+      const exactMatches = currentUphData.filter(uph => 
+        uph.workCenter === workCenter && uph.productRouting === routing
+      );
+      console.log(`🎯 Exact UPH matches for ${workCenter}/${routing}: ${exactMatches.length}`);
+      if (exactMatches.length > 0) {
+        console.log(`✅ Operators with exact data:`, exactMatches.map(u => 
+          `${u.operatorName} (${u.uph.toFixed(1)} UPH, ${u.observationCount} obs)`
+        ));
+      } else {
+        console.log(`❌ NO exact UPH data found for ${workCenter}/${routing}`);
+        // Show what routings ARE available for this work center
+        const workCenterRoutings = [...new Set(currentUphData
+          .filter(u => u.workCenter === workCenter)
+          .map(u => u.productRouting)
+        )];
+        console.log(`📋 Available routings for ${workCenter}:`, workCenterRoutings.slice(0, 10));
+      }
 
       // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
       const qualifiedOperators = allOperators
@@ -1197,11 +1216,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`🔍 Searching for exact matches with workCenter="${workCenter}", routing="${routing}"`);
       console.log(`📊 Available UPH data keys:`, [...uphMap.keys()].filter(key => key.includes(workCenter as string)).slice(0, 10));
       
+      // IMPROVED LOGIC: Include operators with any work center experience
+      // This reduces the number of "estimated" operators shown
+      const workCenterExperiencedOperators = allOperators
+        .filter(op => {
+          // Skip if already in qualified list
+          if (qualifiedOperators.some(q => q.id === op.id)) return false;
+          
+          // Check if operator has ANY UPH data for this work center
+          const hasWorkCenterData = currentUphData.some(uph => 
+            uph.operatorName === op.name && uph.workCenter === workCenter
+          );
+          
+          return hasWorkCenterData;
+        })
+        .map(op => {
+          // Get their best UPH data for this work center
+          const workCenterUphData = currentUphData
+            .filter(uph => uph.operatorName === op.name && uph.workCenter === workCenter)
+            .sort((a, b) => (b.observationCount || 0) - (a.observationCount || 0) || b.uph - a.uph);
+          
+          const bestData = workCenterUphData[0];
+          
+          return {
+            id: op.id,
+            name: op.name,
+            isActive: op.isActive,
+            averageUph: bestData.uph,
+            observations: bestData.observationCount,
+            hasPerformanceData: true,
+            isEstimated: false, // Don't mark as estimated since they have real work center data
+            workCenterExperience: true, // Flag to indicate this is based on work center experience
+            experienceFrom: bestData.productRouting,
+            estimatedHoursFor: (quantity: number) => {
+              if (bestData.uph && bestData.uph > 0) {
+                return Number((quantity / bestData.uph).toFixed(2));
+              }
+              return null;
+            }
+          };
+        });
+      
+      console.log(`📊 Found ${workCenterExperiencedOperators.length} operators with work center experience for ${workCenter}`);
+      
       // NEW FEATURE: "Next Closest Operator" Estimation
-      // If no operators have exact UPH data, find operators with similar data as estimates
+      // Only use estimates if we have no qualified operators AND no work center experienced operators
       let estimatedOperators: any[] = [];
       
-      if (qualifiedOperators.length === 0) {
+      if (qualifiedOperators.length === 0 && workCenterExperiencedOperators.length === 0) {
         console.log(`🔍 No direct UPH data found for ${workCenter}/${routing}, searching for estimates...`);
         
         // Debug: Log available UPH data
@@ -1313,15 +1375,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Combine qualified and estimated operators
-      const allOperatorsForResponse = [...qualifiedOperators, ...estimatedOperators]
-        .sort((a, b) => {
-          // Prioritize non-estimated over estimated
-          if (a.isEstimated && !b.isEstimated) return 1;
-          if (!a.isEstimated && b.isEstimated) return -1;
-          // Then sort by UPH
-          return b.averageUph - a.averageUph;
-        });
+      // Combine all operators: exact matches + work center experienced + estimates
+      const allOperatorsForResponse = [
+        ...qualifiedOperators,
+        ...workCenterExperiencedOperators,
+        ...estimatedOperators
+      ].sort((a, b) => {
+        // Sort by: exact match > work center experience > estimates
+        const aScore = a.isEstimated ? 0 : (a.workCenterExperience ? 1 : 2);
+        const bScore = b.isEstimated ? 0 : (b.workCenterExperience ? 1 : 2);
+        if (aScore !== bScore) return bScore - aScore;
+        
+        // Then sort by UPH
+        return b.averageUph - a.averageUph;
+      });
 
       res.json({
         operators: allOperatorsForResponse,
