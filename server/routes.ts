@@ -1136,38 +1136,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (routing === 'Lifetime Air Harness') {
             effectiveRouting = 'Lifetime Harness';
           }
-          
-          // Create key to match historical UPH map: operatorName-workCenter-routing
-          const uphKey = `${op.name}-${workCenter}-${effectiveRouting}`;
-          const hasUphData = uphMap.has(uphKey);
-          
-          // Debug logging for qualification check
-          console.log(`Qualified operators for ${workCenter}/${routing}: checking operator ${op.name} (ID: ${op.id})`);
-          console.log(`  - Key checked: ${uphKey}`);
-          console.log(`  - Has UPH data: ${hasUphData}`);
-          if (hasUphData) {
-            const uphInfo = uphMap.get(uphKey);
-            console.log(`  - UPH: ${uphInfo?.uph?.toFixed(2)} (${uphInfo?.observations} observations)`);
-          }
-          
-          // Only include operators who have actual performance data for this combination
-          if (!hasUphData) return false;
-          
-          // If operator has historical UPH data, they are qualified
-          // We prioritize actual performance data over current settings
-          return true;
+
+          // Support Assembly grouping which aggregates Sewing and Rope
+          const workCenterKeys = workCenter === 'Assembly'
+            ? ['Assembly', 'Sewing', 'Rope']
+            : [workCenter as string];
+
+          const hasUphData = workCenterKeys.some(wc =>
+            uphMap.has(`${op.name}-${wc}-${effectiveRouting}`)
+          );
+
+          return hasUphData;
         })
         .map(op => {
-          // Handle product name mapping for variants
           let effectiveRouting = routing as string || '';
           if (routing === 'Lifetime Air Harness') {
             effectiveRouting = 'Lifetime Harness';
           }
-          
-          // Look up historical UPH data using name-based key
-          const uphKey = `${op.name}-${workCenter}-${effectiveRouting}`;
-          const performanceData = uphMap.get(uphKey) || { uph: 0, observations: 0 };
-          
+
+          const workCenterKeys = workCenter === 'Assembly'
+            ? ['Assembly', 'Sewing', 'Rope']
+            : [workCenter as string];
+
+          const performanceOptions = workCenterKeys
+            .map(wc => uphMap.get(`${op.name}-${wc}-${effectiveRouting}`))
+            .filter(Boolean) as { uph: number; observations: number }[];
+
+          const performanceData = performanceOptions.sort((a, b) =>
+            (b.observations || 0) - (a.observations || 0) || b.uph - a.uph
+          )[0] || { uph: 0, observations: 0 };
+
           return {
             id: op.id,
             name: op.name,
@@ -1175,7 +1173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             averageUph: performanceData.uph,
             observations: performanceData.observations,
             hasPerformanceData: true,
-            isEstimated: false,  // Exact match, not estimated
+            isEstimated: false,
             estimatedHoursFor: (quantity: number) => {
               if (performanceData.uph && performanceData.uph > 0) {
                 return Number((quantity / performanceData.uph).toFixed(2));
