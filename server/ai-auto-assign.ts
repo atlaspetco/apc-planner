@@ -88,6 +88,7 @@ interface AutoAssignResult {
   totalHoursOptimized: number;
   operatorUtilization: Map<number, number>;
   routingResults?: RoutingAssignmentResult[];
+  workCenterResults?: WorkCenterAssignmentResult[];
   progress?: {
     current: number;
     total: number;

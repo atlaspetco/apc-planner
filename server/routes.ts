@@ -1846,6 +1846,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   // ============= END NEW STANDARDIZED UPH ENDPOINTS =============
 
+  // ============= OPTIMIZED UPH SYSTEM ENDPOINTS =============
+  // These endpoints use the new optimized background calculation system
+  
+  // Get optimized UPH scheduler status
+  app.get("/api/uph/optimized/status", isAuthenticated, async (req, res) => {
+    try {
+      const { uphScheduler } = await import("./jobs/uphScheduler.js");
+      const status = uphScheduler.getStatus();
+      
+      res.json({
+        success: true,
+        ...status
+      });
+    } catch (error) {
+      console.error("Error getting optimized UPH status:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to get UPH scheduler status",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Trigger incremental UPH calculation (fast)
+  app.post("/api/uph/optimized/calculate", isAuthenticated, async (req, res) => {
+    try {
+      const { uphScheduler } = await import("./jobs/uphScheduler.js");
+      
+      // Trigger incremental calculation in background
+      uphScheduler.triggerCalculation(false);
+      
+      res.json({
+        success: true,
+        message: "Incremental UPH calculation triggered in background",
+        status: uphScheduler.getStatus()
+      });
+    } catch (error) {
+      console.error("Error triggering optimized UPH calculation:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to trigger UPH calculation",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Force full UPH recalculation (slower, use only when needed)
+  app.post("/api/uph/optimized/recalculate-full", isAuthenticated, async (req, res) => {
+    try {
+      const { uphScheduler } = await import("./jobs/uphScheduler.js");
+      
+      // Trigger full recalculation in background  
+      uphScheduler.triggerCalculation(true);
+      
+      res.json({
+        success: true,
+        message: "Full UPH recalculation triggered in background",
+        status: uphScheduler.getStatus()
+      });
+    } catch (error) {
+      console.error("Error triggering full UPH recalculation:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to trigger full UPH recalculation",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Check if UPH data needs recalculation
+  app.get("/api/uph/optimized/needs-update", isAuthenticated, async (req, res) => {
+    try {
+      const { optimizedUphCalculator } = await import("./jobs/uphOptimizedCalculator.js");
+      const needsUpdate = await optimizedUphCalculator.needsRecalculation();
+      
+      res.json({
+        success: true,
+        needsUpdate,
+        message: needsUpdate ? "New work cycles detected, recalculation recommended" : "UPH data is up to date"
+      });
+    } catch (error) {
+      console.error("Error checking UPH update needs:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to check UPH update status",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Get UPH data from cached database (fast)
+  app.get("/api/uph/optimized/cached-data", isAuthenticated, async (req, res) => {
+    try {
+      const { uphData } = await import("../shared/schema.js");
+      
+      // Get cached UPH data from database (fast query)
+      const cachedData = await db.select().from(uphData);
+      
+      console.log(`📊 Retrieved ${cachedData.length} cached UPH calculations from database`);
+      
+      res.json({
+        success: true,
+        data: cachedData,
+        count: cachedData.length,
+        lastUpdated: cachedData.length > 0 ? Math.max(...cachedData.map(d => d.updatedAt?.getTime() || 0)) : null
+      });
+    } catch (error) {
+      console.error("Error getting cached UPH data:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to get cached UPH data",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Enable/disable background UPH scheduler
+  app.post("/api/uph/optimized/scheduler/:action", isAuthenticated, async (req, res) => {
+    try {
+      const { action } = req.params;
+      const { uphScheduler } = await import("./jobs/uphScheduler.js");
+      
+      if (action === 'start') {
+        uphScheduler.start();
+        res.json({ success: true, message: "UPH scheduler started" });
+      } else if (action === 'stop') {
+        uphScheduler.stop();
+        res.json({ success: true, message: "UPH scheduler stopped" });
+      } else if (action === 'enable') {
+        uphScheduler.setEnabled(true);
+        res.json({ success: true, message: "UPH scheduler enabled" });
+      } else if (action === 'disable') {
+        uphScheduler.setEnabled(false);
+        res.json({ success: true, message: "UPH scheduler disabled" });
+      } else {
+        res.status(400).json({ 
+          success: false, 
+          message: "Invalid action. Use: start, stop, enable, or disable" 
+        });
+      }
+    } catch (error) {
+      console.error("Error controlling UPH scheduler:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to control UPH scheduler",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  // ============= END OPTIMIZED UPH SYSTEM ENDPOINTS =============
+
   // UPH Analysis and Calculation Endpoints
   app.get("/api/uph/operator/:operatorId/analysis", isAuthenticated, async (req, res) => {
     try {

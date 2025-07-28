@@ -39,13 +39,13 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
   
-  // Initialize UPH calculation cron job
+  // Initialize optimized UPH background scheduler
   try {
-    const { initializeUphCronJob } = await import("./jobs/uphCron.js");
-    initializeUphCronJob(6); // Run every 6 hours
-    log("UPH calculation cron job initialized");
+    const { uphScheduler } = await import("./jobs/uphScheduler.js");
+    uphScheduler.start(5); // Check every 5 minutes for new data
+    log("Optimized UPH background scheduler initialized - checking every 5 minutes");
   } catch (error) {
-    log(`Warning: Failed to initialize UPH cron job: ${error}`);
+    log(`Warning: Failed to initialize UPH scheduler: ${error}`);
   }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
