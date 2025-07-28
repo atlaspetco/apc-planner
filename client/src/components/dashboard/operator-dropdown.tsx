@@ -131,6 +131,18 @@ export function OperatorDropdown({
         const response = await fetch(`/api/operators/qualified?${params}`);
         const data = await response.json();
         
+        // Debug response for bulk dropdown issue
+        if ((routing === 'Lifetime Pro Collar' && workCenter === 'Packaging') ||
+            (routing === 'Lifetime Loop' && workCenter === 'Packaging')) {
+          console.log(`🔍 API RESPONSE: ${workCenter}/${routing}`, {
+            responseOk: response.ok,
+            hasOperators: data.operators ? data.operators.length : 0,
+            isBulk: workOrderIds && workOrderIds.length > 1,
+            workOrderIds: workOrderIds?.length || 0,
+            operatorNames: data.operators ? data.operators.map((op: any) => op.name) : []
+          });
+        }
+        
         if (response.ok && data.operators) {
           // Debug logging for specific routing/work center combinations
           if ((routing === 'Lifetime Slip Collar' && workCenter === 'Packaging') ||
