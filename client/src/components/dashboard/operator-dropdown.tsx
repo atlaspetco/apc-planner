@@ -409,9 +409,10 @@ export function OperatorDropdown({
           )}
           {qualifiedOperators
             .filter(operator => {
-              // Don't show the current operator in dropdown list to avoid duplication
+              // For bulk dropdowns, show all qualified operators
+              // For single dropdowns, don't show the current operator to avoid duplication
               return workOrderIds ? 
-                !uniqueOperators.includes(operator.name) : 
+                true :  // Show all operators for bulk assignment
                 currentOperatorId !== operator.id;
             })
             .map(operator => (
