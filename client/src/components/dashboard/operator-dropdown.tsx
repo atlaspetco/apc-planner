@@ -121,8 +121,20 @@ export function OperatorDropdown({
         const data = await response.json();
         
         if (response.ok && data.operators) {
+          // Debug logging for specific routing/work center combinations
+          if ((routing === 'Lifetime Slip Collar' && workCenter === 'Packaging') ||
+              (routing === 'Lifetime Collar' && (workCenter === 'Assembly' || workCenter === 'Packaging')) ||
+              (routing === 'Lifetime Slip Collar' && workCenter === 'Cutting')) {
+            console.log(`🔍 DEBUG: Qualified operators for ${workCenter}/${routing}:`, {
+              count: data.operators.length,
+              operators: data.operators.map(op => ({ name: op.name, uph: op.averageUph, obs: op.observations })),
+              timestamp: new Date().toISOString()
+            });
+            console.log(`🔍 Setting qualifiedOperators state with ${data.operators.length} operators`);
+          }
           setQualifiedOperators(data.operators);
         } else {
+          console.error(`❌ Failed to get qualified operators for ${workCenter}/${routing}:`, data);
           setQualifiedOperators([]);
         }
       } catch (error) {
@@ -137,7 +149,7 @@ export function OperatorDropdown({
     if (workCenter && routing) {
       fetchQualifiedOperators();
     }
-  }, [workCenter, routing, operation]);
+  }, [workCenter, routing, operation, refreshKey]); // Add refreshKey to dependencies
 
   // Calculate estimated time based on quantity and operator UPH
   const calculateEstimatedTime = (operatorUph: number): string => {
@@ -250,9 +262,23 @@ export function OperatorDropdown({
     );
   }
 
+  // Debug render state
+  if ((routing === 'Lifetime Slip Collar' && workCenter === 'Packaging') ||
+      (routing === 'Lifetime Collar' && (workCenter === 'Assembly' || workCenter === 'Packaging'))) {
+    console.log(`🔍 RENDER DEBUG: ${workCenter}/${routing}`, {
+      qualifiedOperators: qualifiedOperators.length,
+      operatorNames: qualifiedOperators.map(op => op.name),
+      uniqueOperators: uniqueOperators.length,
+      uniqueOperatorNames: uniqueOperators,
+      workOrderIds: workOrderIds?.length || 0,
+      hasAssignments: uniqueOperators.length > 0
+    });
+  }
+
   return (
     <div className={`space-y-1 ${className || ''}`}>
       <Select 
+        key={`${workCenter}-${routing}-${qualifiedOperators.length}`} // Force re-render when operators change
         value={workOrderIds ? (uniqueOperators.length > 0 ? "bulk-assigned" : "") : (currentOperatorId?.toString() || "")} 
         onValueChange={handleAssignment}
         disabled={loading || allFinished}
