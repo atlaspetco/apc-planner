@@ -6220,9 +6220,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         if (!hasWorkCenter) {
-          return res.status(400).json({ 
-            error: `${operator.name} is not enabled for ${workCenter} work center` 
-          });
+          // For bulk assignments, check if operator has UPH data for this work center + routing
+          // This is more lenient than individual assignments which require explicit work center enablement
+          const { db } = await import('./db.js');
+          const { operators } = await import('../shared/schema.js');
+          const { sql } = await import('drizzle-orm');
+          
+          const uphData = await db.execute(sql`
+            SELECT COUNT(*) as count 
+            FROM uph_data 
+            WHERE operator_name = ${operator.name} 
+            AND work_center = ${workCenter} 
+            AND product_routing = ${routing}
+          `);
+          
+          const hasUphData = parseInt(uphData.rows[0]?.count || '0') > 0;
+          
+          if (!hasUphData) {
+            return res.status(400).json({ 
+              error: `${operator.name} is not enabled for ${workCenter} work center and has no UPH data for ${routing}` 
+            });
+          }
+          
+          console.log(`🔧 Bulk assignment: Allowing ${operator.name} for ${workCenter}/${routing} based on UPH data (work center not explicitly enabled)`);
         }
       }
 
