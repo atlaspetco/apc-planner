@@ -37,16 +37,24 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const server = await registerRoutes(app);
-  
-  // Initialize optimized UPH background scheduler
+  // Initialize UPH data BEFORE registering routes to avoid race conditions
   try {
+    log("🔄 Initializing UPH data on startup...");
     const { uphScheduler } = await import("./jobs/uphScheduler.js");
+    
+    // Force initial calculation to ensure data is ready
+    await uphScheduler.triggerCalculation(false);
+    log("✅ Initial UPH calculation completed");
+    
+    // Start background scheduler for ongoing updates
     uphScheduler.start(5); // Check every 5 minutes for new data
     log("Optimized UPH background scheduler initialized - checking every 5 minutes");
   } catch (error) {
-    log(`Warning: Failed to initialize UPH scheduler: ${error}`);
+    log(`❌ Failed to initialize UPH data: ${error}`);
+    // Continue without UPH data - better than crashing
   }
+
+  const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
