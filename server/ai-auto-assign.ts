@@ -322,14 +322,48 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     
     const allWorkOrders = [];
     
-    // Extract all work orders from production orders
+    // Extract all work orders from production orders and ensure they exist in database
     for (const po of allProductionOrders) {
       if (po.workOrders && Array.isArray(po.workOrders)) {
         for (const wo of po.workOrders) {
           // Only consider non-finished work orders
           if (wo.state !== 'finished') {
+            const workOrderId = parseInt(wo.id);
+            
+            // Check if work order exists in database, if not create it
+            const existingWO = await db
+              .select({ id: workOrders.id })
+              .from(workOrders)
+              .where(eq(workOrders.id, workOrderId))
+              .limit(1);
+            
+            if (existingWO.length === 0) {
+              // Create work order in database
+              try {
+                await db.insert(workOrders).values({
+                  id: workOrderId,
+                  fulfil_id: workOrderId,
+                  production_order_id: po.id,
+                  work_center: wo.workCenter || wo.originalWorkCenter,
+                  operation: wo.operation || 'Unknown',
+                  routing: po.routing || 'Unknown',
+                  sequence: 1,
+                  status: wo.state || 'unknown',
+                  state: wo.state,
+                  rec_name: wo.rec_name || `WO${workOrderId}`,
+                  production: po.id,
+                  operator_name: wo.employeeName || null,
+                  estimated_hours: 0
+                });
+                console.log(`DEBUG AUTO-ASSIGN: Created work order ${workOrderId} in database`);
+              } catch (insertError) {
+                console.error(`DEBUG AUTO-ASSIGN: Failed to create work order ${workOrderId}:`, insertError);
+                continue; // Skip this work order if we can't create it
+              }
+            }
+            
             allWorkOrders.push({
-              workOrderId: parseInt(wo.id),
+              workOrderId: workOrderId,
               moNumber: po.moNumber,
               routing: po.routing,
               quantity: po.quantity,
@@ -357,7 +391,10 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     // Filter unassigned work orders
     const unassignedWorkOrders = allWorkOrders.filter(wo => !assignedWorkOrderIds.has(wo.workOrderId));
 
+    console.log(`DEBUG AUTO-ASSIGN: Total work orders: ${allWorkOrders.length}, Existing assignments: ${existingAssignments.length}, Unassigned: ${unassignedWorkOrders.length}`);
+    
     if (unassignedWorkOrders.length === 0) {
+      console.log(`DEBUG AUTO-ASSIGN: No unassigned work orders - returning success with empty assignments`);
       return {
         success: true,
         assignments: [],
@@ -368,7 +405,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       };
     }
     
-    console.log(`Found ${unassignedWorkOrders.length} unassigned work orders`);
+    console.log(`DEBUG AUTO-ASSIGN: Found ${unassignedWorkOrders.length} unassigned work orders:`, unassignedWorkOrders.map(wo => `WO${wo.workOrderId} (${wo.workCenter}/${wo.routing})`));
 
     // Step 2: Get all active operators with their UPH data
     const activeOperators = await db
@@ -505,13 +542,17 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       }
       
       if (qualifiedOperators.length === 0) {
-        console.log(`No qualified operators found for work center: ${workCenter}`);
+        console.log(`DEBUG AUTO-ASSIGN: No qualified operators found for work center: ${workCenter}`);
+        console.log(`DEBUG AUTO-ASSIGN: Operators with work center experience: ${operatorsWithWorkCenterExperience.length}`);
+        console.log(`DEBUG AUTO-ASSIGN: Active operators total: ${activeOperators.length}`);
         failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
         workCenterResult.failedCount = workOrderData.length;
         workCenterResult.error = "No qualified operators found";
         workCenterResults.push(workCenterResult);
         continue;
       }
+      
+      console.log(`DEBUG AUTO-ASSIGN: Found ${qualifiedOperators.length} qualified operators for ${workCenter}:`, qualifiedOperators.map(op => op.name));
       
       // Try up to 2 times to assign work orders for this work center
       const maxRetries = 2;
