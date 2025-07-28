@@ -23,6 +23,21 @@ function groupWorkOrdersByRouting(workOrdersData: any[]) {
   return routingGroups;
 }
 
+// Helper function to group work orders by work center
+function groupWorkOrdersByWorkCenter(workOrdersData: any[]) {
+  const workCenterGroups = new Map<string, any[]>();
+  
+  for (const wo of workOrdersData) {
+    const workCenter = wo.workCenter || "Unknown";
+    if (!workCenterGroups.has(workCenter)) {
+      workCenterGroups.set(workCenter, []);
+    }
+    workCenterGroups.get(workCenter)!.push(wo);
+  }
+  
+  return workCenterGroups;
+}
+
 interface OperatorProfile {
   id: number;
   name: string;
@@ -47,6 +62,16 @@ interface WorkOrderData {
 
 interface RoutingAssignmentResult {
   routing: string;
+  workOrderCount: number;
+  success: boolean;
+  assignedCount: number;
+  failedCount: number;
+  retryAttempts: number;
+  error?: string;
+}
+
+interface WorkCenterAssignmentResult {
+  workCenter: string;
   workOrderCount: number;
   success: boolean;
   assignedCount: number;
@@ -382,24 +407,28 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       });
     }
 
-    // Step 3: Group work orders by routing for batch processing
-    const routingGroups = groupWorkOrdersByRouting(unassignedWorkOrders);
-    const routingResults: RoutingAssignmentResult[] = [];
+    // Step 3: Group work orders by work center for batch processing
+    const workCenterGroups = groupWorkOrdersByWorkCenter(unassignedWorkOrders);
+    const workCenterResults: WorkCenterAssignmentResult[] = [];
     
-    // Step 4: Process each routing group with AI
+    // Step 4: Process work centers in specific order: Assembly, Cutting, Packaging
     const allAssignments = new Map<number, WorkOrderData[]>();
     const successfulAssignments: number[] = [];
     const failedAssignments: number[] = [];
     
-    let currentRoutingIndex = 0;
-    const totalRoutings = routingGroups.size;
+    // Define processing order
+    const workCenterOrder = ['Assembly', 'Cutting', 'Packaging'];
+    let currentWorkCenterIndex = 0;
     
-    for (const [routing, workOrdersInGroup] of routingGroups) {
-      currentRoutingIndex++;
-      console.log(`Processing routing ${currentRoutingIndex}/${totalRoutings}: ${routing} (${workOrdersInGroup.length} work orders)`);
+    for (const workCenter of workCenterOrder) {
+      const workOrdersInGroup = workCenterGroups.get(workCenter) || [];
+      if (workOrdersInGroup.length === 0) continue;
       
-      const routingResult: RoutingAssignmentResult = {
-        routing,
+      currentWorkCenterIndex++;
+      console.log(`Processing work center ${currentWorkCenterIndex}/${workCenterOrder.length}: ${workCenter} (${workOrdersInGroup.length} work orders)`);
+      
+      const workCenterResult: WorkCenterAssignmentResult = {
+        workCenter,
         workOrderCount: workOrdersInGroup.length,
         success: false,
         assignedCount: 0,
@@ -419,61 +448,42 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         sequence: wo.sequence
       }));
       
-      // Get operators with experience in this routing
+      // Get operators with experience in this work center
       const qualifiedOperators = [];
-      const operatorsWithRoutingExperience = [];
       const operatorsWithWorkCenterExperience = [];
       
-      // Get all unique work centers needed for this routing group
-      const workCentersNeeded = new Set(workOrdersInGroup.map(wo => wo.workCenter));
-      
       for (const [opId, profile] of operatorProfiles) {
-        // First check if operator has all required work centers enabled
+        // First check if operator has the work center enabled
         const operator = activeOperators.find(op => op.id === opId);
         if (!operator) continue;
         
         const operatorWorkCenters = operator.workCenters || [];
-        const hasRequiredWorkCenters = Array.from(workCentersNeeded).every(wc => {
-          // Handle Assembly work center - operator can have Assembly, Sewing, or Rope
-          if (wc === 'Assembly') {
-            return operatorWorkCenters.includes('Assembly') || 
-                   operatorWorkCenters.includes('Sewing') || 
-                   operatorWorkCenters.includes('Rope');
-          }
-          return operatorWorkCenters.includes(wc);
-        });
+        let hasWorkCenter = false;
         
-        if (!hasRequiredWorkCenters) {
-          continue; // Skip this operator if they don't have required work centers enabled
+        // Handle Assembly work center - operator can have Assembly, Sewing, or Rope
+        if (workCenter === 'Assembly') {
+          hasWorkCenter = operatorWorkCenters.includes('Assembly') || 
+                         operatorWorkCenters.includes('Sewing') || 
+                         operatorWorkCenters.includes('Rope');
+        } else {
+          hasWorkCenter = operatorWorkCenters.includes(workCenter);
         }
         
-        // Handle routing mapping for products that use different manufacturing routing
-        // Lifetime Air Harness products use Lifetime Harness routing for manufacturing
-        const routingsToCheck = [routing];
-        if (routing === 'Lifetime Air Harness') {
-          routingsToCheck.push('Lifetime Harness');
+        if (!hasWorkCenter) {
+          continue; // Skip this operator if they don't have the work center enabled
         }
         
-        // Check for exact routing experience
-        const hasRoutingExperience = Array.from(profile.uphData.keys()).some(key => 
-          routingsToCheck.some(r => key.includes(r))
+        // Check for work center experience
+        const hasWorkCenterExperience = Array.from(profile.uphData.keys()).some(key => 
+          key.startsWith(`${workCenter}-`)
         );
         
-        // Check for work center experience (fallback if no routing experience)
-        const hasWorkCenterExperience = Array.from(workCentersNeeded).some(wc => 
-          Array.from(profile.uphData.keys()).some(key => key.startsWith(`${wc}-`))
-        );
-        
-        if (hasRoutingExperience) {
-          operatorsWithRoutingExperience.push({
-            id: opId,
-            name: profile.name,
-            currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
-            remainingHours: profile.maxHours - profile.hoursAssigned,
-            uphPerformance: Array.from(profile.uphData.entries())
-              .filter(([key]) => routingsToCheck.some(r => key.includes(r)))
-              .map(([key, data]) => ({
-                workCenterRouting: key,
+        if (hasWorkCenterExperience) {
+          // Collect all UPH data for this work center
+          const workCenterUphData = Array.from(profile.uphData.entries())
+            .filter(([key]) => key.startsWith(`${workCenter}-`))
+            .map(([key, data]) => ({
+              workCenterRouting: key,
                 uph: data.uph,
                 observations: data.observations
               }))
