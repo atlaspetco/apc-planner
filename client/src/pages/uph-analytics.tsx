@@ -77,6 +77,11 @@ function transformRawUphData(rawData: RawUphData[] | any): UphTableData {
   
   // Process each record
   rawData.forEach(record => {
+    // Filter out noisy data with less than 5 observations
+    if (record.observationCount < 5) {
+      return;
+    }
+    
     const routing = record.productRouting || record.routing; // Handle both field names
     if (!routing) return; // Skip records without routing
     
@@ -428,23 +433,6 @@ export default function UphAnalytics() {
         </div>
         
         <div className="flex items-center gap-4">
-
-          
-          {/* Anomaly Settings Dropdown */}
-          <div className="flex items-center space-x-2">
-            <Label htmlFor="anomaly-filter" className="text-sm">Anomaly Settings:</Label>
-            <Select value={anomalyFilter} onValueChange={(value: "none" | "2percent" | "10percent") => setAnomalyFilter(value)}>
-              <SelectTrigger id="anomaly-filter" className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No filtering</SelectItem>
-                <SelectItem value="2percent">Remove top/bottom 2%</SelectItem>
-                <SelectItem value="10percent">Remove top/bottom 10%</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
           {/* Refresh Button */}
           <Button
             onClick={handleRefresh}

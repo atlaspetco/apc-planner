@@ -292,7 +292,18 @@ export function OperatorDropdown({
                     // Find the operator details for single bulk assignment
                     const operatorName = uniqueOperators[0];
                     const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
-                    return operatorDetails ? (
+                    
+                    // If operator not in qualified list but is assigned, show basic info
+                    if (!operatorDetails) {
+                      return (
+                        <div className="flex items-center space-x-1">
+                          {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
+                          <span className="text-green-700">{formatOperatorName(operatorName)} assigned</span>
+                        </div>
+                      );
+                    }
+                    
+                    return (
                       <div className="flex items-center justify-between w-full min-w-0">
                         <div className="flex items-center space-x-1">
                           {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
@@ -316,11 +327,6 @@ export function OperatorDropdown({
                             </Badge>
                           )}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center space-x-1">
-                        {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                        <span className="text-green-700">{formatOperatorName(operatorName)} assigned</span>
                       </div>
                     );
                   })() : 
