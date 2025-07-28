@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCaching, setIsCaching] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [isUphLoading, setIsUphLoading] = useState(false);
 
   const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
     queryKey: ["/api/production-orders"],
@@ -173,13 +174,14 @@ export default function Dashboard() {
                 onClick={() => errorPOs && setShowErrorDialog(true)}
               >
                 <div className={`w-3 h-3 rounded-full ${
-                  statusIndicator === "green" ? "bg-green-500" : 
-                  statusIndicator === "yellow" ? "bg-yellow-500 animate-pulse" : 
+                  statusIndicator === "green" && !isUphLoading ? "bg-green-500" : 
+                  statusIndicator === "yellow" || isUphLoading ? "bg-yellow-500 animate-pulse" : 
                   "bg-red-500"
                 }`}></div>
                 <span className="text-sm text-gray-600">
                   {isRefreshing ? "Refreshing..." : 
                    isLoadingPOs ? "Loading..." : 
+                   isUphLoading ? "Loading UPH..." :
                    errorPOs ? "Error" : "Live"}
                 </span>
                 {errorPOs && <AlertCircle className="w-4 h-4 text-red-500" />}
@@ -227,6 +229,7 @@ export default function Dashboard() {
           isLoading={isLoadingPOs}
           assignments={assignmentsMap}
           onAssignmentChange={refetchAssignments}
+          onUphLoadingChange={setIsUphLoading}
         />
       </div>
 

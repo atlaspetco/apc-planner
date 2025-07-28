@@ -30,6 +30,7 @@ interface OperatorDropdownProps {
   assignments?: Map<number, any>; // For bulk assignment display
   onAssignmentChange?: (workOrderId: number, operatorId: number | null, estimatedHours: number | null) => void;
   onAssign?: (operatorId: number) => void; // For bulk assignment
+  onUphLoadingChange?: (loading: boolean) => void; // For notifying parent of UPH loading state
   debug?: boolean; // For debugging specific combinations
   className?: string;
 }
@@ -57,6 +58,7 @@ export function OperatorDropdown({
   assignments,
   onAssignmentChange,
   onAssign,
+  onUphLoadingChange,
   debug,
   className
 }: OperatorDropdownProps) {
@@ -120,6 +122,7 @@ export function OperatorDropdown({
         abortControllerRef.current = new AbortController();
         
         setLoading(true);
+        onUphLoadingChange?.(true);
         const params = new URLSearchParams({
           workCenter,
           ...(routing && { routing }),
@@ -200,6 +203,7 @@ export function OperatorDropdown({
         setQualifiedOperators([]);
       } finally {
         setLoading(false);
+        onUphLoadingChange?.(false);
       }
     };
 

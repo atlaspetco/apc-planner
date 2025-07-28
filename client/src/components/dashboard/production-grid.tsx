@@ -28,6 +28,7 @@ interface ProductionGridProps {
   workCenters?: string[];
   assignments?: Map<number, any>;
   onAssignmentChange?: () => void;
+  onUphLoadingChange?: (loading: boolean) => void;
 }
 
 // Work centers will be loaded dynamically from API
@@ -47,7 +48,7 @@ const groupOrdersByRouting = (orders: ProductionOrderWithWorkOrders[]) => {
   return grouped;
 };
 
-export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS, assignments = new Map(), onAssignmentChange }: ProductionGridProps) {
+export default function ProductionGrid({ productionOrders, isLoading, workCenters = DEFAULT_WORK_CENTERS, assignments = new Map(), onAssignmentChange, onUphLoadingChange }: ProductionGridProps) {
   console.log('ProductionGrid render:', { isLoading, ordersCount: productionOrders?.length, orders: productionOrders?.slice(0, 2) });
   
   const [expandedRoutings, setExpandedRoutings] = useState<Set<string>>(new Set());
@@ -258,6 +259,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                 finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
                                 assignments={assignments}
                                 debug={routing === 'Lifetime Slip Collar' && workCenter === 'Assembly'}
+                                onUphLoadingChange={onUphLoadingChange}
                                 onAssign={async (operatorId) => {
                                   try {
                                     // Use smart bulk assignment endpoint
@@ -355,6 +357,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                   workOrderStates={workOrdersInCenter.map(wo => wo.state)}
                                   finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done' && wo.employee_name).map(wo => wo.employee_name as string)}
                                   assignments={assignments}
+                                  onUphLoadingChange={onUphLoadingChange}
                                   onAssign={async (operatorId) => {
                                     // Bulk assign to all work orders in this work center for this MO
                                     for (const wo of workOrdersInCenter) {
