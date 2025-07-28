@@ -381,414 +381,110 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       });
     }
 
-    // Step 3: Group work orders by routing for batch processing
-    const routingGroups = groupWorkOrdersByRouting(unassignedWorkOrders);
-    const routingResults: RoutingAssignmentResult[] = [];
-    
-    // Step 4: Process each routing group with AI
-    const allAssignments = new Map<number, WorkOrderData[]>();
+    // Map existing hours per operator
+    const existingHours = await db
+      .select({
+        operatorId: workOrderAssignments.operatorId,
+        hours: sql<number>`SUM(${workOrderAssignments.estimatedHours})`
+      })
+      .from(workOrderAssignments)
+      .where(eq(workOrderAssignments.isActive, true))
+      .groupBy(workOrderAssignments.operatorId);
+
+    const hoursMap = new Map<number, number>();
+    for (const row of existingHours) {
+      hoursMap.set(row.operatorId, Number(row.hours || 0));
+    }
+
+    for (const [opId, profile] of operatorProfiles) {
+      profile.hoursAssigned = hoursMap.get(opId) || 0;
+    }
+
+    const assignmentRecords: any[] = [];
     const successfulAssignments: number[] = [];
     const failedAssignments: number[] = [];
-    
-    let currentRoutingIndex = 0;
-    const totalRoutings = routingGroups.size;
-    
-    for (const [routing, workOrdersInGroup] of routingGroups) {
-      currentRoutingIndex++;
-      console.log(`Processing routing ${currentRoutingIndex}/${totalRoutings}: ${routing} (${workOrdersInGroup.length} work orders)`);
-      
-      const routingResult: RoutingAssignmentResult = {
-        routing,
-        workOrderCount: workOrdersInGroup.length,
-        success: false,
-        assignedCount: 0,
-        failedCount: 0,
-        retryAttempts: 0
-      };
-      
-      // Prepare work order data
-      const workOrderData: WorkOrderData[] = workOrdersInGroup.map(wo => ({
-        workOrderId: wo.workOrderId,
-        moNumber: wo.moNumber,
-        routing: wo.routing,
-        quantity: wo.quantity,
-        workCenter: wo.workCenter,
-        operation: wo.operation,
-        expectedHours: 0, // Will be calculated based on UPH
-        sequence: wo.sequence
-      }));
-      
-      // Get operators with experience in this routing
-      const qualifiedOperators = [];
-      const operatorsWithRoutingExperience = [];
-      const operatorsWithWorkCenterExperience = [];
-      
-      // Get all unique work centers needed for this routing group
-      const workCentersNeeded = new Set(workOrdersInGroup.map(wo => wo.workCenter));
-      
+
+    for (const wo of unassignedWorkOrders) {
+      const candidates: { opId: number; uph: number; hours: number }[] = [];
+
       for (const [opId, profile] of operatorProfiles) {
-        // First check if operator has all required work centers enabled
-        const operator = activeOperators.find(op => op.id === opId);
+        const operator = activeOperators.find(o => o.id === opId);
         if (!operator) continue;
-        
-        const operatorWorkCenters = operator.workCenters || [];
-        const hasRequiredWorkCenters = Array.from(workCentersNeeded).every(wc => {
-          // Handle Assembly work center - operator can have Assembly, Sewing, or Rope
-          if (wc === 'Assembly') {
-            return operatorWorkCenters.includes('Assembly') || 
-                   operatorWorkCenters.includes('Sewing') || 
-                   operatorWorkCenters.includes('Rope');
-          }
-          return operatorWorkCenters.includes(wc);
-        });
-        
-        if (!hasRequiredWorkCenters) {
-          continue; // Skip this operator if they don't have required work centers enabled
+
+        // Work center eligibility
+        let hasWC = false;
+        if (wo.workCenter === 'Assembly') {
+          hasWC = operator.workCenters?.includes('Assembly') ||
+                   operator.workCenters?.includes('Sewing') ||
+                   operator.workCenters?.includes('Rope');
+        } else {
+          hasWC = operator.workCenters?.includes(wo.workCenter);
         }
-        
-        // Handle routing mapping for products that use different manufacturing routing
-        // Lifetime Air Harness products use Lifetime Harness routing for manufacturing
-        const routingsToCheck = [routing];
-        if (routing === 'Lifetime Air Harness') {
-          routingsToCheck.push('Lifetime Harness');
-        }
-        
-        // Check for exact routing experience
-        const hasRoutingExperience = Array.from(profile.uphData.keys()).some(key => 
-          routingsToCheck.some(r => key.includes(r))
-        );
-        
-        // Check for work center experience (fallback if no routing experience)
-        const hasWorkCenterExperience = Array.from(workCentersNeeded).some(wc => 
-          Array.from(profile.uphData.keys()).some(key => key.startsWith(`${wc}-`))
-        );
-        
-        if (hasRoutingExperience) {
-          operatorsWithRoutingExperience.push({
-            id: opId,
-            name: profile.name,
-            currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
-            remainingHours: profile.maxHours - profile.hoursAssigned,
-            uphPerformance: Array.from(profile.uphData.entries())
-              .filter(([key]) => routingsToCheck.some(r => key.includes(r)))
-              .map(([key, data]) => ({
-                workCenterRouting: key,
-                uph: data.uph,
-                observations: data.observations
-              }))
-          });
-        } else if (hasWorkCenterExperience) {
-          // Fallback to work center experience
-          operatorsWithWorkCenterExperience.push({
-            id: opId,
-            name: profile.name,
-            currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
-            remainingHours: profile.maxHours - profile.hoursAssigned,
-            uphPerformance: Array.from(profile.uphData.entries())
-              .filter(([key]) => Array.from(workCentersNeeded).some(wc => key.startsWith(`${wc}-`)))
-              .map(([key, data]) => ({
-                workCenterRouting: key,
-                uph: data.uph,
-                observations: data.observations
-              }))
-          });
-        }
+        if (!hasWC) continue;
+
+        const routingToCheck = wo.routing === 'Lifetime Air Harness' ? 'Lifetime Harness' : wo.routing;
+        if (!operator.routings?.includes(routingToCheck)) continue;
+
+        const uphEntry = profile.uphData.get(`${wo.workCenter}-${routingToCheck}`);
+        if (!uphEntry || uphEntry.uph <= 0) continue;
+
+        const qty = wo.quantity > 0 ? wo.quantity : 0;
+        if (qty === 0) continue;
+
+        const hoursNeeded = qty / uphEntry.uph;
+        if (profile.hoursAssigned + hoursNeeded > profile.maxHours) continue;
+
+        candidates.push({ opId, uph: uphEntry.uph, hours: hoursNeeded });
       }
-      
-      // Prefer operators with exact routing experience, but fall back to work center experience
-      if (operatorsWithRoutingExperience.length > 0) {
-        qualifiedOperators.push(...operatorsWithRoutingExperience);
-      } else if (operatorsWithWorkCenterExperience.length > 0) {
-        console.log(`No operators with ${routing} experience, using operators with work center experience`);
-        qualifiedOperators.push(...operatorsWithWorkCenterExperience);
-      }
-      
-      if (qualifiedOperators.length === 0) {
-        console.log(`No qualified operators found for routing: ${routing}`);
-        failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
-        routingResult.failedCount = workOrderData.length;
-        routingResult.error = "No qualified operators found";
-        routingResults.push(routingResult);
+
+      if (candidates.length === 0) {
+        failedAssignments.push(wo.workOrderId);
         continue;
       }
-      
-      // Try up to 2 times to assign work orders for this routing
-      const maxRetries = 2;
-      let assignmentSuccess = false;
-      
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        routingResult.retryAttempts = attempt;
-        console.log(`Attempt ${attempt}/${maxRetries} for routing: ${routing}`);
-        
-        // Use AI to assign work orders
-        const systemMessage = `You are an expert manufacturing scheduler. Assign work orders to operators based on:
-1. Operator's UPH (Units Per Hour) performance for specific work center and routing combinations
-2. Current capacity utilization (prefer operators with lower utilization)
-3. Number of observations (higher observations = more reliable UPH data)
-4. Remaining available hours
 
-Guidelines:
-- Calculate expected hours = quantity / UPH
-- Don't exceed operator's remaining hours
-- Prefer operators with proven performance (high UPH, many observations)
-- Balance workload across operators
+      candidates.sort((a, b) => b.uph - a.uph);
+      const best = candidates[0];
+      const profile = operatorProfiles.get(best.opId)!;
+      profile.hoursAssigned += best.hours;
 
-Return assignments as JSON:
-{
-  "assignments": [
-    {
-      "workOrderId": number,
-      "operatorId": number,
-      "expectedHours": number,
-      "reasoning": "brief explanation",
-      "confidence": number (0-1)
-    }
-  ]
-}`;
+      assignmentRecords.push({
+        workOrderId: wo.workOrderId,
+        operatorId: best.opId,
+        assignedBy: 'AI Auto-Assign',
+        assignedAt: new Date(),
+        isActive: true,
+        isAutoAssigned: true,
+        estimatedHours: best.hours,
+        autoAssignReason: `Auto-assigned based on UPH (${best.uph.toFixed(1)} UPH)`,
+        autoAssignConfidence: 0.75
+      });
 
-        try {
-          const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: systemMessage },
-              {
-                role: "user",
-                content: JSON.stringify({
-                  workOrders: workOrderData,
-                  operators: qualifiedOperators,
-                  routing: routing
-                })
-              }
-            ],
-            temperature: 0.5,
-            response_format: { type: "json_object" }
-          });
+      successfulAssignments.push(wo.workOrderId);
+    }
 
-          const aiResponse = JSON.parse(response.choices[0].message.content || "{}");
-          const assignments = aiResponse.assignments || [];
-          
-          // Process AI assignments
-          let routingAssignedCount = 0;
-          for (const assignment of assignments) {
-            const woData = workOrderData.find(wo => wo.workOrderId === assignment.workOrderId);
-            if (!woData) continue;
-            
-            woData.expectedHours = assignment.expectedHours || 0;
-            
-            // Update operator profile
-            const profile = operatorProfiles.get(assignment.operatorId);
-            if (profile) {
-              profile.hoursAssigned += assignment.expectedHours;
-              profile.activeAssignments++;
-              
-              // Track assignment for this operator
-              if (!allAssignments.has(assignment.operatorId)) {
-                allAssignments.set(assignment.operatorId, []);
-              }
-              allAssignments.get(assignment.operatorId)!.push(woData);
-            }
-            
-            successfulAssignments.push(assignment.workOrderId);
-            routingAssignedCount++;
-          }
-          
-          if (routingAssignedCount > 0) {
-            assignmentSuccess = true;
-            routingResult.success = true;
-            routingResult.assignedCount = routingAssignedCount;
-            routingResult.failedCount = workOrderData.length - routingAssignedCount;
-            break; // Success, no need to retry
-          }
-          
-        } catch (error) {
-          console.error(`AI assignment failed for routing ${routing} (attempt ${attempt}):`, error);
-          routingResult.error = error instanceof Error ? error.message : "AI assignment failed";
-          
-          if (attempt === maxRetries) {
-            // Final attempt failed
-            failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
-            routingResult.failedCount = workOrderData.length;
-          }
-          // Otherwise, continue to next attempt
-        }
-      }
-      
-      routingResults.push(routingResult);
-    }
-    
-    // Step 5: Check for overloaded operators and rebalance if needed
-    const reassignments = await rebalanceOverloadedOperators(allAssignments, operatorProfiles);
-    
-    // Apply reassignments
-    for (const [workOrderId, newOperatorId] of reassignments) {
-      // Find current assignment
-      let currentOperatorId: number | null = null;
-      let workOrderData: WorkOrderData | null = null;
-      
-      for (const [opId, assignments] of allAssignments) {
-        const wo = assignments.find(a => a.workOrderId === workOrderId);
-        if (wo) {
-          currentOperatorId = opId;
-          workOrderData = wo;
-          break;
-        }
-      }
-      
-      if (currentOperatorId && workOrderData) {
-        // Remove from current operator
-        const currentAssignments = allAssignments.get(currentOperatorId) || [];
-        allAssignments.set(
-          currentOperatorId,
-          currentAssignments.filter(a => a.workOrderId !== workOrderId)
-        );
-        
-        const currentProfile = operatorProfiles.get(currentOperatorId);
-        if (currentProfile) {
-          currentProfile.hoursAssigned -= workOrderData.expectedHours;
-          currentProfile.activeAssignments--;
-        }
-        
-        // Add to new operator
-        if (!allAssignments.has(newOperatorId)) {
-          allAssignments.set(newOperatorId, []);
-        }
-        allAssignments.get(newOperatorId)!.push(workOrderData);
-        
-        const newProfile = operatorProfiles.get(newOperatorId);
-        if (newProfile) {
-          newProfile.hoursAssigned += workOrderData.expectedHours;
-          newProfile.activeAssignments++;
-        }
-      }
-    }
-    
-    // Step 6: Save all assignments to database
-    const assignmentRecords = [];
-    for (const [operatorId, workOrdersList] of allAssignments) {
-      for (const wo of workOrdersList) {
-        assignmentRecords.push({
-          workOrderId: wo.workOrderId,
-          operatorId: operatorId,
-          assignedBy: "AI Auto-Assign",
-          assignedAt: new Date(),
-          isActive: true,
-          isAutoAssigned: true,
-          autoAssignReason: `Assigned based on UPH performance for ${wo.routing} - ${wo.workCenter}`,
-          autoAssignConfidence: 0.85
-        });
-      }
-    }
-    
-    // Insert assignments with better error handling
-    let savedCount = 0;
-    const actualSavedAssignments: number[] = [];
-    
     if (assignmentRecords.length > 0) {
-      console.log(`Saving ${assignmentRecords.length} assignments to database...`);
-      
-      // First, clear any existing AI assignments for these work orders
       const workOrderIds = assignmentRecords.map(a => a.workOrderId);
-      try {
-        await db
-          .delete(workOrderAssignments)
-          .where(
-            and(
-              inArray(workOrderAssignments.workOrderId, workOrderIds),
-              eq(workOrderAssignments.assignedBy, "AI Auto-Assign")
-            )
-          );
-      } catch (deleteError) {
-        console.error("Error clearing existing assignments:", deleteError);
-      }
-      
-      // Insert in smaller batches to avoid database timeouts
-      const batchSize = 20;
-      
-      for (let i = 0; i < assignmentRecords.length; i += batchSize) {
-        const batch = assignmentRecords.slice(i, i + batchSize);
-        try {
-          await db.insert(workOrderAssignments).values(batch);
-          savedCount += batch.length;
-          actualSavedAssignments.push(...batch.map(b => b.workOrderId));
-          console.log(`Saved ${savedCount}/${assignmentRecords.length} assignments...`);
-        } catch (batchError) {
-          console.error(`Error inserting batch ${i/batchSize + 1}:`, batchError);
-          // Try individual inserts for failed batch
-          for (const record of batch) {
-            try {
-              await db.insert(workOrderAssignments).values([record]);
-              savedCount++;
-              actualSavedAssignments.push(record.workOrderId);
-            } catch (individualError) {
-              console.error(`Failed to save assignment for WO ${record.workOrderId}:`, individualError);
-              failedAssignments.push(record.workOrderId);
-            }
-          }
-        }
-      }
-      
-      console.log(`Successfully saved ${savedCount} out of ${assignmentRecords.length} assignments`);
+      await db
+        .delete(workOrderAssignments)
+        .where(and(inArray(workOrderAssignments.workOrderId, workOrderIds), eq(workOrderAssignments.assignedBy, 'AI Auto-Assign')));
+      await db.insert(workOrderAssignments).values(assignmentRecords);
     }
-    
-    // Calculate final metrics
+
     const operatorUtilization = new Map<number, number>();
     let totalHoursOptimized = 0;
-    
     for (const [opId, profile] of operatorProfiles) {
       const utilization = (profile.hoursAssigned / profile.maxHours) * 100;
       operatorUtilization.set(opId, utilization);
       totalHoursOptimized += profile.hoursAssigned;
     }
-    
-    // Track unassignable work orders (no operators with historical data)
-    const unassignableWorkOrders: number[] = [];
-    for (const wo of unassignedWorkOrders) {
-      const hasQualifiedOperators = [...operatorProfiles.values()].some(profile => {
-        const key = `${wo.workCenter}-${wo.routing}`;
-        return profile.uphData.has(key);
-      });
-      
-      if (!hasQualifiedOperators) {
-        unassignableWorkOrders.push(wo.workOrderId);
-        console.log(`No operators with historical data for: ${wo.routing} - ${wo.workCenter}`);
-      }
-    }
-    
-    // Calculate actual failed assignments (excluding unassignable)
-    const actualFailures = failedAssignments.filter(id => !unassignableWorkOrders.includes(id));
-    
-    // Create detailed summary
-    let summary = "";
-    const successfulRoutings = routingResults.filter(r => r.success);
-    const failedRoutings = routingResults.filter(r => !r.success);
-    
-    if (savedCount > 0) {
-      summary += `Successfully saved ${savedCount} work order assignments.`;
-    }
-    
-    if (failedRoutings.length > 0) {
-      summary += ` Failed to assign work orders for ${failedRoutings.length} routings: ${failedRoutings.map(r => `${r.routing} (${r.error || 'Unknown error'})`).join(', ')}.`;
-    }
-    
-    if (unassignableWorkOrders.length > 0) {
-      summary += ` ${unassignableWorkOrders.length} work orders couldn't be assigned (no operators with historical data).`;
-    }
-    
-    // Success is determined by actual saved assignments, not just AI planning
-    const isSuccess = savedCount > 0;
-    
+
     return {
-      success: isSuccess,
-      assignments: successfulAssignments.filter(id => actualSavedAssignments.includes(id)),
-      unassigned: [...actualFailures, ...unassignableWorkOrders],
-      summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
+      success: successfulAssignments.length > 0,
+      assignments: successfulAssignments,
+      unassigned: failedAssignments,
+      summary: successfulAssignments.length > 0 ? `Auto-assigned ${successfulAssignments.length} work orders` : 'No assignments could be made',
       totalHoursOptimized,
-      operatorUtilization,
-      routingResults,
-      progress: {
-        current: totalRoutings,
-        total: totalRoutings
-      }
+      operatorUtilization
     };
   } catch (error) {
     console.error("Auto-assign error:", error);
