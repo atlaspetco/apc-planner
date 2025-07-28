@@ -1220,9 +1220,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             effectiveRouting = 'Lifetime Harness';
           }
           
-          // RELAXED QUALIFICATION: Show operators if they have routing enabled OR work center experience
+          // Check if operator has this routing enabled
           const hasRequiredRouting = op.routings.includes(effectiveRouting);
-          
+          if (!hasRequiredRouting) {
+            console.log(`❌ ${op.name} does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
+            return false;
+          }
+
           // Support Assembly grouping which aggregates Sewing and Rope
           const workCenterKeys = workCenter === 'Assembly'
             ? ['Assembly', 'Sewing', 'Rope']
@@ -1231,14 +1235,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const hasUphData = workCenterKeys.some(wc =>
             uphMap.has(`${op.name}-${wc}-${effectiveRouting}`)
           );
-          
-          // Show operator if they have routing enabled OR any work center experience
-          if (hasRequiredRouting || hasUphData) {
-            return true;
-          }
-          
-          console.log(`❌ ${op.name} does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
-          return false;
+
+          return hasUphData;
         })
         .map(op => {
           let effectiveRouting = routing as string || '';
