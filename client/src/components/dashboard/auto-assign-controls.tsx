@@ -264,34 +264,23 @@ export function AutoAssignControls() {
     <>
       <div className="flex items-center gap-2">
         <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={() => autoAssignMutation.mutate()}
-                disabled={isLoading}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-              >
-                {autoAssignMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Auto-Assigning...
-                  </>
-                ) : (
-                  <>
-                    Auto-Assign
-                    <Sparkles className="ml-1 h-3 w-3" />
-                  </>
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs">
-              <p className="font-semibold mb-1">AI-Powered Auto Assignment</p>
-              <p className="text-sm">
-                Uses OpenAI to analyze operator performance history and current workload
-                to automatically assign unassigned work orders for optimal efficiency.
-              </p>
-            </TooltipContent>
-          </Tooltip>
+        <Button
+          onClick={() => autoAssignMutation.mutate()}
+          disabled={isLoading}
+          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+        >
+          {autoAssignMutation.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Auto-Assigning...
+            </>
+          ) : (
+            <>
+              Auto-Assign
+              <Sparkles className="ml-1 h-3 w-3" />
+            </>
+          )}
+        </Button>
 
           {lastResult && lastResult.assignments && lastResult.assignments.length > 0 && (
             <Tooltip>
