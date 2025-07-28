@@ -92,6 +92,9 @@ export function OperatorDropdown({
       displayText: uniqueOperators.length === 1 ? `${uniqueOperators[0]} assigned` : `${uniqueOperators.length} operators assigned`
     });
   }
+  
+  // Force component refresh to load new UPH data
+  const [refreshKey, setRefreshKey] = useState(0);
   const [qualifiedOperators, setQualifiedOperators] = useState<QualifiedOperator[]>([]);
   const [loading, setLoading] = useState(false);
   const [estimatedHours, setEstimatedHours] = useState<number | null>(null);
@@ -113,6 +116,18 @@ export function OperatorDropdown({
         
         if (response.ok && data.operators) {
           setQualifiedOperators(data.operators);
+          
+          // Debug logging for qualified operators
+          if (data.operators.length > 0) {
+            const hasEstimated = data.operators.some((op: QualifiedOperator) => op.isEstimated);
+            if (hasEstimated) {
+              console.log(`⚠️ Estimates showing for ${workCenter}/${routing}:`, {
+                totalOperators: data.operators.length,
+                estimated: data.operators.filter((op: QualifiedOperator) => op.isEstimated).map((op: QualifiedOperator) => op.name),
+                exact: data.operators.filter((op: QualifiedOperator) => !op.isEstimated).map((op: QualifiedOperator) => op.name)
+              });
+            }
+          }
         } else {
           // Don't log errors for normal operation, just handle gracefully
           setQualifiedOperators([]);
@@ -138,6 +153,17 @@ export function OperatorDropdown({
     const hours = quantity / operatorUph;
     const wholeHours = Math.floor(hours);
     const minutes = Math.round((hours - wholeHours) * 60);
+    
+    // Debug logging for hours calculation  
+    if (routing === 'Lifetime Collar' && workCenter === 'Cutting' && workOrderIds && workOrderIds.length > 0) {
+      console.log(`⏱️ Lifetime Collar Cutting hours calculation:`, {
+        quantity,
+        operatorUph,
+        calculatedHours: hours,
+        display: wholeHours === 0 ? `${minutes}m` : minutes === 0 ? `${wholeHours}h` : `${wholeHours}h${minutes}m`,
+        workOrderIds: workOrderIds.length
+      });
+    }
     
     if (wholeHours === 0) {
       return `${minutes}m`;

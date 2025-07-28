@@ -199,6 +199,16 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                         return hasWO ? sum + (order.quantity || 0) : sum;
                       }, 0);
                       
+                      // Debug logging for quantity calculation
+                      if (routing === 'Lifetime Collar' && workCenter === 'Cutting') {
+                        console.log(`🔍 Lifetime Collar Cutting quantity debug:`, {
+                          workOrdersInCenter: workOrdersInCenter.length,
+                          uniqueMOQuantities: Array.from(uniqueMOQuantities.entries()),
+                          totalUniqueQuantity,
+                          orders: orders.map(o => ({ moNumber: o.moNumber, quantity: o.quantity }))
+                        });
+                      }
+                      
                       return (
                         <td key={workCenter} className="p-4 text-center">
                           {workOrdersInCenter.length > 0 ? (
