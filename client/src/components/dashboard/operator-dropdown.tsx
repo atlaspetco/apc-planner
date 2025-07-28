@@ -278,7 +278,7 @@ export function OperatorDropdown({
   return (
     <div className={`space-y-1 ${className || ''}`}>
       <Select 
-        value={workOrderIds ? (uniqueOperators.length > 0 ? "bulk-assigned" : "") : (currentOperatorId?.toString() || "")} 
+        value={workOrderIds ? "" : (currentOperatorId?.toString() || "")} 
         onValueChange={handleAssignment}
         disabled={loading || allFinished}
       >
