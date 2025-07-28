@@ -6481,12 +6481,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Helper function to update import status
-  global.updateImportStatus = (update: any) => {
-    importStatus = { ...importStatus, ...update, lastUpdate: new Date() };
-  };
-
-  const httpServer = createServer(app);
   // Cache estimated hours for all assignments endpoint
   app.post('/api/assignments/cache-hours', isAuthenticated, async (req, res) => {
     try {
@@ -6578,5 +6572,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper function to update import status
+  global.updateImportStatus = (update: any) => {
+    importStatus = { ...importStatus, ...update, lastUpdate: new Date() };
+  };
+
+  const httpServer = createServer(app);
   return httpServer;
 }
