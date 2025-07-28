@@ -1206,9 +1206,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`📋 Available routings for ${workCenter}:`, workCenterRoutings.slice(0, 10));
       }
 
-      // Filter operators based on actual UPH data availability - only show operators with performance data for this combination
+      // Filter operators based on work center settings AND UPH data availability
       const qualifiedOperators = allOperators
         .filter(op => {
+          // First check if operator has required work center enabled
+          if (!op.workCenters || !Array.isArray(op.workCenters)) {
+            return false;
+          }
+          
+          let hasRequiredWorkCenter = false;
+          if (workCenter === 'Assembly') {
+            // Assembly includes Sewing and Rope
+            hasRequiredWorkCenter = op.workCenters.includes('Assembly') || 
+                                   op.workCenters.includes('Sewing') || 
+                                   op.workCenters.includes('Rope');
+          } else {
+            hasRequiredWorkCenter = op.workCenters.includes(workCenter as string);
+          }
+          
+          if (!hasRequiredWorkCenter) {
+            return false;
+          }
+
           // Handle product name mapping for variants
           let effectiveRouting = routing as string || '';
           if (routing === 'Lifetime Air Harness') {
@@ -1282,6 +1301,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Skip if already in qualified list
           if (qualifiedOperators.some(q => q.id === op.id)) return false;
           
+          // First check if operator has required work center enabled
+          if (!op.workCenters || !Array.isArray(op.workCenters)) {
+            return false;
+          }
+          
+          let hasRequiredWorkCenter = false;
+          if (workCenter === 'Assembly') {
+            // Assembly includes Sewing and Rope
+            hasRequiredWorkCenter = op.workCenters.includes('Assembly') || 
+                                   op.workCenters.includes('Sewing') || 
+                                   op.workCenters.includes('Rope');
+          } else {
+            hasRequiredWorkCenter = op.workCenters.includes(workCenter as string);
+          }
+          
+          if (!hasRequiredWorkCenter) {
+            return false;
+          }
+          
           // Check if operator has ANY UPH data for this work center
           const hasWorkCenterData = currentUphData.some(uph => 
             uph.operatorName === op.name && uph.workCenter === workCenter
@@ -1331,11 +1369,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Strategy 1: Same work center, different routing
         const sameWorkCenterOperators = allOperators
           .filter(op => {
-            // Check if operator has UPH data for same work center but different routing
-            const hasWorkCenterEnabled = op.workCenters?.includes(workCenter as string) ||
-              (workCenter === 'Assembly' && op.workCenters?.some(wc => ['Assembly', 'Sewing', 'Rope'].includes(wc)));
+            // First check if operator has required work center enabled
+            if (!op.workCenters || !Array.isArray(op.workCenters)) {
+              return false;
+            }
             
-            if (!hasWorkCenterEnabled) return false;
+            let hasRequiredWorkCenter = false;
+            if (workCenter === 'Assembly') {
+              // Assembly includes Sewing and Rope
+              hasRequiredWorkCenter = op.workCenters.includes('Assembly') || 
+                                     op.workCenters.includes('Sewing') || 
+                                     op.workCenters.includes('Rope');
+            } else {
+              hasRequiredWorkCenter = op.workCenters.includes(workCenter as string);
+            }
+            
+            if (!hasRequiredWorkCenter) {
+              return false;
+            }
             
             // Find any UPH data for this operator + work center combination
             const operatorUphForWorkCenter = currentUphData.filter(uph => 
