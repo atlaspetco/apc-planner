@@ -484,52 +484,41 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
             .filter(([key]) => key.startsWith(`${workCenter}-`))
             .map(([key, data]) => ({
               workCenterRouting: key,
-                uph: data.uph,
-                observations: data.observations
-              }))
-          });
-        } else if (hasWorkCenterExperience) {
-          // Fallback to work center experience
+              uph: data.uph,
+              observations: data.observations
+            }));
+          
           operatorsWithWorkCenterExperience.push({
             id: opId,
             name: profile.name,
             currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
             remainingHours: profile.maxHours - profile.hoursAssigned,
-            uphPerformance: Array.from(profile.uphData.entries())
-              .filter(([key]) => Array.from(workCentersNeeded).some(wc => key.startsWith(`${wc}-`)))
-              .map(([key, data]) => ({
-                workCenterRouting: key,
-                uph: data.uph,
-                observations: data.observations
-              }))
+            uphPerformance: workCenterUphData
           });
         }
       }
       
-      // Prefer operators with exact routing experience, but fall back to work center experience
-      if (operatorsWithRoutingExperience.length > 0) {
-        qualifiedOperators.push(...operatorsWithRoutingExperience);
-      } else if (operatorsWithWorkCenterExperience.length > 0) {
-        console.log(`No operators with ${routing} experience, using operators with work center experience`);
+      // Use operators with work center experience
+      if (operatorsWithWorkCenterExperience.length > 0) {
         qualifiedOperators.push(...operatorsWithWorkCenterExperience);
       }
       
       if (qualifiedOperators.length === 0) {
-        console.log(`No qualified operators found for routing: ${routing}`);
+        console.log(`No qualified operators found for work center: ${workCenter}`);
         failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
-        routingResult.failedCount = workOrderData.length;
-        routingResult.error = "No qualified operators found";
-        routingResults.push(routingResult);
+        workCenterResult.failedCount = workOrderData.length;
+        workCenterResult.error = "No qualified operators found";
+        workCenterResults.push(workCenterResult);
         continue;
       }
       
-      // Try up to 2 times to assign work orders for this routing
+      // Try up to 2 times to assign work orders for this work center
       const maxRetries = 2;
       let assignmentSuccess = false;
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        routingResult.retryAttempts = attempt;
-        console.log(`Attempt ${attempt}/${maxRetries} for routing: ${routing}`);
+        workCenterResult.retryAttempts = attempt;
+        console.log(`Attempt ${attempt}/${maxRetries} for work center: ${workCenter}`);
         
         // Use AI to assign work orders
         const systemMessage = `You are an expert manufacturing scheduler. Assign work orders to operators based on:
@@ -567,7 +556,7 @@ Return assignments as JSON:
                 content: JSON.stringify({
                   workOrders: workOrderData,
                   operators: qualifiedOperators,
-                  routing: routing
+                  workCenter: workCenter
                 })
               }
             ],
@@ -579,7 +568,7 @@ Return assignments as JSON:
           const assignments = aiResponse.assignments || [];
           
           // Process AI assignments
-          let routingAssignedCount = 0;
+          let workCenterAssignedCount = 0;
           for (const assignment of assignments) {
             const woData = workOrderData.find(wo => wo.workOrderId === assignment.workOrderId);
             if (!woData) continue;
@@ -600,31 +589,31 @@ Return assignments as JSON:
             }
             
             successfulAssignments.push(assignment.workOrderId);
-            routingAssignedCount++;
+            workCenterAssignedCount++;
           }
           
-          if (routingAssignedCount > 0) {
+          if (workCenterAssignedCount > 0) {
             assignmentSuccess = true;
-            routingResult.success = true;
-            routingResult.assignedCount = routingAssignedCount;
-            routingResult.failedCount = workOrderData.length - routingAssignedCount;
+            workCenterResult.success = true;
+            workCenterResult.assignedCount = workCenterAssignedCount;
+            workCenterResult.failedCount = workOrderData.length - workCenterAssignedCount;
             break; // Success, no need to retry
           }
           
         } catch (error) {
-          console.error(`AI assignment failed for routing ${routing} (attempt ${attempt}):`, error);
-          routingResult.error = error instanceof Error ? error.message : "AI assignment failed";
+          console.error(`AI assignment failed for work center ${workCenter} (attempt ${attempt}):`, error);
+          workCenterResult.error = error instanceof Error ? error.message : "AI assignment failed";
           
           if (attempt === maxRetries) {
             // Final attempt failed
             failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
-            routingResult.failedCount = workOrderData.length;
+            workCenterResult.failedCount = workOrderData.length;
           }
           // Otherwise, continue to next attempt
         }
       }
       
-      routingResults.push(routingResult);
+      workCenterResults.push(workCenterResult);
     }
     
     // Step 5: Check for overloaded operators and rebalance if needed
@@ -684,7 +673,7 @@ Return assignments as JSON:
           assignedAt: new Date(),
           isActive: true,
           isAutoAssigned: true,
-          autoAssignReason: `Assigned based on UPH performance for ${wo.routing} - ${wo.workCenter}`,
+          autoAssignReason: `Assigned based on UPH performance for ${wo.workCenter} work center`,
           autoAssignConfidence: 0.85
         });
       }
@@ -770,15 +759,15 @@ Return assignments as JSON:
     
     // Create detailed summary
     let summary = "";
-    const successfulRoutings = routingResults.filter(r => r.success);
-    const failedRoutings = routingResults.filter(r => !r.success);
+    const successfulWorkCenters = workCenterResults.filter(r => r.success);
+    const failedWorkCenters = workCenterResults.filter(r => !r.success);
     
     if (savedCount > 0) {
       summary += `Successfully saved ${savedCount} work order assignments.`;
     }
     
-    if (failedRoutings.length > 0) {
-      summary += ` Failed to assign work orders for ${failedRoutings.length} routings: ${failedRoutings.map(r => `${r.routing} (${r.error || 'Unknown error'})`).join(', ')}.`;
+    if (failedWorkCenters.length > 0) {
+      summary += ` Failed to assign work orders for ${failedWorkCenters.length} work centers: ${failedWorkCenters.map(r => `${r.workCenter} (${r.error || 'Unknown error'})`).join(', ')}.`;
     }
     
     if (unassignableWorkOrders.length > 0) {
@@ -795,10 +784,10 @@ Return assignments as JSON:
       summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
       totalHoursOptimized,
       operatorUtilization,
-      routingResults,
+      workCenterResults,
       progress: {
-        current: totalRoutings,
-        total: totalRoutings
+        current: workCenterOrder.length,
+        total: workCenterOrder.length
       }
     };
   } catch (error) {
