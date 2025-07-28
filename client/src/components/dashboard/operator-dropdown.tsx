@@ -95,16 +95,7 @@ export function OperatorDropdown({
     });
   }
   
-  // Specific debug for Lifetime Slip Collar Assembly
-  if (debug && routing === 'Lifetime Slip Collar' && workCenter === 'Assembly') {
-    console.log(`🔍 DEBUG Lifetime Slip Collar Assembly:`, {
-      workOrderIds,
-      assignments: assignments ? Array.from(assignments.entries()) : 'no assignments map',
-      bulkAssignmentInfo,
-      uniqueOperators,
-      hasAssignments: uniqueOperators.length > 0
-    });
-  }
+
   
   // Force component refresh to load new UPH data
   const [refreshKey, setRefreshKey] = useState(0);

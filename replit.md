@@ -70,18 +70,21 @@ This is a React + Express + TypeScript application designed for manufacturing pr
 - **Base URL**: https://apc.fulfil.io (AtlasPetCompany Fulfil instance)
 - **API Version**: v2 with RESTful endpoints
 
+#### Data Architecture for AI Auto-Assignment:
+**CRITICAL ARCHITECTURAL REQUIREMENT**: All Fulfil data must be stored in local PostgreSQL database rather than using live API calls. This is required because the OpenAI-powered auto-assignment system needs to analyze production order data, operator performance metrics, and work center relationships in structured database tables to make intelligent assignment decisions.
+
 #### Data Sources for Planning Dashboard:
 - **Active Production Orders (for Planning Grid)**: 
   - Endpoint: `GET /api/v2/model/production.work?state=request,draft,waiting,assigned`
   - Fields: id, production, operation.name, work_center.name, employee.name, state, quantity_done, planned_date
   - Links to production orders via production field
-  - Used to populate planning grid with current/active work
+  - **Data stored locally** in production_orders and work_orders tables for AI analysis
 
 - **Completed Work Cycles (for UPH Calculations)**: 
   - Endpoint: `GET /api/v2/model/production.work.cycles?state=done`
   - Fields: work_operation_rec_name, work_cycles_work_center_rec_name, work_production_routing_rec_name, work_cycles_operator_rec_name, work_cycles_duration
   - Refresh every 4 hours to update UPH calculations
-  - **CRITICAL**: All UPH data comes from completed work cycles, not API calls during planning
+  - **CRITICAL**: All UPH data comes from completed work cycles, stored in work_cycles table for OpenAI auto-assignment analysis
 
 - **Production Orders**: 
   - Endpoint: `/api/v2/model/production.order`
@@ -159,6 +162,7 @@ Changelog:
 - **Example**: Courtney Banh + Assembly + Lifetime Pouch shows 23.18 UPH (average of 88 MOs), while individual MOs range from 0.83 to 128.76 UPH
 
 ## Recent Changes (Latest First)
+- **INVESTIGATION COMPLETE: Lifetime Slip Collar Assembly Dropdown Working Correctly (July 28, 2025)**: Comprehensive debugging investigation confirmed that the Lifetime Slip Collar Assembly dropdown is functioning properly. Debug logs revealed: (1) 30 Assembly work orders exist for Lifetime Slip Collar (IDs: 34158,34159,33976,33977, etc.), (2) Evan Crosby is qualified and assigned to these work orders with 67.9 UPH, (3) Bulk assignment detection correctly shows "Evan Crosby assigned", (4) All assignments are persisting to database successfully. What appeared to be a bug was actually the system working as designed. Documented critical architectural requirement: Fulfil data must be stored in local database for OpenAI auto-assignment analysis rather than using live API calls.
 - **CRITICAL FIX: Assignment Persistence and UI Refresh Resolved (July 28, 2025)**: Fixed major issue where operator assignments weren't showing in dropdowns after being made. Root cause: Individual MO assignments were only logging locally without making API calls. Solution: Updated `handleOperatorAssign` in production-grid.tsx to properly call `/api/work-orders/assign-operator` endpoint and trigger `onAssignmentChange` callback for UI refresh. Added rope/sewing work center validation to individual assignment endpoint, allowing operators to be assigned to all 4 work center categories (Assembly, Sewing, Rope, Assembly/Sewing variants). Assignments now persist correctly to database and immediately update in UI after assignment.
 - **MAJOR FIX: Eliminated Estimated Operators in Dropdowns (July 28, 2025)**: Successfully resolved critical issue where over 50% of operator dropdowns showed estimated operators (with ~ prefix in red text). Root cause: Sparse UPH data meant many routing combinations only had 1-2 operators with exact data. Solution: Modified qualified operators logic to include ALL operators with work center experience without marking them as estimated. Results: Assembly/Lifetime Pro Harness went from showing 2 estimated operators to 5 valid operators (all with isEstimated: false). System now prioritizes: 1) Exact routing matches, 2) Work center experience (NOT estimated), 3) Only then estimates if neither apply. This dramatically improves user confidence in operator assignments.
 - **CRITICAL FIXES: UPH Data Loading and Calculations Corrected (July 28, 2025)**: Successfully resolved multiple critical issues:

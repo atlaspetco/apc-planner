@@ -224,17 +224,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
                       
-                      // Debug logging for Lifetime Slip Collar Assembly specifically
-                      if (routing === 'Lifetime Slip Collar' && workCenter === 'Assembly') {
-                        console.log(`🔍 Lifetime Slip Collar Assembly workCenter filtering:`, {
-                          routing,
-                          workCenter,
-                          allWorkOrdersByCenter: Object.keys(allWorkOrdersByCenter),
-                          workOrdersInCenter: workOrdersInCenter?.length || 0,
-                          workOrderIds: workOrdersInCenter?.map(wo => wo.id) || [],
-                          willRenderDropdown: workOrdersInCenter && workOrdersInCenter.length > 0
-                        });
-                      }
+
                       
                       // Calculate total quantity across MOs that have operations in this work center
                       const totalUniqueQuantity = orders.reduce((sum, order) => {
