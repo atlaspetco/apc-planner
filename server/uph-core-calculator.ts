@@ -30,12 +30,16 @@ export interface MoGroupData {
 // Core work center consolidation logic
 export function consolidateWorkCenter(wc: string | null): string | null {
   if (!wc) return null;
-  const wcLower = wc.toLowerCase();
-  if (wcLower.includes('sewing') || wcLower.includes('rope')) {
+  const wcLower = wc.toLowerCase().trim();
+  
+  // Check for Assembly-related work centers (including exact matches)
+  if (wcLower === 'sewing' || wcLower === 'rope' || 
+      wcLower.includes('sewing') || wcLower.includes('rope') || 
+      wcLower.includes('assembly')) {
     return 'Assembly';
-  } else if (wcLower.includes('cutting')) {
+  } else if (wcLower === 'cutting' || wcLower.includes('cutting')) {
     return 'Cutting';
-  } else if (wcLower.includes('packaging')) {
+  } else if (wcLower === 'packaging' || wcLower.includes('packaging')) {
     return 'Packaging';
   }
   return wc;
@@ -97,17 +101,10 @@ export async function calculateCoreUph(
   }
   
   if (filters?.workCenterFilter) {
-    if (filters.workCenterFilter === 'Assembly') {
-      filteredCycles = filteredCycles.filter(c => {
-        const wc = c.work_cycles_work_center_rec_name?.toLowerCase() || '';
-        return wc.includes('sewing') || wc.includes('rope');
-      });
-    } else {
-      filteredCycles = filteredCycles.filter(c => {
-        const consolidated = consolidateWorkCenter(c.work_cycles_work_center_rec_name);
-        return consolidated === filters.workCenterFilter;
-      });
-    }
+    filteredCycles = filteredCycles.filter(c => {
+      const consolidated = consolidateWorkCenter(c.work_cycles_work_center_rec_name);
+      return consolidated === filters.workCenterFilter;
+    });
   }
   
   if (filters?.routingFilter) {
