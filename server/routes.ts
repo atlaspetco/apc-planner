@@ -999,11 +999,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Calculate and cache estimated hours for this assignment
         const { uphData } = await import("../shared/schema.js");
         const uphResults = await db.select().from(uphData);
+        
+        // Debug the UPH lookup values
+        const extractedWorkCenter = foundWorkOrder.operation?.split(' - ')[0];
+        console.log(`🔍 UPH Lookup Debug:
+          - Operator: ${operator.name}
+          - Extracted Work Center: ${extractedWorkCenter}
+          - foundWorkOrder.workCenter: ${foundWorkOrder.workCenter}
+          - Production Order Routing: ${parentProductionOrder.routing}
+          - Operation: ${foundWorkOrder.operation}`);
+        
         const uphEntry = uphResults.find(entry => 
           entry.operatorName === operator.name &&
-          entry.workCenter === foundWorkOrder.operation?.split(' - ')[0] &&
+          entry.workCenter === foundWorkOrder.workCenter && // Use mapped work center instead of parsed operation
           entry.productRouting === parentProductionOrder.routing
         );
+        
+        if (!uphEntry) {
+          console.log(`❌ No UPH data found for ${operator.name} + ${foundWorkOrder.workCenter} + ${parentProductionOrder.routing}`);
+          console.log(`Available UPH entries for ${operator.name}:`, 
+            uphResults.filter(e => e.operatorName === operator.name).map(e => 
+              `${e.workCenter}/${e.productRouting} (${e.uph} UPH)`
+            )
+          );
+        }
         
         let estimatedHours = 0;
         if (uphEntry && uphEntry.uph > 0 && foundWorkOrder.quantity > 0) {
