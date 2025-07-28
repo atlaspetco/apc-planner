@@ -118,6 +118,15 @@ export function OperatorDropdown({
           setQualifiedOperators(data.operators);
           
           // Debug logging for qualified operators
+          console.log(`📊 Operators loaded for ${workCenter}/${routing}:`, {
+            count: data.operators.length,
+            operators: data.operators.map((op: QualifiedOperator) => ({
+              name: op.name,
+              uph: op.averageUph,
+              isEstimated: op.isEstimated
+            }))
+          });
+          
           if (data.operators.length > 0) {
             const hasEstimated = data.operators.some((op: QualifiedOperator) => op.isEstimated);
             if (hasEstimated) {
@@ -129,7 +138,12 @@ export function OperatorDropdown({
             }
           }
         } else {
-          // Don't log errors for normal operation, just handle gracefully
+          // Debug log to understand why operators aren't loading
+          console.error(`❌ Failed to load operators for ${workCenter}/${routing}:`, {
+            status: response.status,
+            statusText: response.statusText,
+            data
+          });
           setQualifiedOperators([]);
         }
       } catch (error) {
