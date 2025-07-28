@@ -203,7 +203,6 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                       if (routing === 'Lifetime Collar' && workCenter === 'Cutting') {
                         console.log(`🔍 Lifetime Collar Cutting quantity debug:`, {
                           workOrdersInCenter: workOrdersInCenter.length,
-                          uniqueMOQuantities: Array.from(uniqueMOQuantities.entries()),
                           totalUniqueQuantity,
                           orders: orders.map(o => ({ moNumber: o.moNumber, quantity: o.quantity }))
                         });
@@ -320,7 +319,7 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                                   quantity={order.quantity}
                                   workOrderIds={workOrdersInCenter.map(wo => wo.id)}
                                   workOrderStates={workOrdersInCenter.map(wo => wo.state)}
-                                  finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done').map(wo => wo.employee_name)}
+                                  finishedOperatorNames={workOrdersInCenter.filter(wo => wo.state === 'done' && wo.employee_name).map(wo => wo.employee_name as string)}
                                   assignments={assignments}
                                   onAssign={async (operatorId) => {
                                     // Bulk assign to all work orders in this work center for this MO
