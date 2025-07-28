@@ -115,7 +115,18 @@ export function OperatorDropdown({
           ...(operation && { operation })
         });
         
-
+        // Debug API parameters for dropdowns showing empty qualifiedOperators
+        if ((routing === 'Lifetime Pro Collar' && workCenter === 'Packaging') ||
+            (routing === 'Lifetime Loop' && workCenter === 'Packaging')) {
+          console.log(`🌐 API PARAMETERS: ${workCenter}/${routing}`, {
+            workCenter,
+            routing,
+            operation,
+            isBulk: workOrderIds && workOrderIds.length > 1,
+            workOrderIds: workOrderIds?.length || 0,
+            paramString: params.toString()
+          });
+        }
         
         const response = await fetch(`/api/operators/qualified?${params}`);
         const data = await response.json();
