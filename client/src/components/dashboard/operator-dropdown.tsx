@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -104,10 +104,21 @@ export function OperatorDropdown({
   const [estimatedHours, setEstimatedHours] = useState<number | null>(null);
   const { toast } = useToast();
 
+  // Prevent multiple rapid API calls with abort controller
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Fetch qualified operators when component mounts or work center/routing changes
   useEffect(() => {
     const fetchQualifiedOperators = async () => {
       try {
+        // Cancel previous request if still pending
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        
+        // Create new abort controller for this request
+        abortControllerRef.current = new AbortController();
+        
         setLoading(true);
         const params = new URLSearchParams({
           workCenter,
@@ -128,7 +139,9 @@ export function OperatorDropdown({
           });
         }
         
-        const response = await fetch(`/api/operators/qualified?${params}`);
+        const response = await fetch(`/api/operators/qualified?${params}`, {
+          signal: abortControllerRef.current.signal
+        });
         const data = await response.json();
         
         // Debug response for bulk dropdown issue
@@ -155,9 +168,30 @@ export function OperatorDropdown({
             });
             console.log(`🔍 Setting qualifiedOperators state with ${data.operators.length} operators`);
           }
+          // Debug state setting for bulk dropdown issue
+          if ((routing === 'Lifetime Pro Collar' && workCenter === 'Packaging') ||
+              (routing === 'Lifetime Loop' && workCenter === 'Packaging')) {
+            console.log(`🔧 SETTING STATE: ${workCenter}/${routing}`, {
+              operatorCount: data.operators.length,
+              operators: data.operators.map((op: any) => op.name),
+              isBulk: workOrderIds && workOrderIds.length > 1,
+              timestamp: new Date().toISOString()
+            });
+          }
           setQualifiedOperators(data.operators);
         } else {
           console.error(`❌ Failed to get qualified operators for ${workCenter}/${routing}:`, data);
+          // Debug state reset for bulk dropdown issue
+          if ((routing === 'Lifetime Pro Collar' && workCenter === 'Packaging') ||
+              (routing === 'Lifetime Loop' && workCenter === 'Packaging')) {
+            console.log(`🚨 RESETTING STATE TO EMPTY: ${workCenter}/${routing}`, {
+              reason: 'API failed or no operators',
+              responseOk: response.ok,
+              hasOperators: data.operators ? data.operators.length : 0,
+              isBulk: workOrderIds && workOrderIds.length > 1,
+              timestamp: new Date().toISOString()
+            });
+          }
           setQualifiedOperators([]);
         }
       } catch (error) {
