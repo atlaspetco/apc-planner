@@ -932,8 +932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fulfil = new FulfilCurrentService();
       
       try {
-        const fulfilResult = await fulfil.getCurrentProductionOrders();
-        const fulfilData = fulfilResult.orders || [];
+        const fulfilData = await fulfil.getCurrentProductionOrders();
         
         console.log(`Fetched ${fulfilData.length} production orders from Fulfil service`);
         
