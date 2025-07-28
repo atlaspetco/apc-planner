@@ -15,13 +15,13 @@ const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
-        // UPH Performance variants: green for top, light red for bottom, gray for middle
+        // UPH Performance variants: subtle borders for green/red, gray background for middle
         uphLow:
-          "border-transparent bg-red-200 text-red-800 hover:bg-red-300",
+          "border-red-500 bg-gray-50 text-gray-900 hover:bg-gray-100",
         uphMedium:
-          "border-transparent bg-gray-100 text-gray-900 hover:bg-gray-200",
+          "border-gray-300 bg-gray-50 text-gray-900 hover:bg-gray-100",
         uphHigh:
-          "border-transparent bg-green-600 text-white hover:bg-green-700",
+          "border-green-500 bg-gray-50 text-gray-900 hover:bg-gray-100",
       },
     },
     defaultVariants: {

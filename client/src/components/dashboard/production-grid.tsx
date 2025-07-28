@@ -72,20 +72,36 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
     operation: string
   ) => {
     try {
-      // API call would go here to assign operator
-      console.log('Assigning operator:', {
-        workOrderId,
-        operatorId,
-        quantity,
-        routing,
-        workCenter,
-        operation
+      // Make actual API call to assign operator
+      const response = await fetch('/api/work-orders/assign-operator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workOrderId,
+          operatorId: operatorId === 0 ? null : operatorId,
+          quantity,
+          routing,
+          workCenter,
+          operation
+        })
       });
+
+      const result = await response.json();
       
-      toast({
-        title: "Operator assigned",
-        description: `Successfully assigned operator to work order`,
-      });
+      if (result.success) {
+        toast({
+          title: "Operator assigned",
+          description: result.message || `Successfully assigned operator to work order`,
+        });
+        // Trigger refresh of assignments
+        onAssignmentChange?.();
+      } else {
+        toast({
+          title: "Assignment failed",
+          description: result.message || "Could not assign operator to work order",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       console.error('Error assigning operator:', error);
       toast({

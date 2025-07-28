@@ -905,6 +905,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log("Found operator:", operator.name);
       
+      // Check if operator has the required work center enabled (similar to smart bulk assignment)
+      const requestedWorkCenter = req.body.workCenter;
+      if (requestedWorkCenter && operator.workCenters) {
+        let hasWorkCenter = false;
+        
+        if (requestedWorkCenter === 'Assembly') {
+          // Assembly includes Sewing and Rope
+          hasWorkCenter = operator.workCenters.includes('Assembly') || 
+                         operator.workCenters.includes('Sewing') || 
+                         operator.workCenters.includes('Rope');
+        } else {
+          hasWorkCenter = operator.workCenters.includes(requestedWorkCenter);
+        }
+        
+        if (!hasWorkCenter) {
+          console.log(`Operator ${operator.name} does not have work center ${requestedWorkCenter} enabled`);
+          return res.status(400).json({ 
+            message: `${operator.name} does not have ${requestedWorkCenter} work center enabled in their settings` 
+          });
+        }
+      }
+      
       // Get production orders directly from Fulfil service
       const { FulfilCurrentService } = await import("./fulfil-current.js");
       const fulfil = new FulfilCurrentService();
