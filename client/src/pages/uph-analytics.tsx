@@ -456,7 +456,6 @@ export default function UphAnalytics() {
           </Button>
         </div>
       </div>
-
       {/* Summary Cards */}
       {uphData?.summary && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -513,7 +512,6 @@ export default function UphAnalytics() {
           </Card>
         </div>
       )}
-
       {/* UPH Table by Product Routing */}
       <Card>
         <CardHeader>
@@ -596,7 +594,7 @@ export default function UphAnalytics() {
                                 <tr key={operator.operatorId} className="border-b">
                                   <td className="py-2 font-medium">{operator.operatorName}</td>
                                   {getOrderedWorkCenters(uphData.workCenters).map((wc) => (
-                                    <td key={wc} className="text-center py-2">
+                                    <td key={wc} className="text-center py-2 pt-[4px] pb-[4px]">
                                       <Badge
                                         variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
                                         className={`min-w-[60px] ${operator.workCenterPerformance[wc] ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
@@ -651,7 +649,6 @@ export default function UphAnalytics() {
           )}
         </CardContent>
       </Card>
-
       {/* Work Center Averages Summary */}
       {uphData?.summary?.avgUphByCeter && Object.keys(uphData.summary.avgUphByCeter).length > 0 && (
         <Card className="mt-6">
@@ -674,7 +671,6 @@ export default function UphAnalytics() {
           </CardContent>
         </Card>
       )}
-      
       {/* UPH Calculation Details Modal */}
       {selectedUphDetails && (
         <UphCalculationModal
