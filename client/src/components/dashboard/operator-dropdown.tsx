@@ -296,7 +296,7 @@ export function OperatorDropdown({
                         <div className="flex items-center justify-between w-full min-w-0">
                           <div className="flex items-center space-x-1">
                             {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                            <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)}</span>
+                            <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)} assigned</span>
                           </div>
                           <div className="flex items-center space-x-1 ml-2">
                             {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
@@ -320,12 +320,16 @@ export function OperatorDropdown({
                       ) : (
                         <div className="flex items-center space-x-1">
                           {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                          <span className="text-green-700">{formatOperatorName(operatorName)}</span>
+                          <span className="text-green-700">{formatOperatorName(operatorName)} assigned</span>
                         </div>
                       );
                     })() : 
                     <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
-                ) : ""
+                ) : (
+                  <span className="text-muted-foreground">
+                    {qualifiedOperators.length > 0 ? "Select operator" : "No operators available"}
+                  </span>
+                )
               ) : (
                 currentOperator ? (
                   <div className="flex items-center justify-between w-full min-w-0">
@@ -371,7 +375,7 @@ export function OperatorDropdown({
               </div>
             </SelectItem>
           )}
-          {!loading && qualifiedOperators.length === 0 && (
+          {!loading && qualifiedOperators.length === 0 && !(workOrderIds && uniqueOperators.length > 0) && (
             <SelectItem value="no-operators" disabled>
               <div className="flex items-center justify-between w-full">
                 <span className="text-muted-foreground text-xs">
