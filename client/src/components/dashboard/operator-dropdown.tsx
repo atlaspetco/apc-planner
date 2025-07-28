@@ -115,6 +115,8 @@ export function OperatorDropdown({
           ...(operation && { operation })
         });
         
+
+        
         const response = await fetch(`/api/operators/qualified?${params}`);
         const data = await response.json();
         
