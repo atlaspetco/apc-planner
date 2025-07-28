@@ -285,82 +285,78 @@ export function OperatorDropdown({
         <SelectTrigger className={`w-full h-8 text-xs ${allFinished ? 'bg-gray-100' : 'bg-white'} border-gray-300`}>
           <SelectValue>
             {loading ? "Loading..." : 
-              workOrderIds ? (
-                uniqueOperators.length > 0 ? (
-                  uniqueOperators.length === 1 ? 
-                    (() => {
-                      // Find the operator details for single bulk assignment
-                      const operatorName = uniqueOperators[0];
-                      const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
-                      return operatorDetails ? (
-                        <div className="flex items-center justify-between w-full min-w-0">
-                          <div className="flex items-center space-x-1">
-                            {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                            <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)} assigned</span>
-                          </div>
-                          <div className="flex items-center space-x-1 ml-2">
-                            {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
-                              <div className="flex items-center space-x-1">
-                                {quantity > 0 && (
-                                  <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                                    {operatorDetails.isEstimated ? '~' : ''}{calculateEstimatedTime(operatorDetails.averageUph)}
-                                  </span>
-                                )}
-                                <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                                  {operatorDetails.isEstimated ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
-                                </span>
-                              </div>
-                            ) : (
-                              <Badge variant="outline" className="text-xs px-1 py-0">
-                                No data
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
+              // PRIORITY 1: Bulk assignments (always show if present, regardless of qualified operators)
+              workOrderIds && uniqueOperators.length > 0 ? (
+                uniqueOperators.length === 1 ? 
+                  (() => {
+                    // Find the operator details for single bulk assignment
+                    const operatorName = uniqueOperators[0];
+                    const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
+                    return operatorDetails ? (
+                      <div className="flex items-center justify-between w-full min-w-0">
                         <div className="flex items-center space-x-1">
                           {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                          <span className="text-green-700">{formatOperatorName(operatorName)} assigned</span>
+                          <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)} assigned</span>
                         </div>
-                      );
-                    })() : 
-                    <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
-                ) : (
-                  <span className="text-muted-foreground">
-                    {qualifiedOperators.length > 0 ? "Select operator" : "No operators available"}
-                  </span>
-                )
-              ) : (
-                currentOperator ? (
-                  <div className="flex items-center justify-between w-full min-w-0">
-                    <div className="flex items-center space-x-1">
-                      {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-purple-600" />}
-                      <span className="truncate text-green-700">{formatOperatorName(currentOperator.name)}</span>
-                    </div>
-                    <div className="flex items-center space-x-1 ml-2">
-                      {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
-                        <div className="flex items-center space-x-1">
-                          {quantity > 0 && (
-                            <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                              {currentOperator.isEstimated ? '~' : ''}{calculateEstimatedTime(currentOperator.averageUph)}
-                            </span>
+                        <div className="flex items-center space-x-1 ml-2">
+                          {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
+                            <div className="flex items-center space-x-1">
+                              {quantity > 0 && (
+                                <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                                  {operatorDetails.isEstimated ? '~' : ''}{calculateEstimatedTime(operatorDetails.averageUph)}
+                                </span>
+                              )}
+                              <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                                {operatorDetails.isEstimated ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
+                              </span>
+                            </div>
+                          ) : (
+                            <Badge variant="outline" className="text-xs px-1 py-0">
+                              No data
+                            </Badge>
                           )}
-                          <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                            {currentOperator.isEstimated ? '~' : ''}{currentOperator.averageUph.toFixed(1)} UPH
-                          </span>
                         </div>
-                      ) : (
-                        <Badge variant="outline" className="text-xs px-1 py-0">
-                          No data
-                        </Badge>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-1">
+                        {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
+                        <span className="text-green-700">{formatOperatorName(operatorName)} assigned</span>
+                      </div>
+                    );
+                  })() : 
+                  <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
+              ) : 
+              // PRIORITY 2: Individual assignments
+              currentOperator ? (
+                <div className="flex items-center justify-between w-full min-w-0">
+                  <div className="flex items-center space-x-1">
+                    {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-purple-600" />}
+                    <span className="truncate text-green-700">{formatOperatorName(currentOperator.name)}</span>
                   </div>
-                ) : (
-                  <span className="text-muted-foreground">
-                    {qualifiedOperators.length > 0 ? "Select operator" : "No operators available"}
-                  </span>
-                )
+                  <div className="flex items-center space-x-1 ml-2">
+                    {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
+                      <div className="flex items-center space-x-1">
+                        {quantity > 0 && (
+                          <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                            {currentOperator.isEstimated ? '~' : ''}{calculateEstimatedTime(currentOperator.averageUph)}
+                          </span>
+                        )}
+                        <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                          {currentOperator.isEstimated ? '~' : ''}{currentOperator.averageUph.toFixed(1)} UPH
+                        </span>
+                      </div>
+                    ) : (
+                      <Badge variant="outline" className="text-xs px-1 py-0">
+                        No data
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                // PRIORITY 3: Default unassigned state
+                <span className="text-muted-foreground">
+                  {qualifiedOperators.length > 0 ? "Select operator" : "No operators available"}
+                </span>
               )
             }
           </SelectValue>
