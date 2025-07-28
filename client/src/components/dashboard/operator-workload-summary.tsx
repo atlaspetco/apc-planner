@@ -299,30 +299,6 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
   const totalHours = workloadSummary.reduce((sum, op) => sum + op.totalEstimatedHours, 0);
   const avgCapacity = Math.round(workloadSummary.reduce((sum, op) => sum + op.capacityPercent, 0) / workloadSummary.length);
 
-  // Calculate work center totals from assignments
-  const workCenterTotals = React.useMemo(() => {
-    if (!assignmentsData?.assignments) return { Cutting: 0, Assembly: 0, Packaging: 0 };
-    
-    const totals = { Cutting: 0, Assembly: 0, Packaging: 0 };
-    
-    assignmentsData.assignments.forEach((assignment: any) => {
-      if (assignment.estimatedHours && totals.hasOwnProperty(assignment.workCenter)) {
-        totals[assignment.workCenter as keyof typeof totals] += assignment.estimatedHours;
-      }
-    });
-    
-    return totals;
-  }, [assignmentsData]);
-
-  // Function to get color based on hours
-  const getHoursColor = (hours: number) => {
-    if (hours < 10) return 'text-red-600';
-    if (hours >= 10.1 && hours <= 24.9) return 'text-orange-600';
-    if (hours >= 25 && hours <= 35) return 'text-yellow-600';
-    if (hours >= 35.1 && hours <= 37) return 'text-green-600';
-    return 'text-purple-600'; // >37
-  };
-
   return (
     <>
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
@@ -347,18 +323,88 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           </div>
         </div>
         
-        {/* Minimal Work Center Stats */}
-        <div className="flex items-center justify-center space-x-8 text-lg font-semibold">
-          <span className={`${getHoursColor(workCenterTotals.Cutting)}`}>
-            Cutting: {workCenterTotals.Cutting.toFixed(1)}hr
-          </span>
-          <span className={`${getHoursColor(workCenterTotals.Assembly)}`}>
-            Assembly: {workCenterTotals.Assembly.toFixed(1)}hr
-          </span>
-          <span className={`${getHoursColor(workCenterTotals.Packaging)}`}>
-            Packaging: {workCenterTotals.Packaging.toFixed(1)}hr
-          </span>
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {workloadSummary.slice(0, 8).map((operator: any) => (
+          <div key={operator.operatorId} className="bg-gray-50 rounded-lg p-4 border border-gray-100 relative min-h-[220px]">
+            {/* Expand button in top right */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute top-2 right-2 p-1 h-6 w-6"
+              onClick={() => {
+                setSelectedOperator(operator);
+                setIsModalOpen(true);
+              }}
+            >
+              <Expand className="w-4 h-4" />
+            </Button>
+            
+            {/* Operator Header */}
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                {operator.operatorName.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+              </div>
+              <div>
+                <div className="font-medium text-gray-900">{operator.operatorName}</div>
+                <div className="text-xs text-gray-500">{operator.observations} observations</div>
+              </div>
+              <div className="ml-auto text-right pr-6">
+                <div className="text-lg font-bold text-gray-900">{operator.totalEstimatedHours.toFixed(1)}h</div>
+                <div className="text-xs text-gray-500">of {operator.availableHours}h available</div>
+              </div>
+            </div>
+
+            {/* Capacity Bar */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                <span>Capacity</span>
+                <span>{operator.capacityPercent}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full ${
+                    operator.capacityPercent <= 50 ? 'bg-green-500' :
+                    operator.capacityPercent <= 80 ? 'bg-yellow-500' :
+                    'bg-red-500'
+                  }`}
+                  style={{ width: `${Math.min(operator.capacityPercent, 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Product Summary */}
+            <div className="space-y-1">
+              {operator.productSummary && operator.productSummary.slice(0, 3).map((product: any, idx: number) => (
+                <div key={idx} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-gray-700 font-medium">{product.routing}</span>
+                    <span className="text-gray-500">({product.workCenter})</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-gray-600">
+                    <span className="font-medium">{product.totalQuantity} units</span>
+                    {product.uph > 0 && (
+                      <>
+                        <span className="text-gray-400">•</span>
+                        <span>{product.uph.toFixed(0)} UPH</span>
+                        <span className="text-gray-400">•</span>
+                        <span>{product.estimatedHours.toFixed(1)}h</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {operator.productSummary && operator.productSummary.length > 3 && (
+                <div className="text-xs text-gray-500 text-center">
+                  +{operator.productSummary.length - 3} more products
+                </div>
+              )}
+              <div className="text-xs text-gray-500 pt-1 border-t border-gray-200">
+                Est. Completion: {operator.estimatedCompletion}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
 
 
       </div>

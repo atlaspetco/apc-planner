@@ -132,6 +132,8 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             {/* Left side - filters and status */}
             <div className="flex items-center space-x-6">
+              
+              
               <div className="flex items-center space-x-2">
                 <label className="text-sm font-medium text-gray-700">Status:</label>
                 <MultiSelect
