@@ -278,7 +278,7 @@ export function OperatorDropdown({
   return (
     <div className={`space-y-1 ${className || ''}`}>
       <Select 
-        value={workOrderIds ? "" : (currentOperatorId?.toString() || "")} 
+        value={workOrderIds ? (uniqueOperators.length > 0 ? "bulk-assigned" : "") : (currentOperatorId?.toString() || "")} 
         onValueChange={handleAssignment}
         disabled={loading || allFinished}
       >
@@ -381,7 +381,7 @@ export function OperatorDropdown({
             </SelectItem>
           )}
           {workOrderIds && uniqueOperators.length > 0 && (
-            <SelectItem value="bulk-assigned" disabled>
+            <SelectItem value="bulk-assigned">
               <div className="flex items-center justify-between w-full">
                 <span className="text-green-700 font-medium">
                   {uniqueOperators.length === 1 ? 
