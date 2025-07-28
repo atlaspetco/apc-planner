@@ -120,45 +120,11 @@ export function OperatorDropdown({
         const response = await fetch(`/api/operators/qualified?${params}`);
         const data = await response.json();
         
+
+        
         if (response.ok && data.operators) {
           setQualifiedOperators(data.operators);
-          
-          // Debug logging for qualified operators
-          console.log(`📊 Operators loaded for ${workCenter}/${routing}:`, {
-            count: data.operators.length,
-            operators: data.operators.map((op: QualifiedOperator) => ({
-              name: op.name,
-              uph: op.averageUph,
-              isEstimated: op.isEstimated
-            }))
-          });
-          
-          // Debug bulk dropdown filtering for Lifetime Harness Assembly
-          if (workOrderIds && routing === 'Lifetime Harness' && workCenter === 'Assembly') {
-            console.log(`🔍 Bulk dropdown debug for ${workCenter}/${routing}:`, {
-              qualifiedOperators: data.operators.map((op: QualifiedOperator) => ({ name: op.name, uph: op.averageUph })),
-              uniqueOperators,
-              filteredOperators: data.operators.filter((operator: QualifiedOperator) => !uniqueOperators.includes(operator.name)).map((op: QualifiedOperator) => op.name)
-            });
-          }
-          
-          if (data.operators.length > 0) {
-            const hasEstimated = data.operators.some((op: QualifiedOperator) => op.isEstimated);
-            if (hasEstimated) {
-              console.log(`⚠️ Estimates showing for ${workCenter}/${routing}:`, {
-                totalOperators: data.operators.length,
-                estimated: data.operators.filter((op: QualifiedOperator) => op.isEstimated).map((op: QualifiedOperator) => op.name),
-                exact: data.operators.filter((op: QualifiedOperator) => !op.isEstimated).map((op: QualifiedOperator) => op.name)
-              });
-            }
-          }
         } else {
-          // Debug log to understand why operators aren't loading
-          console.error(`❌ Failed to load operators for ${workCenter}/${routing}:`, {
-            status: response.status,
-            statusText: response.statusText,
-            data
-          });
           setQualifiedOperators([]);
         }
       } catch (error) {
