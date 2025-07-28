@@ -127,7 +127,7 @@ export function OperatorDropdown({
               (routing === 'Lifetime Slip Collar' && workCenter === 'Cutting')) {
             console.log(`🔍 DEBUG: Qualified operators for ${workCenter}/${routing}:`, {
               count: data.operators.length,
-              operators: data.operators.map(op => ({ name: op.name, uph: op.averageUph, obs: op.observations })),
+              operators: data.operators.map((op: any) => ({ name: op.name, uph: op.averageUph, obs: op.observations })),
               timestamp: new Date().toISOString()
             });
             console.log(`🔍 Setting qualifiedOperators state with ${data.operators.length} operators`);
@@ -262,16 +262,17 @@ export function OperatorDropdown({
     );
   }
 
-  // Debug render state
-  if ((routing === 'Lifetime Slip Collar' && workCenter === 'Packaging') ||
-      (routing === 'Lifetime Collar' && (workCenter === 'Assembly' || workCenter === 'Packaging'))) {
-    console.log(`🔍 RENDER DEBUG: ${workCenter}/${routing}`, {
+  // Debug render state for bulk vs individual dropdowns
+  if (routing === 'Lifetime Pro Collar' && workCenter === 'Packaging') {
+    console.log(`🔍 DROPDOWN DEBUG: ${workCenter}/${routing}`, {
+      isBulk: workOrderIds && workOrderIds.length > 1,
+      workOrderIds: workOrderIds?.length || 0,
       qualifiedOperators: qualifiedOperators.length,
       operatorNames: qualifiedOperators.map(op => op.name),
       uniqueOperators: uniqueOperators.length,
       uniqueOperatorNames: uniqueOperators,
-      workOrderIds: workOrderIds?.length || 0,
-      hasAssignments: uniqueOperators.length > 0
+      hasAssignments: uniqueOperators.length > 0,
+      routingParam: routing
     });
   }
 
@@ -285,87 +286,108 @@ export function OperatorDropdown({
       >
         <SelectTrigger className={`w-full h-8 text-xs ${allFinished ? 'bg-gray-100' : 'bg-white'} border-gray-300`}>
           <SelectValue>
-            {loading ? "Loading..." : 
+            {(() => {
+              // Debug logging for Lifetime Pro Collar Packaging to trace exact rendering path
+              if (routing === 'Lifetime Pro Collar' && workCenter === 'Packaging') {
+                console.log(`🎯 SELECTVALUE PATH: ${workCenter}/${routing}`, {
+                  loading,
+                  workOrderIds: workOrderIds?.length || 0,
+                  uniqueOperators: uniqueOperators.length,
+                  qualifiedOperators: qualifiedOperators.length,
+                  currentOperator: currentOperator?.name || 'none',
+                  path: loading ? 'LOADING' : 
+                        (workOrderIds && uniqueOperators.length > 0) ? 'BULK_ASSIGNED' :
+                        currentOperator ? 'INDIVIDUAL_ASSIGNED' : 'DEFAULT_UNASSIGNED'
+                });
+              }
+              
+              if (loading) return "Loading...";
+              
               // PRIORITY 1: Bulk assignments (always show if present, regardless of qualified operators)
-              workOrderIds && uniqueOperators.length > 0 ? (
-                uniqueOperators.length === 1 ? 
-                  (() => {
-                    // Find the operator details for single bulk assignment
-                    const operatorName = uniqueOperators[0];
-                    const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
-                    
-                    // If operator not in qualified list but is assigned, show basic info
-                    if (!operatorDetails) {
-                      return (
-                        <div className="flex items-center space-x-1">
-                          {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                          <span className="text-green-700">{formatOperatorName(operatorName)} assigned</span>
-                        </div>
-                      );
-                    }
-                    
+              if (workOrderIds && uniqueOperators.length > 0) {
+                if (uniqueOperators.length === 1) {
+                  // Find the operator details for single bulk assignment
+                  const operatorName = uniqueOperators[0];
+                  const operatorDetails = qualifiedOperators.find(op => op.name === operatorName);
+                  
+                  // If operator not in qualified list but is assigned, show basic info
+                  if (!operatorDetails) {
                     return (
-                      <div className="flex items-center justify-between w-full min-w-0">
-                        <div className="flex items-center space-x-1">
-                          {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
-                          <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)} assigned</span>
-                        </div>
-                        <div className="flex items-center space-x-1 ml-2">
-                          {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
-                            <div className="flex items-center space-x-1">
-                              {quantity > 0 && (
-                                <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                                  {operatorDetails.isEstimated ? '~' : ''}{calculateEstimatedTime(operatorDetails.averageUph)}
-                                </span>
-                              )}
-                              <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                                {operatorDetails.isEstimated ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
-                              </span>
-                            </div>
-                          ) : (
-                            <Badge variant="outline" className="text-xs px-1 py-0">
-                              No data
-                            </Badge>
-                          )}
-                        </div>
+                      <div className="flex items-center space-x-1">
+                        {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
+                        <span className="text-green-700">{formatOperatorName(operatorName)} assigned</span>
                       </div>
                     );
-                  })() : 
-                  <span className="text-green-700">{uniqueOperators.length} operators assigned</span>
-              ) : 
-              // PRIORITY 2: Individual assignments
-              currentOperator ? (
-                <div className="flex items-center justify-between w-full min-w-0">
-                  <div className="flex items-center space-x-1">
-                    {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-purple-600" />}
-                    <span className="truncate text-green-700">{formatOperatorName(currentOperator.name)}</span>
-                  </div>
-                  <div className="flex items-center space-x-1 ml-2">
-                    {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
+                  }
+                  
+                  return (
+                    <div className="flex items-center justify-between w-full min-w-0">
                       <div className="flex items-center space-x-1">
-                        {quantity > 0 && (
-                          <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                            {currentOperator.isEstimated ? '~' : ''}{calculateEstimatedTime(currentOperator.averageUph)}
-                          </span>
-                        )}
-                        <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
-                          {currentOperator.isEstimated ? '~' : ''}{currentOperator.averageUph.toFixed(1)} UPH
-                        </span>
+                        {hasAutoAssignment && <Sparkles className="w-3 h-3 text-purple-600" />}
+                        <span className="truncate text-green-700">{formatOperatorName(operatorDetails.name)} assigned</span>
                       </div>
-                    ) : (
-                      <Badge variant="outline" className="text-xs px-1 py-0">
-                        No data
-                      </Badge>
-                    )}
+                      <div className="flex items-center space-x-1 ml-2">
+                        {operatorDetails.observations > 0 && operatorDetails.averageUph > 0 ? (
+                          <div className="flex items-center space-x-1">
+                            {quantity > 0 && (
+                              <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                                {operatorDetails.isEstimated ? '~' : ''}{calculateEstimatedTime(operatorDetails.averageUph)}
+                              </span>
+                            )}
+                            <span className={`font-normal ${operatorDetails.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                              {operatorDetails.isEstimated ? '~' : ''}{operatorDetails.averageUph.toFixed(1)} UPH
+                            </span>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            No data
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return <span className="text-green-700">{uniqueOperators.length} operators assigned</span>;
+                }
+              }
+              
+              // PRIORITY 2: Individual assignments
+              if (currentOperator) {
+                return (
+                  <div className="flex items-center justify-between w-full min-w-0">
+                    <div className="flex items-center space-x-1">
+                      {isCurrentAutoAssigned && <Sparkles className="w-3 h-3 text-purple-600" />}
+                      <span className="truncate text-green-700">{formatOperatorName(currentOperator.name)}</span>
+                    </div>
+                    <div className="flex items-center space-x-1 ml-2">
+                      {currentOperator.observations > 0 && currentOperator.averageUph > 0 ? (
+                        <div className="flex items-center space-x-1">
+                          {quantity > 0 && (
+                            <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                              {currentOperator.isEstimated ? '~' : ''}{calculateEstimatedTime(currentOperator.averageUph)}
+                            </span>
+                          )}
+                          <span className={`font-normal ${currentOperator.isEstimated ? 'text-orange-600' : 'text-green-700'}`}>
+                            {currentOperator.isEstimated ? '~' : ''}{currentOperator.averageUph.toFixed(1)} UPH
+                          </span>
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="text-xs px-1 py-0">
+                          No data
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                // PRIORITY 3: Default unassigned state
+                );
+              }
+              
+              // PRIORITY 3: Default unassigned state
+              return (
                 <span className="text-muted-foreground">
                   {qualifiedOperators.length > 0 ? "Select operator" : "No operators available"}
                 </span>
-              )
-            }
+              );
+            })()}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
