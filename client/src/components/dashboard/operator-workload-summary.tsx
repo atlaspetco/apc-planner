@@ -172,16 +172,9 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         // Include all work orders except explicitly finished ones
         // null state should be treated as active/in-progress
         if (assignment.workOrderState !== 'finished') {
-          // Calculate estimated hours - prioritize cached values first (same as modal)
+          // Calculate estimated hours based on UPH data if available
           let estimatedHours = 0;
-          
-          // 1. First priority: Use cached estimatedHours from assignment if available
-          if (assignment.estimatedHours && assignment.estimatedHours > 0) {
-            estimatedHours = assignment.estimatedHours;
-            console.log(`Summary: Using cached hours for ${operator.operatorName} - ${workCenter}/${routing}: ${estimatedHours.toFixed(2)}h (cached)`);
-          }
-          // 2. Second priority: Calculate from UPH data if no cached value
-          else if (uphResults && uphResults.length > 0 && assignment.quantity > 0) {
+          if (uphResults && uphResults.length > 0 && assignment.quantity > 0) {
             // Debug: log what we're searching for
             if (operator.operatorName === "Evan Crosby") {
               console.log(`Searching UPH for Evan: operator="${operator.operatorName}", workCenter="${workCenter}", routing="${routing}"`);
