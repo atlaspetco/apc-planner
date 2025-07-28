@@ -1228,10 +1228,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return false;
           }
 
+          // Check if operator has the specific routing enabled
+          if (!op.routings || !Array.isArray(op.routings)) {
+            return false;
+          }
+          
           // Handle product name mapping for variants
           let effectiveRouting = routing as string || '';
           if (routing === 'Lifetime Air Harness') {
             effectiveRouting = 'Lifetime Harness';
+          }
+          
+          // Check if operator has this routing enabled
+          const hasRequiredRouting = op.routings.includes(effectiveRouting);
+          if (!hasRequiredRouting) {
+            console.log(`❌ ${op.name} does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
+            return false;
           }
 
           // Support Assembly grouping which aggregates Sewing and Rope
@@ -1320,6 +1332,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return false;
           }
           
+          // Check if operator has the specific routing enabled
+          if (!op.routings || !Array.isArray(op.routings)) {
+            return false;
+          }
+          
+          // Handle product name mapping for variants
+          let effectiveRouting = routing as string || '';
+          if (routing === 'Lifetime Air Harness') {
+            effectiveRouting = 'Lifetime Harness';
+          }
+          
+          // Check if operator has this routing enabled
+          const hasRequiredRouting = op.routings.includes(effectiveRouting);
+          if (!hasRequiredRouting) {
+            console.log(`❌ ${op.name} (work center experience) does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
+            return false;
+          }
+          
           // Check if operator has ANY UPH data for this work center
           const hasWorkCenterData = currentUphData.some(uph => 
             uph.operatorName === op.name && uph.workCenter === workCenter
@@ -1388,6 +1418,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return false;
             }
             
+            // Check if operator has the specific routing enabled
+            if (!op.routings || !Array.isArray(op.routings)) {
+              return false;
+            }
+            
+            // Handle product name mapping for variants
+            let effectiveRouting = routing as string || '';
+            if (routing === 'Lifetime Air Harness') {
+              effectiveRouting = 'Lifetime Harness';
+            }
+            
+            // Check if operator has this routing enabled
+            const hasRequiredRouting = op.routings.includes(effectiveRouting);
+            if (!hasRequiredRouting) {
+              console.log(`❌ ${op.name} (estimated) does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
+              return false;
+            }
+            
             // Find any UPH data for this operator + work center combination
             const operatorUphForWorkCenter = currentUphData.filter(uph => 
               uph.operatorName === op.name && uph.workCenter === workCenter
@@ -1441,6 +1489,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
               .filter(op => {
                 const hasRelatedWorkCenter = op.workCenters?.includes(relatedWC);
                 if (!hasRelatedWorkCenter) return false;
+                
+                // Check if operator has the specific routing enabled
+                if (!op.routings || !Array.isArray(op.routings)) {
+                  return false;
+                }
+                
+                // Handle product name mapping for variants
+                let effectiveRouting = routing as string || '';
+                if (routing === 'Lifetime Air Harness') {
+                  effectiveRouting = 'Lifetime Harness';
+                }
+                
+                // Check if operator has this routing enabled
+                const hasRequiredRouting = op.routings.includes(effectiveRouting);
+                if (!hasRequiredRouting) {
+                  console.log(`❌ ${op.name} (related work center) does not have routing "${effectiveRouting}" enabled. Has: [${op.routings.join(', ')}]`);
+                  return false;
+                }
                 
                 const operatorUphForRelated = currentUphData.filter(uph => 
                   uph.operatorName === op.name && uph.workCenter === relatedWC
