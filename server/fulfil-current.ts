@@ -157,6 +157,12 @@ export class FulfilCurrentService {
       }));
       
       console.log(`Converted to ${productionOrders.length} production orders from work orders`);
+      console.log(`Returning ${productionOrders.length} production orders`);
+      console.log(`First few orders:`, productionOrders.slice(0, 3).map(po => ({
+        id: po.id,
+        moNumber: po.moNumber,
+        workOrderCount: po.workOrders?.length || 0
+      })));
       return productionOrders;
 
     } catch (error) {
