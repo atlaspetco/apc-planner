@@ -1375,20 +1375,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Combine all operators: exact matches + work center experienced + estimates
-      const allOperatorsForResponse = [
-        ...qualifiedOperators,
-        ...workCenterExperiencedOperators,
-        ...estimatedOperators
-      ].sort((a, b) => {
-        // Sort by: exact match > work center experience > estimates
-        const aScore = a.isEstimated ? 0 : (a.workCenterExperience ? 1 : 2);
-        const bScore = b.isEstimated ? 0 : (b.workCenterExperience ? 1 : 2);
-        if (aScore !== bScore) return bScore - aScore;
-        
-        // Then sort by UPH
-        return b.averageUph - a.averageUph;
-      });
+      // Combine operators with priority:
+      // 1. If we have exact matches, ONLY show those
+      // 2. If no exact matches, show work center experienced operators
+      // 3. If neither, show estimates
+      const allOperatorsForResponse = qualifiedOperators.length > 0 
+        ? qualifiedOperators 
+        : workCenterExperiencedOperators.length > 0 
+          ? workCenterExperiencedOperators
+          : estimatedOperators;
+      
+      // Sort by UPH descending
+      allOperatorsForResponse.sort((a, b) => b.averageUph - a.averageUph);
 
       res.json({
         operators: allOperatorsForResponse,
