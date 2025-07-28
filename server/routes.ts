@@ -1136,7 +1136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get qualified operators for specific work center/routing/operation combination
-  app.get("/api/operators/qualified", async (req: Request, res: Response) => {
+  app.get("/api/operators/qualified", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { workCenter, routing, operation, productName } = req.query;
       

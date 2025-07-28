@@ -120,8 +120,6 @@ export function OperatorDropdown({
         const response = await fetch(`/api/operators/qualified?${params}`);
         const data = await response.json();
         
-
-        
         if (response.ok && data.operators) {
           setQualifiedOperators(data.operators);
         } else {
