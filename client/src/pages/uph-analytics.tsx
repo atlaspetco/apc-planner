@@ -597,7 +597,13 @@ export default function UphAnalytics() {
                                     <td key={wc} className="text-center py-2 pt-[4px] pb-[4px]">
                                       <Badge
                                         variant={getUphBadgeVariant(operator.workCenterPerformance[wc], wc, routing.routingName)}
-                                        className="inline-flex items-center rounded-full border px-2.5 py-0.5 font-semibold focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent min-w-[60px] cursor-pointer hover:opacity-80 transition-opacity pt-[6px] pb-[6px] text-[14px]"
+                                        className={`inline-flex items-center rounded-full border px-2.5 py-0.5 font-semibold focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent min-w-[60px] cursor-pointer hover:opacity-80 transition-opacity pt-[6px] pb-[6px] text-[14px] ${(() => {
+                                          const { max, min } = getRoutingWorkCenterExtremes(routing.routingName, wc);
+                                          const value = operator.workCenterPerformance[wc];
+                                          if (value === max && max !== min) return "ring-1 ring-green-500";
+                                          if (value === min && max !== min) return "ring-1 ring-red-500";
+                                          return "";
+                                        })()}`}
                                         onClick={() => {
                                           if (operator.workCenterPerformance[wc]) {
                                             setSelectedUphDetails({

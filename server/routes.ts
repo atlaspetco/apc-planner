@@ -927,21 +927,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Get production orders directly from Fulfil service
-      const { FulfilCurrentService } = await import("./fulfil-current.js");
-      const fulfil = new FulfilCurrentService();
-      
+      // Get production orders directly from the API endpoint
       try {
-        console.log("About to call getCurrentProductionOrders...");
-        const fulfilData = await fulfil.getCurrentProductionOrders();
+        const productionOrdersResponse = await fetch(`http://localhost:${process.env.PORT || 5000}/api/production-orders`);
+        const productionOrders = await productionOrdersResponse.json();
         
-        console.log("fulfilData type:", typeof fulfilData);
-        console.log("fulfilData is array:", Array.isArray(fulfilData));
-        console.log("fulfilData:", fulfilData);
-        console.log(`Fetched ${fulfilData?.length || 0} production orders from Fulfil service`);
+        console.log(`Fetched ${productionOrders?.length || 0} production orders from API endpoint`);
         
-        if (!Array.isArray(fulfilData) || fulfilData.length === 0) {
-          console.log("No production orders found:", fulfilData);
+        if (!Array.isArray(productionOrders) || productionOrders.length === 0) {
+          console.log("No production orders found from API");
           return res.status(500).json({ message: "No production orders available for assignment" });
         }
         
@@ -949,7 +943,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let foundWorkOrder = null;
         let parentProductionOrder = null;
         
-        for (const order of fulfilData) {
+        for (const order of productionOrders) {
           if (order.workOrders) {
             const workOrder = order.workOrders.find((wo: any) => parseInt(wo.id) === workOrderId);
             if (workOrder) {
