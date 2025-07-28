@@ -146,8 +146,8 @@ export function AutoAssignControls() {
           setShowResults(true);
           
           // Check for failed routings
-          const failedRoutings = data.routingResults?.filter(r => !r.success) || [];
-          const successfulRoutings = data.routingResults?.filter(r => r.success) || [];
+          const failedRoutings = data.routingResults?.filter((r: RoutingAssignmentResult) => !r.success) || [];
+          const successfulRoutings = data.routingResults?.filter((r: RoutingAssignmentResult) => r.success) || [];
           
           if (failedRoutings.length > 0) {
             toast({
