@@ -340,39 +340,53 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
             if (existingWO.length === 0) {
               // Create work order in database
               try {
-                await db.insert(workOrders).values({
-                  id: workOrderId,
-                  fulfil_id: workOrderId,
-                  production_order_id: po.id,
-                  work_center: wo.workCenter || wo.originalWorkCenter,
+                const insertResult = await db.insert(workOrders).values({
+                  productionOrderId: po.id,
+                  workCenter: wo.workCenter || wo.originalWorkCenter,
                   operation: wo.operation || 'Unknown',
                   routing: po.routing || 'Unknown',
                   sequence: 1,
                   status: wo.state || 'unknown',
                   state: wo.state,
-                  rec_name: wo.rec_name || `WO${workOrderId}`,
                   production: po.id,
-                  operator_name: wo.employeeName || null,
-                  estimated_hours: 0
+                  estimatedHours: 0
+                }).returning({ id: workOrders.id });
+                
+                const createdWorkOrderId = insertResult[0].id;
+                console.log(`DEBUG AUTO-ASSIGN: Created work order DB ID ${createdWorkOrderId} for Fulfil ID ${workOrderId}`);
+                
+                // Use the created database ID for assignments
+                allWorkOrders.push({
+                  workOrderId: createdWorkOrderId, // Use database ID
+                  fulfilId: workOrderId, // Keep track of Fulfil ID
+                  moNumber: po.moNumber,
+                  routing: po.routing,
+                  quantity: po.quantity,
+                  workCenter: wo.workCenter || wo.originalWorkCenter,
+                  operation: wo.operation,
+                  sequence: 1,
+                  productionOrderId: po.id,
+                  state: wo.state
                 });
-                console.log(`DEBUG AUTO-ASSIGN: Created work order ${workOrderId} in database`);
               } catch (insertError) {
                 console.error(`DEBUG AUTO-ASSIGN: Failed to create work order ${workOrderId}:`, insertError);
                 continue; // Skip this work order if we can't create it
               }
+            } else {
+              // Work order exists, use existing database ID
+              allWorkOrders.push({
+                workOrderId: existingWO[0].id, // Use existing database ID
+                fulfilId: workOrderId, // Keep track of Fulfil ID
+                moNumber: po.moNumber,
+                routing: po.routing,
+                quantity: po.quantity,
+                workCenter: wo.workCenter || wo.originalWorkCenter,
+                operation: wo.operation,
+                sequence: 1,
+                productionOrderId: po.id,
+                state: wo.state
+              });
             }
-            
-            allWorkOrders.push({
-              workOrderId: workOrderId,
-              moNumber: po.moNumber,
-              routing: po.routing,
-              quantity: po.quantity,
-              workCenter: wo.workCenter || wo.originalWorkCenter,
-              operation: wo.operation,
-              sequence: 1,
-              productionOrderId: po.id,
-              state: wo.state
-            });
           }
         }
       }
