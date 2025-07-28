@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, Clock, TrendingUp, Expand } from 'lucide-react';
+import { Users, Clock, TrendingUp, Expand, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OperatorWorkloadDetailModal } from './operator-workload-detail-modal';
 
@@ -53,7 +53,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
   });
 
   // Fetch UPH data for more accurate time calculations
-  const { data: uphResults } = useQuery<UphEntry[] | undefined>({
+  const { data: uphResults, isLoading: isLoadingUph } = useQuery<UphEntry[] | undefined>({
     queryKey: ["/api/uph-data"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -346,10 +346,27 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
               </div>
               <div>
                 <div className="font-medium text-gray-900">{operator.operatorName}</div>
-                <div className="text-xs text-gray-500">{operator.observations} observations</div>
+                <div className="text-xs text-gray-500">
+                  {isLoadingUph ? (
+                    <div className="flex items-center space-x-1">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Loading...</span>
+                    </div>
+                  ) : (
+                    `${operator.observations} observations`
+                  )}
+                </div>
               </div>
               <div className="ml-auto text-right pr-6">
-                <div className="text-lg font-bold text-gray-900">{operator.totalEstimatedHours.toFixed(1)}h</div>
+                <div className="text-lg font-bold text-gray-900">
+                  {isLoadingUph ? (
+                    <div className="flex items-center justify-end space-x-1">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  ) : (
+                    `${operator.totalEstimatedHours.toFixed(1)}h`
+                  )}
+                </div>
                 <div className="text-xs text-gray-500">of {operator.availableHours}h available</div>
               </div>
             </div>
@@ -358,17 +375,29 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
             <div className="mb-3">
               <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
                 <span>Capacity</span>
-                <span>{operator.capacityPercent}%</span>
+                <span>
+                  {isLoadingUph ? (
+                    <div className="flex items-center space-x-1">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    </div>
+                  ) : (
+                    `${operator.capacityPercent}%`
+                  )}
+                </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full ${
-                    operator.capacityPercent <= 50 ? 'bg-green-500' :
-                    operator.capacityPercent <= 80 ? 'bg-yellow-500' :
-                    'bg-red-500'
-                  }`}
-                  style={{ width: `${Math.min(operator.capacityPercent, 100)}%` }}
-                />
+                {isLoadingUph ? (
+                  <div className="h-2 rounded-full bg-gray-300 animate-pulse" style={{ width: '30%' }} />
+                ) : (
+                  <div 
+                    className={`h-2 rounded-full ${
+                      operator.capacityPercent <= 50 ? 'bg-green-500' :
+                      operator.capacityPercent <= 80 ? 'bg-yellow-500' :
+                      'bg-red-500'
+                    }`}
+                    style={{ width: `${Math.min(operator.capacityPercent, 100)}%` }}
+                  />
+                )}
               </div>
             </div>
 
