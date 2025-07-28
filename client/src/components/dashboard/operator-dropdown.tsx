@@ -131,6 +131,15 @@ export function OperatorDropdown({
             }))
           });
           
+          // Debug bulk dropdown filtering for Lifetime Harness Assembly
+          if (workOrderIds && routing === 'Lifetime Harness' && workCenter === 'Assembly') {
+            console.log(`🔍 Bulk dropdown debug for ${workCenter}/${routing}:`, {
+              qualifiedOperators: data.operators.map((op: QualifiedOperator) => ({ name: op.name, uph: op.averageUph })),
+              uniqueOperators,
+              filteredOperators: data.operators.filter((operator: QualifiedOperator) => !uniqueOperators.includes(operator.name)).map((op: QualifiedOperator) => op.name)
+            });
+          }
+          
           if (data.operators.length > 0) {
             const hasEstimated = data.operators.some((op: QualifiedOperator) => op.isEstimated);
             if (hasEstimated) {

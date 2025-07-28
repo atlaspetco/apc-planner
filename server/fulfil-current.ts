@@ -7,18 +7,30 @@ interface CurrentProductionOrder {
   rec_name: string;
   state: string;
   quantity: number;
-  product_name: string;
+  product_name?: string;          // Made optional as it's sometimes productName
   product_code: string;
   planned_date: string;
-  work_orders?: WorkOrderInfo[];
+  workOrders?: WorkOrderInfo[];  // camelCase to match actual return value
+  moNumber: string;               // Added missing property
+  routing: string;                // Added missing property
+  productName: string;            // Added missing property
+  status: string;                 // Added missing property
+  routingName: string;            // Added missing property
+  dueDate: string;                // Added missing property
+  fulfilId: string;               // Added missing property
 }
 
 interface WorkOrderInfo {
   id: string;
-  work_center: string;
+  work_center?: string;           // Made optional since it's mapped to workCenter
+  workCenter?: string;            // Made optional as it might not always be present
+  originalWorkCenter?: string;    // Added missing property
   operation: string;
-  quantity_done: number;
+  quantity_done?: number;         // Made optional
+  quantity?: number;              // Added alternative property name
   state: string;
+  employee_name?: string | null;  // Added missing property
+  employee_id?: string | null;    // Added missing property
 }
 
 export class FulfilCurrentService {
