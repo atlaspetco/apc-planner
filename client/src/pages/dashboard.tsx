@@ -126,17 +126,52 @@ export default function Dashboard() {
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      {/* Header with streamlined controls */}
+      {/* Combined header and controls */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Factory className="text-blue-600 text-2xl" />
-              <h1 className="text-2xl font-bold text-gray-900">Production Planning Dashboard</h1>
+            {/* Left side - filters and status */}
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <Factory className="text-blue-600 text-xl" />
+                <span className="text-lg font-semibold text-gray-900">Dashboard</span>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Status:</label>
+                <MultiSelect
+                  options={statusOptions}
+                  selected={statusFilter}
+                  onChange={setStatusFilter}
+                  placeholder="All Statuses"
+                  className="w-40"
+                />
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Routing:</label>
+                <Select value={routingFilter} onValueChange={setRoutingFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {uniqueRoutings.map(routing => (
+                      <SelectItem key={routing || 'unspecified'} value={routing || 'unspecified'}>
+                        {routing || 'Unspecified'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="text-sm text-gray-600 border-l pl-4">
+                {filteredOrders.length} of {productionOrders.length} orders
+              </div>
             </div>
             
-            {/* Right side controls */}
-            <div className="flex items-center space-x-4">
+            {/* Right side - action buttons */}
+            <div className="flex items-center space-x-3">
               {/* Live status indicator */}
               <div 
                 className={`flex items-center space-x-2 ${errorPOs ? 'cursor-pointer hover:bg-gray-100 rounded p-1' : ''}`}
@@ -148,7 +183,7 @@ export default function Dashboard() {
                   "bg-red-500"
                 }`}></div>
                 <span className="text-sm text-gray-600">
-                  {isRefreshing ? "Refreshing MOs..." : 
+                  {isRefreshing ? "Refreshing..." : 
                    isLoadingPOs ? "Loading..." : 
                    errorPOs ? "Error" : "Live"}
                 </span>
@@ -158,6 +193,7 @@ export default function Dashboard() {
               {/* Refresh button */}
               <Button 
                 variant="outline"
+                size="sm"
                 onClick={handleRefresh}
                 disabled={isRefreshing}
                 className="flex items-center space-x-2"
@@ -169,6 +205,7 @@ export default function Dashboard() {
               {/* Calculate workload hours button */}
               <Button 
                 variant="outline"
+                size="sm"
                 onClick={handleCalculateHours}
                 disabled={isCaching}
                 className="flex items-center space-x-2"
@@ -180,41 +217,6 @@ export default function Dashboard() {
               
               {/* Auto-assign controls */}
               <AutoAssignControls />
-            </div>
-          </div>
-          
-          {/* Compact filter row */}
-          <div className="flex items-center space-x-4 mt-4">
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Status:</label>
-              <MultiSelect
-                options={statusOptions}
-                selected={statusFilter}
-                onChange={setStatusFilter}
-                placeholder="All Statuses"
-                className="w-40"
-              />
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Routing:</label>
-              <Select value={routingFilter} onValueChange={setRoutingFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {uniqueRoutings.map(routing => (
-                    <SelectItem key={routing || 'unspecified'} value={routing || 'unspecified'}>
-                      {routing || 'Unspecified'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="text-sm text-gray-600">
-              {filteredOrders.length} of {productionOrders.length} orders
             </div>
           </div>
         </div>
