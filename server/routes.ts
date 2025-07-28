@@ -5916,7 +5916,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Smart bulk assignment for routing/work center combination
-  app.post("/api/assignments/smart-bulk", async (req, res) => {
+  app.post("/api/assignments/smart-bulk", isAuthenticated, async (req, res) => {
     try {
       const { routing, workCenter, operatorId } = req.body;
       const { workOrderAssignments } = await import("../shared/schema.js");
