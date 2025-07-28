@@ -193,16 +193,11 @@ export default function ProductionGrid({ productionOrders, isLoading, workCenter
                     {workCenters.map(workCenter => {
                       const workOrdersInCenter = allWorkOrdersByCenter[workCenter];
                       
-                      // Calculate total MO quantities (deduplicated) for this work center
-                      // Group work orders by their parent MO to avoid double-counting
-                      const uniqueMOQuantities = new Map<string, number>();
-                      workOrdersInCenter.forEach(wo => {
-                        const parentOrder = orders.find(o => o.workOrders?.some(workOrder => workOrder.id === wo.id));
-                        if (parentOrder && !uniqueMOQuantities.has(parentOrder.moNumber)) {
-                          uniqueMOQuantities.set(parentOrder.moNumber, parentOrder.quantity || 0);
-                        }
-                      });
-                      const totalUniqueQuantity = Array.from(uniqueMOQuantities.values()).reduce((sum, qty) => sum + qty, 0);
+                      // Calculate total quantity across MOs that have operations in this work center
+                      const totalUniqueQuantity = orders.reduce((sum, order) => {
+                        const hasWO = order.workOrders?.some(wo => wo.workCenter === workCenter);
+                        return hasWO ? sum + (order.quantity || 0) : sum;
+                      }, 0);
                       
                       return (
                         <td key={workCenter} className="p-4 text-center">
