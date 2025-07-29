@@ -119,11 +119,29 @@ export function AutoAssignControls() {
       const cleanup = simulateProgress();
       
       try {
-        const result = await apiRequest('POST', '/api/auto-assign');
+        // Auto-assign can take 10+ seconds, so we need extended timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
+        const result = await fetch('/api/auto-assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!result.ok) {
+          const text = await result.text();
+          throw new Error(`${result.status}: ${text}`);
+        }
+        
+        const data = await result.json();
         cleanup();
         setCurrentProgress(100);
         setTimeout(() => setShowProgress(false), 500);
-        return result;
+        return data;
       } catch (error) {
         cleanup();
         setShowProgress(false);
@@ -131,16 +149,18 @@ export function AutoAssignControls() {
       }
     },
     onSuccess: (data: any) => {
-      setLastResult(data);
-      queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
-      
+      console.log("🎯 AUTO-ASSIGN RAW RESPONSE:", data);
       console.log("🎯 AUTO-ASSIGN SUCCESS HANDLER:", {
         success: data.success,
         assignmentCount: data.assignments?.length || 0,
         summary: data.summary,
-        assignmentType: Array.isArray(data.assignments) ? 'array' : typeof data.assignments
+        assignmentType: Array.isArray(data.assignments) ? 'array' : typeof data.assignments,
+        fullData: JSON.stringify(data, null, 2)
       });
+      
+      setLastResult(data);
+      queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
       
       if (data.success && data.assignments?.length > 0) {
         // Success case - assignments were made
@@ -203,6 +223,14 @@ export function AutoAssignControls() {
       }
     },
     onError: (error) => {
+      console.log("🚨 AUTO-ASSIGN ERROR HANDLER:", error);
+      console.log("🚨 ERROR DETAILS:", {
+        message: error.message,
+        status: error.status,
+        response: error.response,
+        fullError: JSON.stringify(error, null, 2)
+      });
+      
       setShowProgress(false);
       toast({
         title: "Auto-Assign Error",
