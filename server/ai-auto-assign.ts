@@ -528,6 +528,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       // Get operators with experience in this work center
       const qualifiedOperators = [];
       const operatorsWithWorkCenterExperience = [];
+      const operatorsWithWorkCenterEnabled = [];
       
       for (const [opId, profile] of operatorProfiles) {
         // First check if operator has the work center enabled
@@ -549,6 +550,14 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         if (!hasWorkCenter) {
           continue; // Skip this operator if they don't have the work center enabled
         }
+        
+        // Track operators with work center enabled
+        operatorsWithWorkCenterEnabled.push({
+          id: opId,
+          name: profile.name,
+          currentCapacity: (profile.hoursAssigned / profile.maxHours) * 100,
+          remainingHours: profile.maxHours - profile.hoursAssigned
+        });
         
         // Check for work center experience
         const hasWorkCenterExperience = Array.from(profile.uphData.keys()).some(key => 
@@ -575,14 +584,20 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         }
       }
       
-      // Use operators with work center experience
+      // Use operators with work center experience, or fallback to those with work center enabled
       if (operatorsWithWorkCenterExperience.length > 0) {
         qualifiedOperators.push(...operatorsWithWorkCenterExperience);
+        console.log(`DEBUG AUTO-ASSIGN: Using ${operatorsWithWorkCenterExperience.length} operators with UPH data for ${workCenter}`);
+      } else if (operatorsWithWorkCenterEnabled.length > 0) {
+        // Fallback: Use operators with work center enabled but no UPH data yet
+        console.log(`DEBUG AUTO-ASSIGN: No UPH data for ${workCenter}, falling back to ${operatorsWithWorkCenterEnabled.length} operators with work center enabled`);
+        qualifiedOperators.push(...operatorsWithWorkCenterEnabled);
       }
       
       if (qualifiedOperators.length === 0) {
         console.log(`DEBUG AUTO-ASSIGN: No qualified operators found for work center: ${workCenter}`);
         console.log(`DEBUG AUTO-ASSIGN: Operators with work center experience: ${operatorsWithWorkCenterExperience.length}`);
+        console.log(`DEBUG AUTO-ASSIGN: Operators with work center enabled: ${operatorsWithWorkCenterEnabled.length}`);
         console.log(`DEBUG AUTO-ASSIGN: Active operators total: ${activeOperators.length}`);
         failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
         workCenterResult.failedCount = workOrderData.length;
@@ -617,9 +632,37 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
               if (!operatorProfile) continue;
               
               const uphKey = `${workCenter}-${workOrder.routing}`;
-              const uphEntry = operatorProfile.uphData.get(uphKey);
+              let uphEntry = operatorProfile.uphData.get(uphKey);
+              let usingFallback = false;
               
-              if (!uphEntry || uphEntry.uph <= 0) continue;
+              // If no UPH data for this specific routing, use average UPH for the work center
+              if (!uphEntry || uphEntry.uph <= 0) {
+                // Try to find any UPH data for this work center
+                const workCenterUphEntries = Array.from(operatorProfile.uphData.entries())
+                  .filter(([key]) => key.startsWith(`${workCenter}-`))
+                  .map(([_, data]) => data);
+                
+                if (workCenterUphEntries.length > 0) {
+                  // Use average UPH for this work center
+                  const avgUph = workCenterUphEntries.reduce((sum, entry) => sum + entry.uph, 0) / workCenterUphEntries.length;
+                  uphEntry = { uph: avgUph, observations: 1 };
+                  usingFallback = true;
+                } else if (qualifiedOp.uphPerformance && qualifiedOp.uphPerformance.length > 0) {
+                  // Use operator's average performance across all routings in this work center
+                  const avgUph = qualifiedOp.uphPerformance.reduce((sum, perf) => sum + perf.uph, 0) / qualifiedOp.uphPerformance.length;
+                  uphEntry = { uph: avgUph, observations: 1 };
+                  usingFallback = true;
+                } else {
+                  // Use default UPH based on work center if no data available
+                  const defaultUph = {
+                    'Cutting': 150,
+                    'Assembly': 40,
+                    'Packaging': 100
+                  }[workCenter] || 50;
+                  uphEntry = { uph: defaultUph, observations: 0 };
+                  usingFallback = true;
+                }
+              }
               
               const woExpectedHours = workOrder.quantity / uphEntry.uph;
               const remainingHours = operatorProfile.maxHours - operatorProfile.hoursAssigned;
