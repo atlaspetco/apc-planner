@@ -353,14 +353,29 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     
     const allWorkOrders = [];
     
+    // Get existing assignments to skip already assigned work orders
+    const existingAssignments = await db
+      .select({ workOrderId: workOrderAssignments.workOrderId })
+      .from(workOrderAssignments)
+      .where(eq(workOrderAssignments.isActive, true));
+    
+    const assignedWorkOrderIds = new Set(existingAssignments.map(a => a.workOrderId));
+    console.log(`Found ${existingAssignments.length} existing active assignments to skip`);
+    
     // Extract all work orders from production orders without creating database records
     for (const po of allProductionOrders) {
       if (po.workOrders && Array.isArray(po.workOrders)) {
         for (const wo of po.workOrders) {
-          // Only consider non-finished work orders
-          if (wo.state !== 'finished') {
-            const workOrderId = parseInt(wo.id);
-            
+          const workOrderId = parseInt(wo.id);
+          
+          // Skip if already assigned
+          if (assignedWorkOrderIds.has(workOrderId)) {
+            console.log(`Skipping WO ${workOrderId} - already assigned`);
+            continue;
+          }
+          
+          // Only consider unassigned work orders (not running, done, or finished)
+          if (wo.state === 'request' || wo.state === 'draft' || wo.state === 'waiting' || wo.state === 'assigned') {
             // Use the Fulfil work order ID directly for assignments
             allWorkOrders.push({
               workOrderId: workOrderId, // Use Fulfil ID directly
