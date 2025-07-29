@@ -6267,7 +6267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Auto-assign endpoints
-  app.post("/api/auto-assign", async (req: Request, res: Response) => {
+  app.post("/api/auto-assign", isAuthenticated, async (req: Request, res: Response) => {
     console.log("🚨 DEBUG AUTO-ASSIGN ROUTE HIT!");
     console.log("🚨 Request authenticated:", req.isAuthenticated?.());
     console.log("🚨 Request user:", req.user ? "Present" : "Not present");
