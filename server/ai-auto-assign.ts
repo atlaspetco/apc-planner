@@ -394,17 +394,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       }
     }
     
-    // Get existing assignments
-    const existingAssignments = await db
-      .select({
-        workOrderId: workOrderAssignments.workOrderId,
-      })
-      .from(workOrderAssignments)
-      .where(eq(workOrderAssignments.isActive, true));
-    
-    const assignedWorkOrderIds = new Set(existingAssignments.map(a => a.workOrderId));
-    
-    // Filter unassigned work orders
+    // Filter unassigned work orders (using assignedWorkOrderIds from earlier)
     const unassignedWorkOrders = allWorkOrders.filter(wo => !assignedWorkOrderIds.has(wo.workOrderId));
 
     console.log(`🚨 DEBUG AUTO-ASSIGN SUMMARY:
