@@ -1,12 +1,6 @@
-import OpenAI from "openai";
 import { db } from "./db.js";
 import { workOrders, operators, workOrderAssignments, productionOrders, uphData } from "../shared/schema.js";
 import { eq, and, inArray, isNull, isNotNull, gt, sql, desc } from "drizzle-orm";
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-});
 
 // Helper function to group work orders by routing
 function groupWorkOrdersByRouting(workOrdersData: any[]) {
@@ -255,51 +249,68 @@ async function rebalanceOverloadedOperators(
     };
   });
   
-  const systemMessage = `You are an expert manufacturing scheduler. Your task is to rebalance work orders from overloaded operators (>90% capacity) to underutilized operators (<80% capacity).
-
-Consider:
-1. Operator skills and UPH performance on specific work centers and routings
-2. Current utilization levels
-3. Work order requirements (routing, work center, quantity)
-4. Minimize disruption - only reassign what's necessary
-
-Return a JSON array of reassignments:
-[
-  {
-    "workOrderId": number,
-    "fromOperatorId": number,
-    "toOperatorId": number,
-    "reasoning": "brief explanation"
-  }
-]`;
-
+  // Rule-based rebalancing algorithm
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemMessage },
-        {
-          role: "user",
-          content: JSON.stringify({
-            overloadedOperators: overloadedData,
-            underutilizedOperators: underutilizedData
-          })
+    for (const overloadedOpId of overloadedOperators) {
+      const overloadedProfile = operatorProfiles.get(overloadedOpId)!;
+      const workOrderList = assignments.get(overloadedOpId) || [];
+      
+      // Sort work orders by hours (smallest first) to minimize disruption
+      const sortedWorkOrders = workOrderList.sort((a, b) => a.expectedHours - b.expectedHours);
+      
+      for (const workOrder of sortedWorkOrders) {
+        // Stop if operator is no longer overloaded
+        const currentUtilization = (overloadedProfile.hoursAssigned / overloadedProfile.maxHours) * 100;
+        if (currentUtilization <= 90) break;
+        
+        // Find best underutilized operator for this work order
+        let bestTargetOperator = null;
+        let bestScore = -1;
+        
+        for (const underutilizedOpId of underutilizedOperators) {
+          const targetProfile = operatorProfiles.get(underutilizedOpId)!;
+          const targetUtilization = (targetProfile.hoursAssigned / targetProfile.maxHours) * 100;
+          
+          // Skip if would make target operator overloaded
+          if (targetUtilization + (workOrder.expectedHours / targetProfile.maxHours) * 100 > 85) continue;
+          
+          // Check if target operator has skills for this work order
+          const uphKey = `${workOrder.workCenter}-${workOrder.routing}`;
+          const uphData = targetProfile.uphData.get(uphKey);
+          if (!uphData || uphData.uph <= 0) continue;
+          
+          // Calculate reassignment score (higher is better)
+          let score = 0;
+          
+          // Prefer operators with lower current utilization
+          score += (100 - targetUtilization) / 100 * 0.4;
+          
+          // Prefer operators with good UPH for this work order
+          score += Math.min(uphData.uph / 50, 1) * 0.3;
+          
+          // Prefer operators with reliable data (more observations)
+          score += Math.min(uphData.observations / 10, 1) * 0.3;
+          
+          if (score > bestScore) {
+            bestScore = score;
+            bestTargetOperator = underutilizedOpId;
+          }
         }
-      ],
-      temperature: 0.3,
-      response_format: { type: "json_object" }
-    });
-
-    const rebalanceData = JSON.parse(response.choices[0].message.content || "{}");
-    const reassignmentList = rebalanceData.reassignments || [];
-    
-    // Convert to map format
-    for (const item of reassignmentList) {
-      reassignments.set(item.workOrderId, item.toOperatorId);
+        
+        if (bestTargetOperator) {
+          reassignments.set(workOrder.workOrderId, bestTargetOperator);
+          
+          // Update profiles for next iterations
+          overloadedProfile.hoursAssigned -= workOrder.expectedHours;
+          const targetProfile = operatorProfiles.get(bestTargetOperator)!;
+          targetProfile.hoursAssigned += workOrder.expectedHours;
+          
+          console.log(`Rebalancing: Moving WO${workOrder.workOrderId} from ${overloadedProfile.name} to ${targetProfile.name}`);
+        }
+      }
     }
-    
   } catch (error) {
-    console.error("AI rebalancing failed:", error);
+    console.error("Rule-based rebalancing failed:", error);
   }
   
   return reassignments;
@@ -341,7 +352,6 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
               // Create work order in database
               try {
                 const insertResult = await db.insert(workOrders).values({
-                  productionOrderId: po.id,
                   workCenter: wo.workCenter || wo.originalWorkCenter,
                   operation: wo.operation || 'Unknown',
                   routing: po.routing || 'Unknown',
@@ -586,52 +596,70 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         workCenterResult.retryAttempts = attempt;
         console.log(`Attempt ${attempt}/${maxRetries} for work center: ${workCenter}`);
         
-        // Use AI to assign work orders
-        const systemMessage = `You are an expert manufacturing scheduler. Assign work orders to operators based on:
-1. Operator's UPH (Units Per Hour) performance for specific work center and routing combinations
-2. Current capacity utilization (prefer operators with lower utilization)
-3. Number of observations (higher observations = more reliable UPH data)
-4. Remaining available hours
-
-Guidelines:
-- Calculate expected hours = quantity / UPH
-- Don't exceed operator's remaining hours
-- Prefer operators with proven performance (high UPH, many observations)
-- Balance workload across operators
-
-Return assignments as JSON:
-{
-  "assignments": [
-    {
-      "workOrderId": number,
-      "operatorId": number,
-      "expectedHours": number,
-      "reasoning": "brief explanation",
-      "confidence": number (0-1)
-    }
-  ]
-}`;
-
+        // Use rule-based assignment with UPH data and operator constraints
         try {
-          const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: systemMessage },
-              {
-                role: "user",
-                content: JSON.stringify({
-                  workOrders: workOrderData,
-                  operators: qualifiedOperators,
-                  workCenter: workCenter
-                })
+          const assignments = [];
+          
+          // Rule-based assignment algorithm
+          for (const workOrder of workOrderData) {
+            let bestOperator = null;
+            let bestScore = -1;
+            let expectedHours = 0;
+            
+            // Find best operator for this work order
+            for (const qualifiedOp of qualifiedOperators) {
+              const operatorProfile = operatorProfiles.get(qualifiedOp.id);
+              if (!operatorProfile) continue;
+              
+              const uphKey = `${workCenter}-${workOrder.routing}`;
+              const uphEntry = operatorProfile.uphData.get(uphKey);
+              
+              if (!uphEntry || uphEntry.uph <= 0) continue;
+              
+              const woExpectedHours = workOrder.quantity / uphEntry.uph;
+              const remainingHours = operatorProfile.maxHours - operatorProfile.hoursAssigned;
+              
+              // Skip if operator doesn't have enough capacity
+              if (woExpectedHours > remainingHours) continue;
+              
+              // Calculate operator score (higher is better)
+              let score = 0;
+              
+              // Factor 1: UPH performance (30% weight)
+              score += (uphEntry.uph / 100) * 0.3;
+              
+              // Factor 2: Reliability based on observations (25% weight)
+              const reliabilityScore = Math.min(uphEntry.observations / 10, 1);
+              score += reliabilityScore * 0.25;
+              
+              // Factor 3: Available capacity (25% weight)
+              const capacityScore = remainingHours / operatorProfile.maxHours;
+              score += capacityScore * 0.25;
+              
+              // Factor 4: Current workload balance (20% weight) - prefer less loaded operators
+              const workloadScore = 1 - (operatorProfile.hoursAssigned / operatorProfile.maxHours);
+              score += workloadScore * 0.2;
+              
+              if (score > bestScore) {
+                bestScore = score;
+                bestOperator = operatorProfile;
+                expectedHours = woExpectedHours;
               }
-            ],
-            temperature: 0.5,
-            response_format: { type: "json_object" }
-          });
-
-          const aiResponse = JSON.parse(response.choices[0].message.content || "{}");
-          const assignments = aiResponse.assignments || [];
+            }
+            
+            if (bestOperator) {
+              assignments.push({
+                workOrderId: workOrder.workOrderId,
+                operatorId: bestOperator.id,
+                expectedHours: expectedHours,
+                reasoning: `Best fit: ${bestOperator.name} (${bestOperator.uphData.get(`${workCenter}-${workOrder.routing}`)?.uph.toFixed(1)} UPH, ${expectedHours.toFixed(1)}h needed)`,
+                confidence: Math.min(bestScore, 1)
+              });
+              
+              // Update operator's assigned hours for next iterations
+              bestOperator.hoursAssigned += expectedHours;
+            }
+          }
           
           // Process AI assignments
           let workCenterAssignedCount = 0;

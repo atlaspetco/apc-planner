@@ -6260,8 +6260,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test endpoint to debug authentication issue
+  app.get("/api/test-no-auth", async (req: Request, res: Response) => {
+    console.log("🚨 TEST ROUTE HIT!");
+    res.json({ message: "Test route working", timestamp: new Date().toISOString() });
+  });
+
   // Auto-assign endpoints
-  app.post("/api/auto-assign", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/auto-assign", async (req: Request, res: Response) => {
+    console.log("🚨 DEBUG AUTO-ASSIGN ROUTE HIT!");
+    console.log("🚨 Request authenticated:", req.isAuthenticated?.());
+    console.log("🚨 Request user:", req.user ? "Present" : "Not present");
+    
     try {
       const { autoAssignWorkOrders } = await import("./ai-auto-assign.js");
       const result = await autoAssignWorkOrders();
