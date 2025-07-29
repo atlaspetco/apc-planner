@@ -74,10 +74,22 @@ interface WorkCenterAssignmentResult {
   error?: string;
 }
 
+interface UnassignedWorkOrderDetail {
+  workOrderId: number;
+  moNumber: string;
+  routing: string;
+  workCenter: string;
+  operation: string;
+  quantity: number;
+  reason: string;
+}
+
 interface AutoAssignResult {
   success: boolean;
   assignments: number[];
+  detailedAssignments?: any[];
   unassigned: number[];
+  unassignedDetails?: UnassignedWorkOrderDetail[];
   summary: string;
   totalHoursOptimized: number;
   operatorUtilization: Map<number, number>;
@@ -352,7 +364,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
               // Create work order in database
               try {
                 const insertResult = await db.insert(workOrders).values({
-                  workCenter: wo.workCenter || wo.originalWorkCenter,
+                  workCenter: wo.workCenter || wo.originalWorkCenter || 'Unknown',
                   operation: wo.operation || 'Unknown',
                   routing: po.routing || 'Unknown',
                   sequence: 1,
@@ -835,18 +847,43 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       totalHoursOptimized += profile.hoursAssigned;
     }
     
-    // Track unassignable work orders (no operators with historical data)
+    // Track unassignable work orders with detailed information
     const unassignableWorkOrders: number[] = [];
+    const unassignedDetails: UnassignedWorkOrderDetail[] = [];
+    
     for (const wo of unassignedWorkOrders) {
+      const workOrderId = typeof wo.workOrderId === 'string' ? parseInt(wo.workOrderId) : wo.workOrderId;
+      
+      // Check if work order was in failed assignments
+      const wasFailedAssignment = failedAssignments.includes(workOrderId);
+      
+      // Check if work order has qualified operators with historical data
       const hasQualifiedOperators = [...operatorProfiles.values()].some(profile => {
         const key = `${wo.workCenter}-${wo.routing}`;
         return profile.uphData.has(key);
       });
       
+      let reason = "";
       if (!hasQualifiedOperators) {
-        unassignableWorkOrders.push(typeof wo.workOrderId === 'string' ? parseInt(wo.workOrderId) : wo.workOrderId);
+        unassignableWorkOrders.push(workOrderId);
+        reason = `No operators with UPH data for ${wo.routing} - ${wo.workCenter}`;
         console.log(`No operators with historical data for: ${wo.routing} - ${wo.workCenter}`);
+      } else if (wasFailedAssignment) {
+        reason = "Assignment failed during processing";
+      } else {
+        reason = "No available operator capacity";
       }
+      
+      // Add detailed information about unassigned work order
+      unassignedDetails.push({
+        workOrderId: workOrderId,
+        moNumber: wo.moNumber,
+        routing: wo.routing,
+        workCenter: wo.workCenter,
+        operation: wo.operation ?? 'Unknown',
+        quantity: wo.quantity,
+        reason: reason
+      });
     }
     
     // Calculate actual failed assignments (excluding unassignable)
@@ -911,6 +948,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         success: isSuccess,
         assignments: actualSavedAssignments,
         unassigned: [...actualFailures, ...unassignableWorkOrders],
+        unassignedDetails: unassignedDetails,
         summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
         totalHoursOptimized,
         operatorUtilization,
@@ -925,8 +963,10 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     
     return {
       success: isSuccess,
-      assignments: detailedAssignments,
+      assignments: detailedAssignments.map(a => a.workOrderId),
+      detailedAssignments: detailedAssignments,
       unassigned: [...actualFailures, ...unassignableWorkOrders],
+      unassignedDetails: unassignedDetails,
       summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
       totalHoursOptimized,
       operatorUtilization,
@@ -942,6 +982,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       success: false,
       assignments: [],
       unassigned: [],
+      unassignedDetails: [],
       summary: error instanceof Error ? error.message : "Auto-assign failed",
       totalHoursOptimized: 0,
       operatorUtilization: new Map()

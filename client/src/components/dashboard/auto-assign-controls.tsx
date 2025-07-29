@@ -465,35 +465,69 @@ export function AutoAssignControls() {
               )}
 
               {/* Assignment Details */}
-              <div className="space-y-2">
-                <h4 className="font-semibold">Assignment Details</h4>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {(lastResult.assignments || []).map((assignment) => (
-                    <div
-                      key={assignment.workOrderId}
-                      className="border rounded-lg p-3 space-y-1"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium">
-                            WO #{assignment.workOrderId} → {assignment.operatorName}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {assignment.reason}
-                          </p>
-                        </div>
-                        <div className="text-right text-sm">
-                          <p>{assignment.expectedUph.toFixed(1)} UPH</p>
-                          <p>{assignment.expectedHours.toFixed(1)}h</p>
-                          <p className="text-xs text-muted-foreground">
-                            {(assignment.confidence * 100).toFixed(0)}% confidence
-                          </p>
+              {lastResult.detailedAssignments && lastResult.detailedAssignments.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold">Assignment Details</h4>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {(lastResult.detailedAssignments || []).map((assignment) => (
+                      <div
+                        key={assignment.workOrderId}
+                        className="border rounded-lg p-3 space-y-1"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">
+                              WO #{assignment.workOrderId} → {assignment.operatorName}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {assignment.reason}
+                            </p>
+                          </div>
+                          <div className="text-right text-sm">
+                            <p>{assignment.expectedUph.toFixed(1)} UPH</p>
+                            <p>{assignment.expectedHours.toFixed(1)}h</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(assignment.confidence * 100).toFixed(0)}% confidence
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Unassigned Work Order Details */}
+              {lastResult.unassignedDetails && lastResult.unassignedDetails.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold">Unassigned Work Order Details</h4>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {lastResult.unassignedDetails.map((unassigned) => (
+                      <div
+                        key={unassigned.workOrderId}
+                        className="border border-red-200 bg-red-50 rounded-lg p-3 space-y-1"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium text-red-900">
+                              WO #{unassigned.workOrderId} - {unassigned.moNumber}
+                            </p>
+                            <p className="text-sm text-red-700">
+                              {unassigned.workCenter} • {unassigned.routing} • {unassigned.operation}
+                            </p>
+                            <p className="text-sm text-red-600 mt-1">
+                              {unassigned.reason}
+                            </p>
+                          </div>
+                          <div className="text-right text-sm text-red-700">
+                            <p>Qty: {unassigned.quantity}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Operator Utilization */}
               {lastResult.operatorUtilization && lastResult.operatorUtilization.size > 0 && (
