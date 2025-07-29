@@ -724,27 +724,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { workCycles } = await import("../shared/schema.js");
       
       // Fetch completed work cycles for finished/done work orders
-      // Simplified query to debug SQL syntax error
+      // Since work_cycles_rec_name is null, we'll group by operator and production order
       const completedCycles = await db
         .select({
-          workOrderId: sql<number>`CAST(NULLIF(REGEXP_REPLACE(${workCycles.work_cycles_rec_name}, 'WO([0-9]+).*', '\\1'), '') AS INTEGER)`,
           operatorName: workCycles.work_cycles_operator_rec_name,
+          productionId: workCycles.work_production_id,
           duration: workCycles.work_cycles_duration,
           state: workCycles.state,
-          recName: workCycles.work_cycles_rec_name,
-          moNumber: sql<string>`REGEXP_REPLACE(${workCycles.work_cycles_rec_name}, '.*MO([0-9]+).*', 'MO\\1')`
+          workCenter: workCycles.work_cycles_work_center_rec_name,
+          quantity: workCycles.work_cycles_quantity_done
         })
         .from(workCycles)
         .where(
           and(
             gt(workCycles.work_cycles_duration, 0),
             isNotNull(workCycles.work_cycles_duration),
-            or(
-              eq(workCycles.state, 'done'),
-              eq(workCycles.state, 'finished'),
-              sql`LOWER(${workCycles.work_cycles_rec_name}) LIKE '%done%'`,
-              sql`LOWER(${workCycles.work_cycles_rec_name}) LIKE '%finished%'`
-            )
+            eq(workCycles.state, 'done')
           )
         );
       
@@ -753,37 +748,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("Sample completed cycles:", completedCycles.slice(0, 3));
       }
       
-      // Create a map of completed hours by work order ID
-      const completedHoursMap = new Map<number, number>();
-      const completedCyclesByWO = new Map<number, any[]>();
+      // Create a map of completed hours by operator and production order
+      const completedHoursByOperatorAndPO = new Map<string, number>();
       
       completedCycles.forEach(cycle => {
-        if (cycle.workOrderId && cycle.duration) {
+        if (cycle.operatorName && cycle.productionId && cycle.duration) {
+          const key = `${cycle.operatorName}|${cycle.productionId}`;
           const hours = cycle.duration / 3600; // Convert seconds to hours
-          if (completedHoursMap.has(cycle.workOrderId)) {
-            completedHoursMap.set(cycle.workOrderId, completedHoursMap.get(cycle.workOrderId)! + hours);
-          } else {
-            completedHoursMap.set(cycle.workOrderId, hours);
-          }
           
-          // Store cycles for debugging
-          if (!completedCyclesByWO.has(cycle.workOrderId)) {
-            completedCyclesByWO.set(cycle.workOrderId, []);
+          if (completedHoursByOperatorAndPO.has(key)) {
+            completedHoursByOperatorAndPO.set(key, completedHoursByOperatorAndPO.get(key)! + hours);
+          } else {
+            completedHoursByOperatorAndPO.set(key, hours);
           }
-          completedCyclesByWO.get(cycle.workOrderId)!.push(cycle);
         }
       });
       
       console.log(`Found ${completedCycles.length} completed work cycles`);
-      console.log(`Completed hours map has ${completedHoursMap.size} work orders with completed hours`);
+      console.log(`Completed hours map has ${completedHoursByOperatorAndPO.size} operator/PO combinations with completed hours`);
+      
+      // Debug: show sample of completed hours
+      if (completedHoursByOperatorAndPO.size > 0) {
+        const sampleEntries = Array.from(completedHoursByOperatorAndPO.entries()).slice(0, 5);
+        console.log("Sample completed hours by operator|PO:", sampleEntries);
+      }
+      
+      // Debug: Check if Devin Cann has any completed hours
+      const devinCompletedCycles = completedCycles.filter(c => c.operatorName?.includes("Devin Cann"));
+      console.log(`Devin Cann has ${devinCompletedCycles.length} completed cycles`);
+      if (devinCompletedCycles.length > 0) {
+        const devinHours = devinCompletedCycles.reduce((sum, c) => sum + (c.duration || 0) / 3600, 0);
+        console.log(`Devin's total completed hours: ${devinHours.toFixed(2)}h`);
+        console.log("Devin's completed cycles sample:", devinCompletedCycles.slice(0, 3));
+      }
 
       // Enrich assignments with production order data and completed hours
       const enrichedAssignments = await Promise.all(assignments.map(async (assignment) => {
         const workOrderData = workOrderMap.get(assignment.workOrderId);
         
-        // Get completed hours for this work order
-        const completedHours = completedHoursMap.get(assignment.workOrderId) || 0;
-        const workCycles = completedCyclesByWO.get(assignment.workOrderId) || [];
+        // We'll calculate completed hours later once we have the production order ID
+        let completedHours = 0;
         
         if (!workOrderData) {
           // Try to find work order by looking through all production orders
@@ -831,9 +835,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               productionOrderId: foundProductionOrder.id,
               productName: foundProductionOrder.productName || 'Unknown',
               moNumber: foundProductionOrder.moNumber || 'Unknown',
-              completedHours: completedHours,
+              completedHours: 0, // Will be calculated once we have PO ID
               workOrderState: workOrderState,
-              workCycles: workCycles.length
+              workCycles: 0
             };
           }
           
@@ -866,9 +870,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 productionOrderId: po?.id || null,
                 productName: po?.productName || 'Unknown',
                 moNumber: po?.moNumber || `MO${assignment.workOrderId}`,
-                completedHours: completedHours,
+                completedHours: 0, // Will be calculated once we have PO ID
                 workOrderState: wo.state || 'unknown',
-                workCycles: workCycles.length
+                workCycles: 0
               };
             }
           } catch (error) {
@@ -886,9 +890,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             productionOrderId: null,
             productName: 'Unknown',
             moNumber: `WO${assignment.workOrderId}`,
-            completedHours: completedHours,
+            completedHours: 0,
             workOrderState: 'unknown',
-            workCycles: workCycles.length
+            workCycles: 0
           };
         }
         
@@ -917,13 +921,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
           productName: productionOrder.productName || 'Unknown',
           moNumber: productionOrder.moNumber || 'Unknown',
           estimatedHours: assignment.estimatedHours || 0, // Include estimated hours from assignment
-          completedHours: completedHours, // Add completed hours from work cycles
+          completedHours: 0, // Will be calculated after all assignments are processed
           workOrderState: workOrderState,
-          workCycles: workCycles.length
+          workCycles: 0
         };
       }));
       
       console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
+      
+      // Now calculate completed hours for each assignment based on operator and production order
+      const finalEnrichedAssignments = enrichedAssignments.map(assignment => {
+        if (assignment.operatorName && assignment.productionOrderId) {
+          const key = `${assignment.operatorName}|${assignment.productionOrderId}`;
+          const completedHours = completedHoursByOperatorAndPO.get(key) || 0;
+          
+          if (completedHours > 0) {
+            console.log(`Found ${completedHours.toFixed(2)}h completed for ${assignment.operatorName} on PO ${assignment.productionOrderId}`);
+          }
+          
+          return {
+            ...assignment,
+            completedHours
+          };
+        }
+        return assignment;
+      });
       
       // Add cache headers to prevent stale data
       res.set({
@@ -932,7 +954,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'Expires': '0'
       });
       
-      res.json({ assignments: enrichedAssignments });
+      res.json({ assignments: finalEnrichedAssignments });
     } catch (error) {
       console.error('Error fetching work order assignments:', error);
       res.status(500).json({ message: 'Failed to fetch assignments' });
