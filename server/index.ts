@@ -42,9 +42,9 @@ app.use((req, res, next) => {
     log("🔄 Initializing UPH data on startup...");
     const { uphScheduler } = await import("./jobs/uphScheduler.js");
     
-    // Force initial calculation to ensure data is ready
-    await uphScheduler.triggerCalculation(false);
-    log("✅ Initial UPH calculation completed");
+    // Skip initial calculation - use cached data instead
+    // await uphScheduler.triggerCalculation(false);
+    // log("✅ Initial UPH calculation completed");
     
     // Start background scheduler for ongoing updates
     uphScheduler.start(5); // Check every 5 minutes for new data

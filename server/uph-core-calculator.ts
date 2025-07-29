@@ -281,9 +281,9 @@ export async function calculateCoreUph(
   const { db: database } = await import("./db.js");
   const { uphData } = await import("../shared/schema.js");
   
-  // Clear existing UPH data
-  await database.delete(uphData);
-  console.log("🗑️ Cleared existing UPH data");
+  // Clear existing UPH data - DISABLED to prevent recalculation on every request
+  // await database.delete(uphData);
+  // console.log("🗑️ Cleared existing UPH data");
   
   // Insert corrected UPH data
   for (const result of results) {

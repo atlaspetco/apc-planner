@@ -1437,23 +1437,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   });
 
-  // UPH Data - Use core calculator for consistent calculations
+  // UPH Data - Read from cached database instead of recalculating
   app.get("/api/uph-data", async (req, res) => {
     try {
-      // Use core calculator directly
-      const { calculateCoreUph } = await import("./uph-core-calculator.js");
-      const uphResults = await calculateCoreUph({ bypassDateFilter: true });
+      // Read from cached UPH data table instead of recalculating
+      const uphResults = await db
+        .select()
+        .from(uphData)
+        .orderBy(uphData.operatorName, uphData.workCenter, uphData.productRouting);
       
-      // Transform to expected format
-      const transformedResults = uphResults.map(result => ({
-        operatorName: result.operatorName,
-        workCenter: result.workCenter,
-        productRouting: result.routing,
-        uph: result.unitsPerHour,
-        observationCount: result.observations
-      }));
-      
-      res.json(transformedResults);
+      res.json(uphResults);
     } catch (error) {
       console.error("Error getting UPH data:", error);
       res.status(500).json({ error: "Failed to get UPH data" });
