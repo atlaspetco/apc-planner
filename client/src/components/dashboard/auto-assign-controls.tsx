@@ -56,6 +56,15 @@ interface AssignmentResult {
     confidence: number;
   }>;
   unassigned: number[];
+  unassignedDetails?: Array<{
+    workOrderId: number;
+    moNumber: string;
+    routing: string;
+    workCenter: string;
+    operation: string;
+    quantity: number;
+    reason: string;
+  }>;
   summary: string;
   totalHoursOptimized: number;
   operatorUtilization: Map<number, number>;

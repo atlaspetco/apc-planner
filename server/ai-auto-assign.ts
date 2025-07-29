@@ -86,14 +86,20 @@ interface UnassignedWorkOrderDetail {
 
 interface AutoAssignResult {
   success: boolean;
-  assignments: number[];
-  detailedAssignments?: any[];
+  assignments: Array<{
+    workOrderId: number;
+    operatorId: number;
+    operatorName: string;
+    reason: string;
+    expectedUph: number;
+    expectedHours: number;
+    confidence: number;
+  }>;
   unassigned: number[];
   unassignedDetails?: UnassignedWorkOrderDetail[];
   summary: string;
   totalHoursOptimized: number;
   operatorUtilization: Map<number, number>;
-  routingResults?: RoutingAssignmentResult[];
   workCenterResults?: WorkCenterAssignmentResult[];
   progress?: {
     current: number;
@@ -101,6 +107,8 @@ interface AutoAssignResult {
     currentRouting?: string;
   };
 }
+
+
 
 // Helper function to get UPH for an operator on a specific work center and routing
 async function getOperatorUPH(
@@ -463,6 +471,24 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     // Build operator profiles with UPH data
     const operatorProfiles = new Map<number, OperatorProfile>();
     
+    // Get existing assignments to calculate current workload
+    const existingAssignmentHours = await db
+      .select({
+        operatorId: workOrderAssignments.operatorId,
+        estimatedHours: workOrderAssignments.estimatedHours
+      })
+      .from(workOrderAssignments)
+      .where(eq(workOrderAssignments.isActive, true));
+    
+    // Group existing hours by operator
+    const operatorCurrentHours = new Map<number, number>();
+    for (const assignment of existingAssignmentHours) {
+      const current = operatorCurrentHours.get(assignment.operatorId) || 0;
+      operatorCurrentHours.set(assignment.operatorId, current + (assignment.estimatedHours || 0));
+    }
+    
+    console.log(`🔍 DEBUG EXISTING OPERATOR HOURS:`, Array.from(operatorCurrentHours.entries()).map(([id, hours]) => `OP${id}:${hours}h`));
+    
     for (const op of activeOperators) {
       const operatorUphMap = new Map<string, { uph: number; observations: number }>();
       
@@ -480,13 +506,18 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         });
       }
       
+      const currentHoursAssigned = operatorCurrentHours.get(op.id) || 0;
+      const maxHours = op.availableHours || 40;
+      
+      console.log(`🔍 DEBUG OPERATOR PROFILE: ${op.name} - Current: ${currentHoursAssigned}h, Max: ${maxHours}h, Available: ${maxHours - currentHoursAssigned}h`);
+      
       operatorProfiles.set(op.id, {
         id: op.id,
         name: op.name,
         skills: [...(op.workCenters || []), ...(op.routings || [])],
-        currentCapacity: 0,
-        maxHours: op.availableHours || 40,
-        hoursAssigned: 0,
+        currentCapacity: (currentHoursAssigned / maxHours) * 100,
+        maxHours: maxHours,
+        hoursAssigned: currentHoursAssigned, // Include existing assignments
         activeAssignments: 0,
         uphData: operatorUphMap
       });
@@ -880,7 +911,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
         moNumber: wo.moNumber,
         routing: wo.routing,
         workCenter: wo.workCenter,
-        operation: wo.operation ?? 'Unknown',
+        operation: wo.operation || 'Unknown',
         quantity: wo.quantity,
         reason: reason
       });
@@ -908,6 +939,11 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     
     // Success is determined by actual saved assignments, not just AI planning
     const isSuccess = savedCount > 0;
+    
+    // Ensure summary is never undefined
+    if (!summary) {
+      summary = isSuccess ? "Auto-assign completed" : "No assignments could be made";
+    }
     
     console.log(`🎯 FINAL AUTO-ASSIGN RESULT:
       ✅ Saved Count: ${savedCount}
@@ -946,7 +982,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       console.log(`🎯 WARNING: No detailed assignments created, falling back to work order IDs`);
       return {
         success: isSuccess,
-        assignments: actualSavedAssignments,
+        assignments: [], // No detailed assignments available, return empty array  
         unassigned: [...actualFailures, ...unassignableWorkOrders],
         unassignedDetails: unassignedDetails,
         summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
@@ -963,8 +999,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     
     return {
       success: isSuccess,
-      assignments: detailedAssignments.map(a => a.workOrderId),
-      detailedAssignments: detailedAssignments,
+      assignments: detailedAssignments, // Return full assignment objects, not just IDs
       unassigned: [...actualFailures, ...unassignableWorkOrders],
       unassignedDetails: unassignedDetails,
       summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
