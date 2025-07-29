@@ -733,10 +733,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           moNumber: sql<string>`REGEXP_REPLACE(${workCycles.work_cycles_rec_name}, '.*MO([0-9]+).*', 'MO\\1')`
         })
         .from(workCycles)
-        .where(sql`(${workCycles.work_cycles_duration} > 0 AND ${workCycles.work_cycles_duration} IS NOT NULL)
+        .where(sql`${workCycles.work_cycles_duration} > 0 
+          AND ${workCycles.work_cycles_duration} IS NOT NULL
           AND (LOWER(${workCycles.work_cycles_rec_name}) LIKE '%done%' 
             OR LOWER(${workCycles.work_cycles_rec_name}) LIKE '%finished%'
-            OR (${workCycles.work_cycles_state} IS NOT NULL AND ${workCycles.work_cycles_state} IN ('done', 'finished')))`);
+            OR ${workCycles.work_cycles_state} = 'done'
+            OR ${workCycles.work_cycles_state} = 'finished')`);
       
       // Create a map of completed hours by work order ID
       const completedHoursMap = new Map<number, number>();
