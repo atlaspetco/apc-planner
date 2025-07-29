@@ -168,8 +168,16 @@ export function AutoAssignControls() {
       });
       
       setLastResult(data);
+      
+      // Invalidate all queries that power the dropdowns
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/operators/qualified'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/operators'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/uph-data'] });
+      
+      // Force refetch of all active queries to refresh UI
+      queryClient.refetchQueries({ type: 'active' });
       
       if (data.success && data.assignments?.length > 0) {
         // Success case - assignments were made
