@@ -405,10 +405,14 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     // Filter unassigned work orders
     const unassignedWorkOrders = allWorkOrders.filter(wo => !assignedWorkOrderIds.has(wo.workOrderId));
 
-    console.log(`DEBUG AUTO-ASSIGN: Total work orders: ${allWorkOrders.length}, Existing assignments: ${existingAssignments.length}, Unassigned: ${unassignedWorkOrders.length}`);
+    console.log(`🚨 DEBUG AUTO-ASSIGN SUMMARY:
+      📊 Total work orders found: ${allWorkOrders.length}
+      ✅ Existing assignments: ${existingAssignments.length}
+      🔍 Unassigned work orders: ${unassignedWorkOrders.length}
+      📋 Sample unassigned: ${unassignedWorkOrders.slice(0, 3).map(wo => `${wo.moNumber}(${wo.workCenter})`).join(', ')}`);
     
     if (unassignedWorkOrders.length === 0) {
-      console.log(`DEBUG AUTO-ASSIGN: No unassigned work orders - returning success with empty assignments`);
+      console.log(`🚨 DEBUG AUTO-ASSIGN: No unassigned work orders - returning success with empty assignments`);
       return {
         success: true,
         assignments: [],
@@ -419,13 +423,19 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       };
     }
     
-    console.log(`DEBUG AUTO-ASSIGN: Found ${unassignedWorkOrders.length} unassigned work orders:`, unassignedWorkOrders.map(wo => `WO${wo.workOrderId} (${wo.workCenter}/${wo.routing})`));
+    console.log(`🔍 DEBUG AUTO-ASSIGN: Found ${unassignedWorkOrders.length} unassigned work orders:`, unassignedWorkOrders.map(wo => `WO${wo.workOrderId} (${wo.workCenter}/${wo.routing})`));
 
     // Step 2: Get all active operators with their UPH data
     const activeOperators = await db
       .select()
       .from(operators)
       .where(eq(operators.isActive, true));
+    
+    console.log(`👥 DEBUG AUTO-ASSIGN: Found ${activeOperators.length} active operators:`, activeOperators.map(op => `${op.name}(ID:${op.id})`));
+    
+    // Enhanced debug: show assigned work order IDs in detail
+    console.log(`🔍 DEBUG ASSIGNED WORK ORDER IDs (${assignedWorkOrderIds.size}):`, Array.from(assignedWorkOrderIds));
+    console.log(`🔍 DEBUG FIRST 5 ALL WORK ORDERS:`, allWorkOrders.slice(0, 5).map(wo => `WO${wo.workOrderId}(${wo.moNumber})`));
 
     // Build operator profiles with UPH data
     const operatorProfiles = new Map<number, OperatorProfile>();
@@ -832,6 +842,15 @@ Return assignments as JSON:
     
     // Success is determined by actual saved assignments, not just AI planning
     const isSuccess = savedCount > 0;
+    
+    console.log(`🎯 FINAL AUTO-ASSIGN RESULT:
+      ✅ Saved Count: ${savedCount}
+      📊 Assignment Records Created: ${assignmentRecords.length}
+      🚀 Successful Assignments: ${successfulAssignments.length}
+      ❌ Failed Assignments: ${failedAssignments.length}
+      🔄 Actual Saved Assignments: ${actualSavedAssignments.length}
+      ⭐ Is Success: ${isSuccess}
+      📝 Summary: ${summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made")}`);
     
     return {
       success: isSuccess,
