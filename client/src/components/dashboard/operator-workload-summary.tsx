@@ -9,6 +9,7 @@ interface OperatorWorkload {
   operatorName: string;
   totalAssignments: number;
   totalEstimatedHours: number;
+  totalCompletedHours: number;
   availableHours: number;
   capacityPercent: number;
   observations: number;
@@ -95,6 +96,7 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
         operatorName: op.name,
         totalAssignments: 0,
         totalEstimatedHours: 0,
+        totalCompletedHours: 0, // Add completed hours tracking
         availableHours: op.availableHours || 40, // Default 40h/week
         observations: op.observations || 0,
         assignments: [],
@@ -242,6 +244,14 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           // Debug why work order is finished
           console.log(`Skipping finished work order for ${operator.operatorName}: ${routing}`);
         }
+        
+        // Always add completed hours if available (for both finished and active work orders)
+        if (assignment.completedHours && assignment.completedHours > 0) {
+          operator.totalCompletedHours += assignment.completedHours;
+          if (operator.operatorName === "Evan Crosby") {
+            console.log(`Adding completed hours for Evan: ${assignment.completedHours}h for work order ${assignment.workOrderId}`);
+          }
+        }
       }
     });
 
@@ -358,16 +368,31 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
                 </div>
               </div>
               <div className="ml-auto text-right pr-6">
-                <div className="text-lg font-bold text-gray-900">
-                  {isLoadingUph ? (
-                    <div className="flex items-center justify-end space-x-1">
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                <div className="flex flex-col items-end space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <div className="text-right">
+                      <div className="text-xs text-gray-500">Estimated</div>
+                      <div className="text-sm font-bold text-gray-900">
+                        {isLoadingUph ? (
+                          <div className="flex items-center justify-end space-x-1">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          </div>
+                        ) : (
+                          `${operator.totalEstimatedHours.toFixed(1)}h`
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    `${operator.totalEstimatedHours.toFixed(1)}h`
-                  )}
+                    {operator.totalCompletedHours > 0 && (
+                      <div className="text-right border-l pl-2">
+                        <div className="text-xs text-gray-500">Completed</div>
+                        <div className="text-sm font-bold text-green-600">
+                          {operator.totalCompletedHours.toFixed(1)}h
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500">of {operator.availableHours}h available</div>
                 </div>
-                <div className="text-xs text-gray-500">of {operator.availableHours}h available</div>
               </div>
             </div>
 

@@ -24,6 +24,7 @@ interface OperatorWorkloadDetailModalProps {
     operatorName: string;
     totalAssignments: number;
     totalEstimatedHours: number;
+    totalCompletedHours: number;
     availableHours: number;
     capacityPercent: number;
     estimatedCompletion: string;
@@ -283,12 +284,18 @@ export function OperatorWorkloadDetailModal({
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-4 gap-4 text-center">
               <div>
                 <div className="text-2xl font-bold text-gray-900">
                   {operator.totalEstimatedHours.toFixed(1)}h
                 </div>
-                <div className="text-xs text-gray-500">Total Hours</div>
+                <div className="text-xs text-gray-500">Estimated</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-green-600">
+                  {operator.totalCompletedHours.toFixed(1)}h
+                </div>
+                <div className="text-xs text-gray-500">Completed</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-gray-900">

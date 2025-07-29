@@ -720,9 +720,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`Found ${matchingAssignments.length} assignments with matching work orders in the map`);
       }
       
-      // Enrich assignments with production order data
+      // Import work cycles table to get completed hours
+      const { workCycles } = await import("../shared/schema.js");
+      
+      // Fetch completed work cycles for finished/done work orders
+      const completedCycles = await db
+        .select({
+          workOrderId: sql<number>`CAST(NULLIF(REGEXP_REPLACE(${workCycles.work_cycles_rec_name}, 'WO([0-9]+).*', '\\1'), '') AS INTEGER)`,
+          operatorName: workCycles.work_cycles_operator_rec_name,
+          duration: workCycles.work_cycles_duration,
+          state: sql<string>`LOWER(${workCycles.work_cycles_rec_name})`,
+          moNumber: sql<string>`REGEXP_REPLACE(${workCycles.work_cycles_rec_name}, '.*MO([0-9]+).*', 'MO\\1')`
+        })
+        .from(workCycles)
+        .where(sql`(${workCycles.work_cycles_duration} > 0 AND ${workCycles.work_cycles_duration} IS NOT NULL)
+          AND (LOWER(${workCycles.work_cycles_rec_name}) LIKE '%done%' 
+            OR LOWER(${workCycles.work_cycles_rec_name}) LIKE '%finished%'
+            OR ${workCycles.work_cycles_state} IN ('done', 'finished'))`);
+      
+      // Create a map of completed hours by work order ID
+      const completedHoursMap = new Map<number, number>();
+      const completedCyclesByWO = new Map<number, any[]>();
+      
+      completedCycles.forEach(cycle => {
+        if (cycle.workOrderId && cycle.duration) {
+          const hours = cycle.duration / 3600; // Convert seconds to hours
+          if (completedHoursMap.has(cycle.workOrderId)) {
+            completedHoursMap.set(cycle.workOrderId, completedHoursMap.get(cycle.workOrderId)! + hours);
+          } else {
+            completedHoursMap.set(cycle.workOrderId, hours);
+          }
+          
+          // Store cycles for debugging
+          if (!completedCyclesByWO.has(cycle.workOrderId)) {
+            completedCyclesByWO.set(cycle.workOrderId, []);
+          }
+          completedCyclesByWO.get(cycle.workOrderId)!.push(cycle);
+        }
+      });
+      
+      console.log(`Found ${completedCycles.length} completed work cycles`);
+      console.log(`Completed hours map has ${completedHoursMap.size} work orders with completed hours`);
+
+      // Enrich assignments with production order data and completed hours
       const enrichedAssignments = await Promise.all(assignments.map(async (assignment) => {
         const workOrderData = workOrderMap.get(assignment.workOrderId);
+        
+        // Get completed hours for this work order
+        const completedHours = completedHoursMap.get(assignment.workOrderId) || 0;
+        const workCycles = completedCyclesByWO.get(assignment.workOrderId) || [];
         
         if (!workOrderData) {
           // Try to find work order by looking through all production orders
@@ -756,6 +802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Each work order represents the full quantity going through that work center
             const workCenter = foundWorkOrder.workCenter || foundWorkOrder.originalWorkCenter || 'Unknown';
             const workOrderQuantity = foundWorkOrder.quantity || foundProductionOrder.quantity || 0;
+            const workOrderState = foundWorkOrder.state || 'unknown';
             
             console.log(`Work order ${assignment.workOrderId} quantity: ${workOrderQuantity} (from PO ${foundProductionOrder.moNumber} with qty: ${foundProductionOrder.quantity})`);
             
@@ -768,7 +815,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               quantity: workOrderQuantity,
               productionOrderId: foundProductionOrder.id,
               productName: foundProductionOrder.productName || 'Unknown',
-              moNumber: foundProductionOrder.moNumber || 'Unknown'
+              moNumber: foundProductionOrder.moNumber || 'Unknown',
+              completedHours: completedHours,
+              workOrderState: workOrderState,
+              workCycles: workCycles.length
             };
           }
           
@@ -800,7 +850,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 quantity: wo.quantityRequired || wo.quantity || po?.quantity || 0,
                 productionOrderId: po?.id || null,
                 productName: po?.productName || 'Unknown',
-                moNumber: po?.moNumber || `MO${assignment.workOrderId}`
+                moNumber: po?.moNumber || `MO${assignment.workOrderId}`,
+                completedHours: completedHours,
+                workOrderState: wo.state || 'unknown',
+                workCycles: workCycles.length
               };
             }
           } catch (error) {
@@ -817,7 +870,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             quantity: 0,
             productionOrderId: null,
             productName: 'Unknown',
-            moNumber: `WO${assignment.workOrderId}`
+            moNumber: `WO${assignment.workOrderId}`,
+            completedHours: completedHours,
+            workOrderState: 'unknown',
+            workCycles: workCycles.length
           };
         }
         
@@ -833,6 +889,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const proportionalQuantity = workOrder.quantity || 
           Math.ceil(productionOrder.quantity / workOrdersInSameCenter) || 0;
         
+        const workOrderState = workOrder.state || 'unknown';
+        
         return {
           ...assignment,
           workCenter: workCenter,
@@ -843,7 +901,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           productionOrderId: productionOrder.id,
           productName: productionOrder.productName || 'Unknown',
           moNumber: productionOrder.moNumber || 'Unknown',
-          estimatedHours: assignment.estimatedHours || 0 // Include estimated hours from assignment
+          estimatedHours: assignment.estimatedHours || 0, // Include estimated hours from assignment
+          completedHours: completedHours, // Add completed hours from work cycles
+          workOrderState: workOrderState,
+          workCycles: workCycles.length
         };
       }));
       
