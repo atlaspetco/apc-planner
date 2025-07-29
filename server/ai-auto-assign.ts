@@ -369,9 +369,10 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
               .limit(1);
             
             if (existingWO.length === 0) {
-              // Create work order in database
+              // Create work order in database using Fulfil ID as primary key
               try {
                 const insertResult = await db.insert(workOrders).values({
+                  id: workOrderId, // Use Fulfil ID as primary key
                   workCenter: wo.workCenter || wo.originalWorkCenter || 'Unknown',
                   operation: wo.operation || 'Unknown',
                   routing: po.routing || 'Unknown',
@@ -384,12 +385,12 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
                 }).returning({ id: workOrders.id });
                 
                 const createdWorkOrderId = insertResult[0].id;
-                console.log(`DEBUG AUTO-ASSIGN: Created work order DB ID ${createdWorkOrderId} for Fulfil ID ${workOrderId}`);
+                console.log(`DEBUG AUTO-ASSIGN: Created work order with Fulfil ID ${createdWorkOrderId}`);
                 
-                // Use the created database ID for assignments
+                // Use the Fulfil ID for assignments
                 allWorkOrders.push({
-                  workOrderId: createdWorkOrderId, // Use database ID
-                  fulfilId: workOrderId, // Keep track of Fulfil ID
+                  workOrderId: workOrderId, // Use Fulfil ID
+                  fulfilId: workOrderId, // Same as workOrderId
                   moNumber: po.moNumber,
                   routing: po.routing,
                   quantity: po.quantity,
@@ -404,10 +405,10 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
                 continue; // Skip this work order if we can't create it
               }
             } else {
-              // Work order exists, use existing database ID
+              // Work order exists, use the Fulfil ID (which should be the same as database ID)
               allWorkOrders.push({
-                workOrderId: existingWO[0].id, // Use existing database ID
-                fulfilId: workOrderId, // Keep track of Fulfil ID
+                workOrderId: workOrderId, // Use Fulfil ID
+                fulfilId: workOrderId, // Same as workOrderId
                 moNumber: po.moNumber,
                 routing: po.routing,
                 quantity: po.quantity,
