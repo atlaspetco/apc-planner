@@ -580,6 +580,8 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
               observations: data.observations
             }));
           
+          console.log(`✅ ${profile.name} has ${workCenterUphData.length} UPH entries for ${workCenter}`);
+          
           operatorsWithWorkCenterExperience.push({
             id: opId,
             name: profile.name,
@@ -587,6 +589,8 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
             remainingHours: profile.maxHours - profile.hoursAssigned,
             uphPerformance: workCenterUphData
           });
+        } else if (hasWorkCenter) {
+          console.log(`❌ ${profile.name} has ${workCenter} enabled but NO UPH data`);
         }
       }
       
@@ -596,14 +600,17 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       }
       
       if (qualifiedOperators.length === 0) {
-        console.log(`DEBUG AUTO-ASSIGN: No qualified operators found for work center: ${workCenter}`);
-        console.log(`DEBUG AUTO-ASSIGN: Operators with work center experience: ${operatorsWithWorkCenterExperience.length}`);
-        console.log(`DEBUG AUTO-ASSIGN: Active operators total: ${activeOperators.length}`);
+        console.log(`⚠️ AUTO-ASSIGN: No qualified operators found for work center: ${workCenter}`);
+        console.log(`⚠️ AUTO-ASSIGN: Work orders in ${workCenter}: ${workOrderData.length}`);
+        console.log(`⚠️ AUTO-ASSIGN: Operators with work center experience: ${operatorsWithWorkCenterExperience.length}`);
+        console.log(`⚠️ AUTO-ASSIGN: Active operators total: ${activeOperators.length}`);
+        console.log(`⚠️ AUTO-ASSIGN: Continuing with other work centers...`);
+        
         failedAssignments.push(...workOrderData.map(wo => wo.workOrderId));
         workCenterResult.failedCount = workOrderData.length;
-        workCenterResult.error = "No qualified operators found";
+        workCenterResult.error = "No operators with historical data";
         workCenterResults.push(workCenterResult);
-        continue;
+        continue; // Continue processing other work centers
       }
       
       console.log(`DEBUG AUTO-ASSIGN: Found ${qualifiedOperators.length} qualified operators for ${workCenter}:`, qualifiedOperators.map(op => op.name));
@@ -913,6 +920,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     }
     
     // Success is determined by actual saved assignments, not just AI planning
+    // Even if some work centers fail, we consider it a success if ANY assignments were made
     const isSuccess = savedCount > 0;
     
     // Ensure summary is never undefined

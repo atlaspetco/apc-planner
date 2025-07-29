@@ -135,9 +135,15 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
           workCenter: assignment.workCenter || 'Unknown',
           quantity: assignment.quantity || 0,
           productionOrderId: assignment.productionOrderId || null,
-          estimatedHours: 0 // Will be calculated below
+          estimatedHours: 0, // Will be calculated below
+          completedHours: assignment.completedHours || 0 // Include completed hours from assignment
         };
         operator.assignments.push(assignmentData);
+        
+        // Add completed hours to total
+        if (assignment.completedHours && assignment.completedHours > 0) {
+          operator.totalCompletedHours += assignment.completedHours;
+        }
         
         // Aggregate by product routing
         const routing = assignment.productRouting || assignment.routing || 'Unknown';

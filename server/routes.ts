@@ -724,21 +724,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { workCycles } = await import("../shared/schema.js");
       
       // Fetch completed work cycles for finished/done work orders
+      // Simplified query to debug SQL syntax error
       const completedCycles = await db
         .select({
           workOrderId: sql<number>`CAST(NULLIF(REGEXP_REPLACE(${workCycles.work_cycles_rec_name}, 'WO([0-9]+).*', '\\1'), '') AS INTEGER)`,
           operatorName: workCycles.work_cycles_operator_rec_name,
           duration: workCycles.work_cycles_duration,
-          state: sql<string>`LOWER(${workCycles.work_cycles_rec_name})`,
+          state: workCycles.state,
+          recName: workCycles.work_cycles_rec_name,
           moNumber: sql<string>`REGEXP_REPLACE(${workCycles.work_cycles_rec_name}, '.*MO([0-9]+).*', 'MO\\1')`
         })
         .from(workCycles)
-        .where(sql`${workCycles.work_cycles_duration} > 0 
-          AND ${workCycles.work_cycles_duration} IS NOT NULL
-          AND (LOWER(${workCycles.work_cycles_rec_name}) LIKE '%done%' 
-            OR LOWER(${workCycles.work_cycles_rec_name}) LIKE '%finished%'
-            OR ${workCycles.work_cycles_state} = 'done'
-            OR ${workCycles.work_cycles_state} = 'finished')`);
+        .where(
+          and(
+            gt(workCycles.work_cycles_duration, 0),
+            isNotNull(workCycles.work_cycles_duration),
+            or(
+              eq(workCycles.state, 'done'),
+              eq(workCycles.state, 'finished'),
+              sql`LOWER(${workCycles.work_cycles_rec_name}) LIKE '%done%'`,
+              sql`LOWER(${workCycles.work_cycles_rec_name}) LIKE '%finished%'`
+            )
+          )
+        );
+      
+      console.log(`Fetched ${completedCycles.length} completed work cycles`);
+      if (completedCycles.length > 0) {
+        console.log("Sample completed cycles:", completedCycles.slice(0, 3));
+      }
       
       // Create a map of completed hours by work order ID
       const completedHoursMap = new Map<number, number>();
