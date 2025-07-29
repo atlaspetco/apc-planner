@@ -619,8 +619,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
               const woExpectedHours = workOrder.quantity / uphEntry.uph;
               const remainingHours = operatorProfile.maxHours - operatorProfile.hoursAssigned;
               
-              // Skip if operator doesn't have enough capacity
-              if (woExpectedHours > remainingHours) continue;
+              // Don't skip based on capacity - allow all assignments
               
               // Calculate operator score (higher is better)
               let score = 0;
