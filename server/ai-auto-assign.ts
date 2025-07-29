@@ -881,9 +881,51 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
       ⭐ Is Success: ${isSuccess}
       📝 Summary: ${summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made")}`);
     
+    // Build detailed assignment response that frontend expects
+    console.log(`🎯 DEBUG: assignmentRecords.length = ${assignmentRecords.length}`);
+    console.log(`🎯 DEBUG: actualSavedAssignments.length = ${actualSavedAssignments.length}`);
+    
+    const detailedAssignments = [];
+    for (const record of assignmentRecords) {
+      if (actualSavedAssignments.includes(record.workOrderId)) {
+        const operator = [...operatorProfiles.values()].find(op => op.id === record.operatorId);
+        const workOrder = [...allAssignments.values()].flat().find(wo => wo.workOrderId === record.workOrderId);
+        
+        detailedAssignments.push({
+          workOrderId: record.workOrderId,
+          operatorId: record.operatorId,
+          operatorName: operator?.name || 'Unknown',
+          reason: record.autoAssignReason,
+          expectedUph: workOrder?.expectedHours && workOrder.quantity ? Math.round(workOrder.quantity / workOrder.expectedHours) : 0,
+          expectedHours: workOrder?.expectedHours || 0,
+          confidence: record.autoAssignConfidence
+        });
+      }
+    }
+
+    console.log(`🎯 DETAILED ASSIGNMENTS CREATED: ${detailedAssignments.length} records`);
+    if (detailedAssignments.length === 0) {
+      // Fallback to simple format if detailed assignments failed
+      console.log(`🎯 WARNING: No detailed assignments created, falling back to work order IDs`);
+      return {
+        success: isSuccess,
+        assignments: actualSavedAssignments,
+        unassigned: [...actualFailures, ...unassignableWorkOrders],
+        summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
+        totalHoursOptimized,
+        operatorUtilization,
+        workCenterResults,
+        progress: {
+          current: workCenterOrder.length,
+          total: workCenterOrder.length
+        }
+      };
+    }
+    console.log(`🎯 SAMPLE DETAILED ASSIGNMENT:`, detailedAssignments[0]);
+    
     return {
       success: isSuccess,
-      assignments: successfulAssignments.filter(id => actualSavedAssignments.includes(id)),
+      assignments: detailedAssignments,
       unassigned: [...actualFailures, ...unassignableWorkOrders],
       summary: summary.trim() || (isSuccess ? "Auto-assign completed" : "No assignments could be made"),
       totalHoursOptimized,
