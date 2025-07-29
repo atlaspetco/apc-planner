@@ -359,7 +359,8 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
                   status: wo.state || 'unknown',
                   state: wo.state,
                   production: po.id,
-                  estimatedHours: 0
+                  estimatedHours: 0,
+                  productionOrderId: po.id
                 }).returning({ id: workOrders.id });
                 
                 const createdWorkOrderId = insertResult[0].id;
