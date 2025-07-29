@@ -50,7 +50,7 @@ export const productionOrders = pgTable("production_orders", {
 
 export const workOrders = pgTable("work_orders", {
   id: serial("id").primaryKey(),
-  productionOrderId: integer("production_order_id").references(() => productionOrders.id, { onDelete: "cascade" }),
+  productionOrderId: integer("production_order_id"),
   workCenter: text("work_center").notNull(), // Cutting, Assembly, Packaging, Rope
   operation: text("operation").notNull(),
   routing: text("routing").notNull(),

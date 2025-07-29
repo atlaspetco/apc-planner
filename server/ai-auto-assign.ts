@@ -359,8 +359,8 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
                   status: wo.state || 'unknown',
                   state: wo.state,
                   production: po.id,
-                  estimatedHours: 0,
-                  productionOrderId: po.id
+                  productionOrderId: null, // Set to null to avoid foreign key constraint
+                  estimatedHours: 0
                 }).returning({ id: workOrders.id });
                 
                 const createdWorkOrderId = insertResult[0].id;
