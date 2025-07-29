@@ -353,7 +353,7 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
     
     const allWorkOrders = [];
     
-    // Extract all work orders from production orders and ensure they exist in database
+    // Extract all work orders from production orders without creating database records
     for (const po of allProductionOrders) {
       if (po.workOrders && Array.isArray(po.workOrders)) {
         for (const wo of po.workOrders) {
@@ -361,64 +361,19 @@ export async function autoAssignWorkOrders(): Promise<AutoAssignResult> {
           if (wo.state !== 'finished') {
             const workOrderId = parseInt(wo.id);
             
-            // Check if work order exists in database, if not create it
-            const existingWO = await db
-              .select({ id: workOrders.id })
-              .from(workOrders)
-              .where(eq(workOrders.id, workOrderId))
-              .limit(1);
-            
-            if (existingWO.length === 0) {
-              // Create work order in database using Fulfil ID as primary key
-              try {
-                const insertResult = await db.insert(workOrders).values({
-                  id: workOrderId, // Use Fulfil ID as primary key
-                  workCenter: wo.workCenter || wo.originalWorkCenter || 'Unknown',
-                  operation: wo.operation || 'Unknown',
-                  routing: po.routing || 'Unknown',
-                  sequence: 1,
-                  status: wo.state || 'unknown',
-                  state: wo.state,
-                  production: po.id,
-                  productionOrderId: null, // Set to null to avoid foreign key constraint
-                  estimatedHours: 0
-                }).returning({ id: workOrders.id });
-                
-                const createdWorkOrderId = insertResult[0].id;
-                console.log(`DEBUG AUTO-ASSIGN: Created work order with Fulfil ID ${createdWorkOrderId}`);
-                
-                // Use the Fulfil ID for assignments
-                allWorkOrders.push({
-                  workOrderId: workOrderId, // Use Fulfil ID
-                  fulfilId: workOrderId, // Same as workOrderId
-                  moNumber: po.moNumber,
-                  routing: po.routing,
-                  quantity: po.quantity,
-                  workCenter: wo.workCenter || wo.originalWorkCenter,
-                  operation: wo.operation,
-                  sequence: 1,
-                  productionOrderId: po.id,
-                  state: wo.state
-                });
-              } catch (insertError) {
-                console.error(`DEBUG AUTO-ASSIGN: Failed to create work order ${workOrderId}:`, insertError);
-                continue; // Skip this work order if we can't create it
-              }
-            } else {
-              // Work order exists, use the Fulfil ID (which should be the same as database ID)
-              allWorkOrders.push({
-                workOrderId: workOrderId, // Use Fulfil ID
-                fulfilId: workOrderId, // Same as workOrderId
-                moNumber: po.moNumber,
-                routing: po.routing,
-                quantity: po.quantity,
-                workCenter: wo.workCenter || wo.originalWorkCenter,
-                operation: wo.operation,
-                sequence: 1,
-                productionOrderId: po.id,
-                state: wo.state
-              });
-            }
+            // Use the Fulfil work order ID directly for assignments
+            allWorkOrders.push({
+              workOrderId: workOrderId, // Use Fulfil ID directly
+              fulfilId: workOrderId, // Same as workOrderId
+              moNumber: po.moNumber,
+              routing: po.routing,
+              quantity: po.quantity,
+              workCenter: wo.workCenter || wo.originalWorkCenter,
+              operation: wo.operation,
+              sequence: 1,
+              productionOrderId: po.id,
+              state: wo.state
+            });
           }
         }
       }
