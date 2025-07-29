@@ -135,50 +135,56 @@ export function AutoAssignControls() {
       queryClient.invalidateQueries({ queryKey: ['/api/assignments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/production-orders'] });
       
-      if (data.success) {
-        // Check if there were actually any assignments made
-        if (data.assignments.length === 0 && data.summary?.includes("No unassigned work orders")) {
+      console.log("🎯 AUTO-ASSIGN SUCCESS HANDLER:", {
+        success: data.success,
+        assignmentCount: data.assignments?.length || 0,
+        summary: data.summary,
+        assignmentType: Array.isArray(data.assignments) ? 'array' : typeof data.assignments
+      });
+      
+      if (data.success && data.assignments?.length > 0) {
+        // Success case - assignments were made
+        setShowResults(true);
+        
+        // Check for failed routings
+        const failedRoutings = data.routingResults?.filter((r: RoutingAssignmentResult) => !r.success) || [];
+        const successfulRoutings = data.routingResults?.filter((r: RoutingAssignmentResult) => r.success) || [];
+        
+        if (failedRoutings.length > 0) {
           toast({
-            title: "All Work Orders Already Assigned",
-            description: "There are no unassigned work orders to process. Use the clear button to remove existing assignments first.",
+            title: "Auto-Assign Partial Success",
+            description: `Assigned ${data.assignments.length} work orders. ${failedRoutings.length} routings failed.`,
+            action: (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowResults(true)}
+              >
+                View Details
+              </Button>
+            ),
           });
         } else {
-          setShowResults(true);
-          
-          // Check for failed routings
-          const failedRoutings = data.routingResults?.filter((r: RoutingAssignmentResult) => !r.success) || [];
-          const successfulRoutings = data.routingResults?.filter((r: RoutingAssignmentResult) => r.success) || [];
-          
-          if (failedRoutings.length > 0) {
-            toast({
-              title: "Auto-Assign Partial Success",
-              description: `Assigned ${data.assignments.length} work orders. ${failedRoutings.length} routings failed.`,
-              action: (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowResults(true)}
-                >
-                  View Details
-                </Button>
-              ),
-            });
-          } else {
-            toast({
-              title: "Auto-Assign Complete",
-              description: data.summary || "Auto-assignment completed successfully",
-              action: (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowResults(true)}
-                >
-                  View Details
-                </Button>
-              ),
-            });
-          }
+          toast({
+            title: "Auto-Assign Complete",
+            description: data.summary || "Auto-assignment completed successfully",
+            action: (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowResults(true)}
+              >
+                View Details
+              </Button>
+            ),
+          });
         }
+      } else if (data.success && data.assignments?.length === 0) {
+        // Success but no assignments made
+        toast({
+          title: "All Work Orders Already Assigned",
+          description: "There are no unassigned work orders to process. Use the clear button to remove existing assignments first.",
+        });
       } else {
         toast({
           title: "Auto-Assign Failed",
