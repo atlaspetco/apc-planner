@@ -996,14 +996,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const operatorAssignmentCount = enrichedAssignments.filter(a => a.operatorId === assignment.operatorId).length;
         const assignmentCompletedHours = operatorAssignmentCount > 0 ? operatorDashboardCompletedHours / operatorAssignmentCount : 0;
         
-        if (assignmentCompletedHours > 0) {
-          console.log(`${operatorName} assignment gets ${assignmentCompletedHours.toFixed(2)}h completed hours`);
+        // DETAILED LOGGING for debugging UI issues
+        if (operatorName === 'Devin Cann' || operatorName === 'Evan Crosby' || operatorName === 'Courtney Banh' || operatorName === 'Dani Mayta') {
+          console.log(`🚨 ASSIGNMENTS API COMPLETED HOURS: ${operatorName}`);
+          console.log(`  Dashboard completed hours: ${operatorDashboardCompletedHours.toFixed(4)}h`);
+          console.log(`  Assignment count: ${operatorAssignmentCount}`);
+          console.log(`  Per-assignment hours: ${assignmentCompletedHours.toFixed(4)}h`);
+          console.log(`  Final assignment completed hours: ${assignmentCompletedHours.toFixed(4)}h`);
         }
         
         return {
           ...assignment,
           completedHours: assignmentCompletedHours
         };
+      });
+      
+      // SUMMARY LOG: Show total completed hours per operator that will be returned to frontend
+      console.log('\n📊 FINAL COMPLETED HOURS SUMMARY (what frontend will receive):');
+      const operatorTotals = new Map<string, number>();
+      finalEnrichedAssignments.forEach(assignment => {
+        const operatorName = operatorIdToName.get(assignment.operatorId) || 'Unknown';
+        const currentTotal = operatorTotals.get(operatorName) || 0;
+        operatorTotals.set(operatorName, currentTotal + assignment.completedHours);
+      });
+      
+      operatorTotals.forEach((totalHours, operatorName) => {
+        if (totalHours > 0) {
+          console.log(`  ${operatorName}: ${totalHours.toFixed(2)}h total completed (sum of all their assignments)`);
+        }
       });
       
       // Add cache headers to prevent stale data
@@ -6656,49 +6676,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Debug endpoint to check completed hours per operator based on 'done' work cycles
+  // FIXED: Now uses dashboard-only filtering like the assignments API
   app.get('/api/debug/completed-hours', isAuthenticated, async (req, res) => {
     try {
-      const { workCycles } = await import("../shared/schema.js");
+      const { workCycles, productionOrders } = await import("../shared/schema.js");
       
-      // Get all work cycles in 'done' state - these are completed and can't be assigned anymore
+      console.log('🔍 DEBUG COMPLETED HOURS: Starting dashboard-only calculation...');
+      
+      // Get current dashboard production orders (same logic as assignments API)
+      const dashboardMOs = await db
+        .select({
+          id: productionOrders.id,
+          moNumber: productionOrders.moNumber
+        })
+        .from(productionOrders)
+        .where(isNotNull(productionOrders.moNumber));
+      
+      const dashboardProductionOrderIds = dashboardMOs.map(mo => mo.id);
+      console.log(`Dashboard has ${dashboardProductionOrderIds.length} production orders for completed hours calculation`);
+      
+      // Get work cycles ONLY for the MOs currently shown on the planning grid
       const completedCycles = await db
         .select({
           operatorName: workCycles.work_cycles_operator_rec_name,
           duration: workCycles.work_cycles_duration,
-          state: workCycles.state
+          state: workCycles.state,
+          productionId: workCycles.work_production_id,
+          moNumber: workCycles.work_production_number
         })
         .from(workCycles)
         .where(
           and(
-            eq(workCycles.state, 'done'),
             gt(workCycles.work_cycles_duration, 0),
             isNotNull(workCycles.work_cycles_duration),
-            isNotNull(workCycles.work_cycles_operator_rec_name)
+            isNotNull(workCycles.work_cycles_operator_rec_name),
+            isNotNull(workCycles.work_production_number),
+            inArray(workCycles.work_production_id, dashboardProductionOrderIds)
           )
         );
       
-      // Calculate total completed hours per operator
-      const totalCompletedHoursByOperator = new Map<string, number>();
+      console.log(`Found ${completedCycles.length} work cycles for dashboard MOs (vs all-time cycles would be much higher)`);
+      
+      // Calculate total completed hours per operator (dashboard MOs only)
+      const dashboardCompletedHoursByOperator = new Map<string, number>();
       
       completedCycles.forEach(cycle => {
         if (cycle.operatorName && cycle.duration && cycle.duration > 0) {
           const hours = cycle.duration / 3600; // Convert seconds to hours
-          const currentHours = totalCompletedHoursByOperator.get(cycle.operatorName) || 0;
-          totalCompletedHoursByOperator.set(cycle.operatorName, currentHours + hours);
+          const currentHours = dashboardCompletedHoursByOperator.get(cycle.operatorName) || 0;
+          dashboardCompletedHoursByOperator.set(cycle.operatorName, currentHours + hours);
         }
       });
       
+      console.log(`Calculated dashboard completed hours for ${dashboardCompletedHoursByOperator.size} operators`);
+      dashboardCompletedHoursByOperator.forEach((hours, operatorName) => {
+        console.log(`  ${operatorName}: ${hours.toFixed(2)}h completed (dashboard MOs only)`);
+      });
+      
       // Convert to array for response
-      const completedHours = Array.from(totalCompletedHoursByOperator.entries()).map(([operatorName, hours]) => ({
+      const completedHours = Array.from(dashboardCompletedHoursByOperator.entries()).map(([operatorName, hours]) => ({
         operatorName,
         completedHours: Math.round(hours * 100) / 100 // Round to 2 decimal places
       })).sort((a, b) => b.completedHours - a.completedHours);
       
       res.json({
+        type: 'dashboard-only',
+        dashboardMoCount: dashboardProductionOrderIds.length,
         totalCompletedCycles: completedCycles.length,
         operatorsWithCompletedHours: completedHours.length,
         completedHours,
-        message: `Found ${completedCycles.length} completed work cycles in 'done' state across ${completedHours.length} operators`
+        message: `Found ${completedCycles.length} completed work cycles for ${dashboardProductionOrderIds.length} dashboard MOs across ${completedHours.length} operators`
       });
       
     } catch (error) {

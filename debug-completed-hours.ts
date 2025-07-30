@@ -1,101 +1,143 @@
+#!/usr/bin/env tsx
+
+/**
+ * Debug completed hours calculation to see why numbers are so high
+ */
+
 import { db } from "./server/db.js";
-import { workCycles } from "./shared/schema.js";
-import { gt, isNotNull, eq, and, like } from "drizzle-orm";
+import { workCycles, productionOrders } from "./shared/schema.js";
+import { isNotNull, gt, and, inArray } from "drizzle-orm";
 
 async function debugCompletedHours() {
-  console.log("=== DEBUGGING COMPLETED HOURS ===");
+  console.log("=== Debug Completed Hours Calculation ===");
   
-  // Check total work cycles
-  const allCycles = await db.select().from(workCycles).limit(10);
-  console.log(`\nTotal work cycles in first 10 records:`);
-  allCycles.forEach((cycle, i) => {
-    console.log(`${i+1}. Duration: ${cycle.work_cycles_duration}, State: ${cycle.state}, Operator: ${cycle.work_cycles_operator_rec_name}, PO ID: ${cycle.work_production_id}`);
-  });
-  
-  // Check completed cycles (state = 'done')
-  const completedCycles = await db
-    .select()
-    .from(workCycles)
-    .where(
-      and(
-        gt(workCycles.work_cycles_duration, 0),
-        isNotNull(workCycles.work_cycles_duration),
-        eq(workCycles.state, 'done')
-      )
-    )
-    .limit(10);
-  
-  console.log(`\nCompleted cycles (state = 'done'): ${completedCycles.length}`);
-  completedCycles.forEach((cycle, i) => {
-    console.log(`${i+1}. Duration: ${cycle.work_cycles_duration}s, Operator: ${cycle.work_cycles_operator_rec_name}, PO ID: ${cycle.work_production_id}`);
-  });
-  
-  // Check if we have ANY cycles with state = 'done'
-  const anyDone = await db
-    .select()
-    .from(workCycles)
-    .where(eq(workCycles.state, 'done'))
-    .limit(5);
-  
-  console.log(`\nAny cycles with state = 'done': ${anyDone.length}`);
-  
-  // Check what states we actually have
-  const stateCheck = await db
+  // Get current dashboard production orders (similar to routes.ts)
+  const dashboardMOs = await db
     .select({
-      state: workCycles.state,
-      count: workCycles.id
+      id: productionOrders.id,
+      moNumber: productionOrders.moNumber
+    })
+    .from(productionOrders)
+    .where(isNotNull(productionOrders.moNumber))
+    .limit(20); // Get a reasonable sample
+  
+  const dashboardProductionOrderIds = dashboardMOs.map(mo => mo.id);
+  console.log(`\nDashboard has ${dashboardProductionOrderIds.length} production orders`);
+  
+  // 1. Test with dashboard filter (what SHOULD be happening)
+  console.log("\n=== Testing Dashboard-Only Filter ===");
+  const dashboardOnlyCycles = await db
+    .select({
+      operatorName: workCycles.work_cycles_operator_rec_name,
+      productionId: workCycles.work_production_id,
+      duration: workCycles.work_cycles_duration,
+      moNumber: workCycles.work_production_number
     })
     .from(workCycles)
-    .limit(100);
-  
-  const stateCounts = new Map();
-  stateCheck.forEach(row => {
-    const state = row.state || 'null';
-    stateCounts.set(state, (stateCounts.get(state) || 0) + 1);
-  });
-  
-  console.log(`\nState distribution (first 100 records):`);
-  stateCounts.forEach((count, state) => {
-    console.log(`  ${state}: ${count}`);
-  });
-  
-  // Check Courtney Banh specifically
-  const courtneyCheck = await db
-    .select()
-    .from(workCycles)
     .where(
       and(
-        like(workCycles.work_cycles_operator_rec_name, '%Courtney%'),
         gt(workCycles.work_cycles_duration, 0),
-        isNotNull(workCycles.work_cycles_duration)
+        isNotNull(workCycles.work_cycles_duration),
+        isNotNull(workCycles.work_cycles_operator_rec_name),
+        isNotNull(workCycles.work_production_number),
+        inArray(workCycles.work_production_id, dashboardProductionOrderIds)
       )
-    )
-    .limit(10);
+    );
   
-  console.log(`\nCourtney Banh cycles with valid duration: ${courtneyCheck.length}`);
-  courtneyCheck.forEach((cycle, i) => {
-    console.log(`${i+1}. Duration: ${cycle.work_cycles_duration}s, State: ${cycle.state}, PO ID: ${cycle.work_production_id}`);
+  console.log(`Found ${dashboardOnlyCycles.length} cycles with dashboard filter`);
+  
+  // Calculate dashboard-only completed hours
+  const dashboardHours = new Map<string, number>();
+  dashboardOnlyCycles.forEach(cycle => {
+    if (cycle.operatorName && cycle.duration && cycle.duration > 0) {
+      const operatorName = cycle.operatorName;
+      const durationHours = cycle.duration / 3600;
+      dashboardHours.set(operatorName, (dashboardHours.get(operatorName) || 0) + durationHours);
+    }
   });
   
-  // Check if we should use NULL state instead of 'done'
-  const nullStateCompleted = await db
-    .select()
+  console.log("\nDashboard-only completed hours:");
+  for (const [operator, hours] of dashboardHours.entries()) {
+    console.log(`  ${operator}: ${hours.toFixed(2)}h`);
+  }
+  
+  // 2. Test without dashboard filter (what might be happening accidentally)
+  console.log("\n=== Testing All Work Cycles (No Dashboard Filter) ===");
+  const allCycles = await db
+    .select({
+      operatorName: workCycles.work_cycles_operator_rec_name,
+      duration: workCycles.work_cycles_duration
+    })
     .from(workCycles)
     .where(
       and(
         gt(workCycles.work_cycles_duration, 0),
         isNotNull(workCycles.work_cycles_duration),
-        // Check both null state and actual values
+        isNotNull(workCycles.work_cycles_operator_rec_name),
+        isNotNull(workCycles.work_production_number)
       )
-    )
-    .limit(20);
+    );
   
-  console.log(`\nAll cycles with valid duration (any state): ${nullStateCompleted.length}`);
-  nullStateCompleted.slice(0, 5).forEach((cycle, i) => {
-    console.log(`${i+1}. Duration: ${cycle.work_cycles_duration}s, State: '${cycle.state}', Operator: ${cycle.work_cycles_operator_rec_name}, PO: ${cycle.work_production_id}`);
+  console.log(`Found ${allCycles.length} total cycles without dashboard filter`);
+  
+  // Calculate all-time completed hours
+  const allTimeHours = new Map<string, number>();
+  allCycles.forEach(cycle => {
+    if (cycle.operatorName && cycle.duration && cycle.duration > 0) {
+      const operatorName = cycle.operatorName;
+      const durationHours = cycle.duration / 3600;
+      allTimeHours.set(operatorName, (allTimeHours.get(operatorName) || 0) + durationHours);
+    }
   });
   
-  process.exit(0);
+  console.log("\nAll-time completed hours (what UI might be showing):");
+  for (const [operator, hours] of allTimeHours.entries()) {
+    if (hours > 100) { // Only show operators with significant hours
+      console.log(`  ${operator}: ${hours.toFixed(1)}h`);
+    }
+  }
+  
+  // 3. Check specific operators from screenshot
+  console.log("\n=== Checking Specific Operators from Screenshot ===");
+  const targetOperators = ['Devin Cann', 'Evan Crosby', 'Courtney Banh', 'Dani Mayta'];
+  
+  for (const operator of targetOperators) {
+    const dashboardHour = dashboardHours.get(operator) || 0;
+    const allTimeHour = allTimeHours.get(operator) || 0;
+    
+    console.log(`${operator}:`);
+    console.log(`  Dashboard only: ${dashboardHour.toFixed(2)}h`);
+    console.log(`  All-time: ${allTimeHour.toFixed(1)}h`);
+    console.log(`  UI shows: ${operator === 'Devin Cann' ? '1717.9h' : 
+                             operator === 'Evan Crosby' ? '506.4h' : 
+                             operator === 'Courtney Banh' ? '8725.8h' : 
+                             operator === 'Dani Mayta' ? '2100.4h' : 'unknown'}`);
+  }
+  
+  // 4. Check if there's a bug in the production order filtering
+  console.log("\n=== Dashboard Production Order IDs Sample ===");
+  console.log(`First 10 dashboard production IDs: ${dashboardProductionOrderIds.slice(0, 10)}`);
+  
+  // Check if any cycles match these IDs
+  const sampleCycleCheck = await db
+    .select({
+      productionId: workCycles.work_production_id,
+      operatorName: workCycles.work_cycles_operator_rec_name,
+      moNumber: workCycles.work_production_number
+    })
+    .from(workCycles)
+    .where(
+      and(
+        inArray(workCycles.work_production_id, dashboardProductionOrderIds.slice(0, 5)),
+        isNotNull(workCycles.work_production_number)
+      )
+    )
+    .limit(10);
+  
+  console.log(`\nSample cycles matching first 5 dashboard production IDs:`);
+  sampleCycleCheck.forEach(cycle => {
+    console.log(`  Production ${cycle.productionId}: ${cycle.operatorName} - ${cycle.moNumber}`);
+  });
 }
 
 debugCompletedHours().catch(console.error);
