@@ -751,7 +751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             gt(workCycles.work_cycles_duration, 0),
             isNotNull(workCycles.work_cycles_duration),
             isNotNull(workCycles.work_cycles_operator_rec_name),
-            isNotNull(workCycles.work_production_number), // Now require MO number
+            // REMOVED: isNotNull(workCycles.work_production_number) - some valid cycles have NULL MO numbers
             // Only get work cycles for the production orders shown on the dashboard
             inArray(workCycles.work_production_id, uniqueProductionOrderIds)
           )

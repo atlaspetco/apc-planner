@@ -1,12 +1,6 @@
-#!/usr/bin/env tsx
-
-/**
- * Test completed hours calculation after fixing MO numbers
- */
-
 import { db } from "./server/db.js";
 import { workCycles, productionOrders } from "./shared/schema.js";
-import { isNotNull, gt, and, inArray } from "drizzle-orm";
+import { and, gt, isNotNull, inArray } from "drizzle-orm";
 
 async function testCompletedHoursFixed() {
   console.log("=== Testing Completed Hours After MO Number Fix ===");
@@ -38,7 +32,7 @@ async function testCompletedHoursFixed() {
         gt(workCycles.work_cycles_duration, 0),
         isNotNull(workCycles.work_cycles_duration),
         isNotNull(workCycles.work_cycles_operator_rec_name),
-        isNotNull(workCycles.work_production_number), // Require MO number
+        // REMOVED: isNotNull(workCycles.work_production_number) - this was the bug!
         inArray(workCycles.work_production_id, dashboardProductionOrderIds)
       )
     );
@@ -50,49 +44,25 @@ async function testCompletedHoursFixed() {
   
   completedCycles.forEach(cycle => {
     if (cycle.operatorName && cycle.duration && cycle.duration > 0) {
-      const operatorName = cycle.operatorName;
-      const durationHours = cycle.duration / 3600; // Convert seconds to hours
-      
-      const currentHours = completedHoursByOperator.get(operatorName) || 0;
-      completedHoursByOperator.set(operatorName, currentHours + durationHours);
+      const hours = cycle.duration / 3600;
+      const currentHours = completedHoursByOperator.get(cycle.operatorName) || 0;
+      completedHoursByOperator.set(cycle.operatorName, currentHours + hours);
     }
   });
   
-  console.log(`\n=== Completed Hours by Operator ===`);
-  for (const [operator, hours] of completedHoursByOperator.entries()) {
-    console.log(`${operator}: ${hours.toFixed(2)}h`);
-  }
+  console.log(`\n✅ CORRECTED completed hours per operator:`);
+  Array.from(completedHoursByOperator.entries())
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([operatorName, hours]) => {
+      console.log(`  ${operatorName}: ${hours.toFixed(2)}h completed`);
+    });
   
-  // Show specific examples
-  console.log(`\n=== Sample Work Cycles ===`);
-  const courtneycycles = completedCycles.filter(c => c.operatorName?.includes('Courtney'));
-  console.log(`Courtney Banh cycles: ${courtneyycles.length}`);
-  courtneyycles.slice(0, 3).forEach((cycle, idx) => {
-    const duration = (cycle.duration / 60).toFixed(1);
-    console.log(`  ${idx + 1}. ${cycle.moNumber}: ${duration}min (Production ${cycle.productionId})`);
-  });
+  // Check Courtney specifically
+  const courtneyHours = completedHoursByOperator.get('Courtney Banh') || 0;
+  console.log(`\n🎯 Courtney Banh corrected completed hours: ${courtneyHours.toFixed(2)}h (${(courtneyHours * 60).toFixed(1)} minutes)`);
+  console.log(`🎯 This should now show ${courtneyHours.toFixed(2)}h in the dashboard instead of 0.0h`);
   
-  const evanCycles = completedCycles.filter(c => c.operatorName?.includes('Evan'));
-  console.log(`\nEvan Crosby cycles: ${evanCycles.length}`);
-  evanCycles.slice(0, 3).forEach((cycle, idx) => {
-    const duration = (cycle.duration / 60).toFixed(1);
-    console.log(`  ${idx + 1}. ${cycle.moNumber}: ${duration}min (Production ${cycle.productionId})`);
-  });
-  
-  // Summary
-  const totalOperators = completedHoursByOperator.size;
-  const totalHours = Array.from(completedHoursByOperator.values()).reduce((sum, h) => sum + h, 0);
-  
-  console.log(`\n=== Summary ===`);
-  console.log(`${totalOperators} operators with completed hours`);
-  console.log(`${totalHours.toFixed(2)} total completed hours`);
-  console.log(`${completedCycles.length} total work cycles found`);
-  
-  if (completedCycles.length > 0) {
-    console.log(`✅ SUCCESS: Completed hours calculation now works!`);
-  } else {
-    console.log(`❌ ISSUE: Still no work cycles found for dashboard MOs`);
-  }
+  process.exit(0);
 }
 
 testCompletedHoursFixed().catch(console.error);
