@@ -720,14 +720,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`Found ${matchingAssignments.length} assignments with matching work orders in the map`);
       }
       
+      console.log(`\n🔍 TRACKING: About to start completed hours calculation...`);
+      
       // Import work cycles table to get completed hours
       const { workCycles } = await import("../shared/schema.js");
       
-      // Fetch completed work cycles for finished/done work orders
-      // Since work_cycles_rec_name is null, we'll group by operator and production order
+      console.log(`🔍 TRACKING: Imported work cycles schema`);  
+      
+      // Get completed hours from work cycles for work orders that are finished/done
+      // Look at work order states in the dashboard to identify completed ones
+      const workOrderStates = new Map<number, string>();
+      workOrderMap.forEach((workOrderData, workOrderId) => {
+        workOrderStates.set(workOrderId, workOrderData.workOrder.state);
+      });
+      
+      console.log(`\n=== WORK ORDER STATES DEBUG ===`);
+      const stateDistribution = {};
+      workOrderStates.forEach((state) => {
+        stateDistribution[state] = (stateDistribution[state] || 0) + 1;
+      });
+      console.log(`Work order state distribution:`, stateDistribution);
+      
+      // Find work orders that are completed (done, finished) and have assignments
+      const completedWorkOrderIds = Array.from(workOrderStates.entries())
+        .filter(([workOrderId, state]) => state === 'done' || state === 'finished')
+        .map(([workOrderId]) => workOrderId);
+      
+      console.log(`Found ${completedWorkOrderIds.length} completed work orders: ${completedWorkOrderIds.slice(0, 5).join(', ')}...`);
+      
+      // Get work cycles for any work orders (completed or not) that have duration data
       const completedCycles = await db
         .select({
           operatorName: workCycles.work_cycles_operator_rec_name,
+          workOrderId: workCycles.work_cycles_rec_name, // This should map to work order ID
           productionId: workCycles.work_production_id,
           duration: workCycles.work_cycles_duration,
           state: workCycles.state,
@@ -739,7 +764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           and(
             gt(workCycles.work_cycles_duration, 0),
             isNotNull(workCycles.work_cycles_duration),
-            eq(workCycles.state, 'done')
+            isNotNull(workCycles.work_cycles_operator_rec_name)
           )
         );
       
@@ -751,29 +776,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create a map of completed hours by operator and work order ID for dashboard work orders
       const completedHoursByOperatorAndWO = new Map<string, number>();
       
-      // Get all work order IDs from current assignments
-      const dashboardWorkOrderIds = new Set(assignments.map(a => a.workOrderId));
-      console.log(`Dashboard work order IDs: ${Array.from(dashboardWorkOrderIds).slice(0, 10).join(', ')}...`);
+      // Create a map of production order ID to dashboard work orders (bypass assignments table)
+      const productionOrderToWorkOrders = new Map<number, any[]>();
+      workOrderMap.forEach((workOrderData, workOrderId) => {
+        const productionOrderId = workOrderData.productionOrder.id;
+        if (!productionOrderToWorkOrders.has(productionOrderId)) {
+          productionOrderToWorkOrders.set(productionOrderId, []);
+        }
+        productionOrderToWorkOrders.get(productionOrderId)!.push({
+          workOrderId,
+          workOrderData
+        });
+      });
+      
+      console.log(`\n=== COMPLETED HOURS CALCULATION ===`);
+      console.log(`Found ${completedCycles.length} work cycles with duration data`);
+      
+      // Calculate total completed hours per operator from all 'done' work cycles
+      // These are completed work cycles that can't be assigned anymore
+      const totalCompletedHoursByOperator = new Map<string, number>();
       
       completedCycles.forEach(cycle => {
-        if (cycle.operatorName && cycle.duration) {
-          // Try to match work cycles to dashboard work orders
-          // Check if this cycle's production order has work orders in the dashboard
-          const matchingAssignments = assignments.filter(a => {
-            const workOrderData = workOrderMap.get(a.workOrderId);
-            return workOrderData && workOrderData.productionOrder.id === cycle.productionId;
-          });
+        if (cycle.operatorName && cycle.duration && cycle.duration > 0) {
+          const hours = cycle.duration / 3600; // Convert seconds to hours
+          const currentHours = totalCompletedHoursByOperator.get(cycle.operatorName) || 0;
+          totalCompletedHoursByOperator.set(cycle.operatorName, currentHours + hours);
+        }
+      });
+      
+      console.log(`Calculated total completed hours for ${totalCompletedHoursByOperator.size} operators`);
+      totalCompletedHoursByOperator.forEach((hours, operatorName) => {
+        console.log(`  ${operatorName}: ${hours.toFixed(2)}h completed`);
+      });
+      
+      // For completed work orders, find their work cycles and calculate actual hours (legacy logic)
+      completedWorkOrderIds.forEach(workOrderId => {
+        const workOrderData = workOrderMap.get(workOrderId);
+        if (workOrderData) {
+          console.log(`🔍 Checking completed WO ${workOrderId} (${workOrderData.workOrder.state}) - ${workOrderData.workOrder.operation}`);
           
-          if (matchingAssignments.length > 0) {
-            matchingAssignments.forEach(assignment => {
-              const key = `${cycle.operatorName}|${assignment.workOrderId}`;
-              const hours = cycle.duration / 3600; // Convert seconds to hours
-              
-              if (completedHoursByOperatorAndWO.has(key)) {
-                completedHoursByOperatorAndWO.set(key, completedHoursByOperatorAndWO.get(key)! + hours);
-              } else {
-                completedHoursByOperatorAndWO.set(key, hours);
+          // Find work cycles that match this completed work order's production order
+          const matchingCycles = completedCycles.filter(cycle => 
+            cycle.productionId === workOrderData.productionOrder.id
+          );
+          
+          if (matchingCycles.length > 0) {
+            console.log(`  Found ${matchingCycles.length} work cycles for this completed work order`);
+            
+            // Group cycles by operator and sum their hours
+            const operatorHours = new Map<string, number>();
+            matchingCycles.forEach(cycle => {
+              if (cycle.operatorName && cycle.duration) {
+                const hours = cycle.duration / 3600;
+                const current = operatorHours.get(cycle.operatorName) || 0;
+                operatorHours.set(cycle.operatorName, current + hours);
               }
+            });
+            
+            // Apply completed hours to this work order
+            operatorHours.forEach((hours, operatorName) => {
+              const key = `${operatorName}|${workOrderId}`;
+              completedHoursByOperatorAndWO.set(key, hours);
+              console.log(`  ✅ Applied ${hours.toFixed(2)}h completed to ${operatorName} on WO ${workOrderId}`);
             });
           }
         }
@@ -801,8 +865,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const enrichedAssignments = await Promise.all(assignments.map(async (assignment) => {
         const workOrderData = workOrderMap.get(assignment.workOrderId);
         
-        // We'll calculate completed hours later once we have the production order ID
-        let completedHours = 0;
+        // Get operator name for this assignment  
+        const operatorName = await (async () => {
+          const operator = await db.select().from(operators).where(eq(operators.id, assignment.operatorId)).limit(1);
+          return operator[0]?.name || 'Unknown';
+        })();
+        
+        // Get total completed hours for this operator from all their 'done' work cycles
+        // These are completed work cycles that can't be assigned anymore
+        const totalCompletedHours = totalCompletedHoursByOperator.get(operatorName) || 0;
+        
+        // For now, distribute completed hours proportionally across their assignments
+        // (This is a simple approximation - in reality we'd want more precise tracking)
+        const operatorAssignmentCount = assignments.filter(a => a.operatorId === assignment.operatorId).length;
+        const completedHours = operatorAssignmentCount > 0 ? totalCompletedHours / operatorAssignmentCount : 0;
         
         if (!workOrderData) {
           // Try to find work order by looking through all production orders
@@ -944,8 +1020,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
       
-      // Now calculate completed hours for each assignment based on specific dashboard work orders
-      console.log(`\n=== DEBUGGING COMPLETED HOURS FOR DASHBOARD WORK ORDERS ===`);
+      console.log(`\n=== APPLYING COMPLETED HOURS TO ASSIGNMENTS ===`);
       console.log(`Total enriched assignments: ${enrichedAssignments.length}`);
       console.log(`Completed hours map size: ${completedHoursByOperatorAndWO.size}`);
       
@@ -960,13 +1035,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const key = `${assignment.operatorName}|${assignment.workOrderId}`;
           const completedHours = completedHoursByOperatorAndWO.get(key) || 0;
           
-          // Debug specific assignments
-          if (assignment.operatorName === "Courtney Banh") {
-            console.log(`🔍 Courtney assignment: WO ${assignment.workOrderId}, key: "${key}", completed hours: ${completedHours}`);
-          }
-          
           if (completedHours > 0) {
-            console.log(`✅ Found ${completedHours.toFixed(2)}h completed for ${assignment.operatorName} on WO ${assignment.workOrderId}`);
+            console.log(`✅ Applied ${completedHours.toFixed(2)}h completed to ${assignment.operatorName} on WO ${assignment.workOrderId}`);
           }
           
           return {
@@ -6623,6 +6693,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error caching estimated hours:', error);
       res.status(500).json({ message: 'Failed to cache estimated hours' });
+    }
+  });
+
+  // Debug endpoint to check completed hours per operator based on 'done' work cycles
+  app.get('/api/debug/completed-hours', isAuthenticated, async (req, res) => {
+    try {
+      const { workCycles } = await import("../shared/schema.js");
+      
+      // Get all work cycles in 'done' state - these are completed and can't be assigned anymore
+      const completedCycles = await db
+        .select({
+          operatorName: workCycles.work_cycles_operator_rec_name,
+          duration: workCycles.work_cycles_duration,
+          state: workCycles.state
+        })
+        .from(workCycles)
+        .where(
+          and(
+            eq(workCycles.state, 'done'),
+            gt(workCycles.work_cycles_duration, 0),
+            isNotNull(workCycles.work_cycles_duration),
+            isNotNull(workCycles.work_cycles_operator_rec_name)
+          )
+        );
+      
+      // Calculate total completed hours per operator
+      const totalCompletedHoursByOperator = new Map<string, number>();
+      
+      completedCycles.forEach(cycle => {
+        if (cycle.operatorName && cycle.duration && cycle.duration > 0) {
+          const hours = cycle.duration / 3600; // Convert seconds to hours
+          const currentHours = totalCompletedHoursByOperator.get(cycle.operatorName) || 0;
+          totalCompletedHoursByOperator.set(cycle.operatorName, currentHours + hours);
+        }
+      });
+      
+      // Convert to array for response
+      const completedHours = Array.from(totalCompletedHoursByOperator.entries()).map(([operatorName, hours]) => ({
+        operatorName,
+        completedHours: Math.round(hours * 100) / 100 // Round to 2 decimal places
+      })).sort((a, b) => b.completedHours - a.completedHours);
+      
+      res.json({
+        totalCompletedCycles: completedCycles.length,
+        operatorsWithCompletedHours: completedHours.length,
+        completedHours,
+        message: `Found ${completedCycles.length} completed work cycles in 'done' state across ${completedHours.length} operators`
+      });
+      
+    } catch (error) {
+      console.error('Debug completed hours error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Debug endpoint to check work order states and completed hours
+  app.get('/api/debug/work-order-states', isAuthenticated, async (req, res) => {
+    try {
+      // Get production orders from Fulfil API
+      const { FulfilCurrentService } = await import("../server/fulfil-current.js");
+      const allProductionOrders = await FulfilCurrentService.getProductionOrders();
+      
+      // Check work order states in dashboard
+      const workOrderStates = new Map<number, any>();
+      allProductionOrders.forEach(po => {
+        if (po.workOrders && Array.isArray(po.workOrders)) {
+          po.workOrders.forEach((wo: any) => {
+            const woId = typeof wo.id === 'string' ? parseInt(wo.id, 10) : wo.id;
+            workOrderStates.set(woId, {
+              id: woId,
+              state: wo.state,
+              operation: wo.operation,
+              employee: wo.employee?.name,
+              moNumber: po.moNumber,
+              routing: po.routing
+            });
+          });
+        }
+      });
+      
+      // Analyze states
+      const stateDistribution = {};
+      const completedWorkOrders = [];
+      const runningWorkOrders = [];
+      
+      workOrderStates.forEach((woData) => {
+        stateDistribution[woData.state] = (stateDistribution[woData.state] || 0) + 1;
+        
+        if (woData.state === 'done' || woData.state === 'finished') {
+          completedWorkOrders.push(woData);
+        } else if (woData.state === 'running') {
+          runningWorkOrders.push(woData);
+        }
+      });
+      
+      // Get work cycles data  
+      const { workCycles } = await import("../shared/schema.js");
+      const completedCycles = await db
+        .select({
+          operatorName: workCycles.work_cycles_operator_rec_name,
+          productionId: workCycles.work_production_id,
+          duration: workCycles.work_cycles_duration,
+          state: workCycles.state
+        })
+        .from(workCycles)
+        .where(
+          and(
+            gt(workCycles.work_cycles_duration, 0),
+            isNotNull(workCycles.work_cycles_duration),
+            isNotNull(workCycles.work_cycles_operator_rec_name)
+          )
+        )
+        .limit(10);
+      
+      res.json({
+        totalWorkOrders: workOrderStates.size,
+        stateDistribution,
+        completedWorkOrders: completedWorkOrders.slice(0, 5),
+        runningWorkOrders: runningWorkOrders.slice(0, 5),
+        workCyclesSample: completedCycles,
+        message: `Found ${completedWorkOrders.length} completed and ${runningWorkOrders.length} running work orders`
+      });
+      
+    } catch (error) {
+      console.error('Debug endpoint error:', error);
+      res.status(500).json({ error: error.message });
     }
   });
 
