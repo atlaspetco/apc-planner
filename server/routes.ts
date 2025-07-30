@@ -992,22 +992,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const operatorName = operatorIdToName.get(assignment.operatorId) || 'Unknown';
         const operatorDashboardCompletedHours = dashboardCompletedHoursByOperator.get(operatorName) || 0;
         
-        // Distribute completed hours proportionally across operator's assignments
-        const operatorAssignmentCount = enrichedAssignments.filter(a => a.operatorId === assignment.operatorId).length;
-        const assignmentCompletedHours = operatorAssignmentCount > 0 ? operatorDashboardCompletedHours / operatorAssignmentCount : 0;
+        // ✅ FIXED: Use total completed hours per operator, not divided by assignments
+        // Frontend aggregates by operator and expects total hours
+        const totalCompletedHours = operatorDashboardCompletedHours;
         
         // DETAILED LOGGING for debugging UI issues
         if (operatorName === 'Devin Cann' || operatorName === 'Evan Crosby' || operatorName === 'Courtney Banh' || operatorName === 'Dani Mayta') {
-          console.log(`🚨 ASSIGNMENTS API COMPLETED HOURS: ${operatorName}`);
+          console.log(`✅ FIXED ASSIGNMENTS API COMPLETED HOURS: ${operatorName}`);
           console.log(`  Dashboard completed hours: ${operatorDashboardCompletedHours.toFixed(4)}h`);
-          console.log(`  Assignment count: ${operatorAssignmentCount}`);
-          console.log(`  Per-assignment hours: ${assignmentCompletedHours.toFixed(4)}h`);
-          console.log(`  Final assignment completed hours: ${assignmentCompletedHours.toFixed(4)}h`);
+          console.log(`  Frontend will receive: ${totalCompletedHours.toFixed(4)}h (TOTAL, not divided)`);
         }
         
         return {
           ...assignment,
-          completedHours: assignmentCompletedHours
+          completedHours: totalCompletedHours
         };
       });
       
