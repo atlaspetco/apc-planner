@@ -751,7 +751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             isNotNull(workCycles.work_cycles_duration),
             isNotNull(workCycles.work_cycles_operator_rec_name),
             // Only get work cycles for the production orders shown on the dashboard
-            workCycles.work_production_id.in(uniqueProductionOrderIds)
+            inArray(workCycles.work_production_id, uniqueProductionOrderIds)
           )
         );
       
