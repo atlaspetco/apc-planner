@@ -25,7 +25,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub || req.user?.id;
+      const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id;
       const user = await db.select().from(operators).where(eq(operators.slackUserId, userId)).limit(1);
       
       if (user.length === 0) {
@@ -211,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .values({
           workOrderId,
           operatorId,
-          assignedBy: req.user?.claims?.sub || req.user?.id || 'dashboard',
+          assignedBy: (req.user as any)?.claims?.sub || (req.user as any)?.id || 'dashboard',
           isActive: true,
           isAutoAssigned: false,
           estimatedHours: estimatedHours || null
@@ -505,7 +505,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           workOrderIds.map(workOrderId => ({
             workOrderId,
             operatorId,
-            assignedBy: req.user?.claims?.sub || req.user?.id || 'bulk-assignment',
+            assignedBy: (req.user as any)?.claims?.sub || (req.user as any)?.id || 'bulk-assignment',
             isActive: true,
             isAutoAssigned: false
           }))
@@ -556,12 +556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const existing = await db
               .select()
               .from(workOrderAssignments)
-              .where(
-                and(
-                  eq(workOrderAssignments.workOrderId, wo.id),
-                  eq(workOrderAssignments.isActive, true)
-                )
-              )
+              .where(eq(workOrderAssignments.workOrderId, wo.id))
               .limit(1);
             
             if (existing.length > 0) continue;
@@ -590,16 +585,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const bestOperator = opsWithUph[0].operator;
 
               // Create assignment
-              const [assignment] = await db
+              const assignment = await db
                 .insert(workOrderAssignments)
                 .values({
                   workOrderId: wo.id,
                   operatorId: bestOperator.id,
                   assignedBy: 'auto-assign',
                   isActive: true,
-                  isAutoAssigned: true,
-                  autoAssignReason: `Best UPH: ${opsWithUph[0].uph.toFixed(1)} units/hour`,
-                  autoAssignConfidence: 0.8
+                  isAutoAssigned: true
                 })
                 .returning();
 

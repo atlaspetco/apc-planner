@@ -139,11 +139,10 @@ export class OptimizedUphCalculator {
               await db.insert(uphData).values({
                 operatorName: result.operatorName,
                 workCenter: result.workCenter,
+                operation: 'General',
                 productRouting: result.routing,
                 uph: result.uph,
-                observationCount: result.observations,
-                createdAt: new Date(),
-                updatedAt: new Date()
+                observationCount: result.observations
               });
               newCalculations++;
             }
