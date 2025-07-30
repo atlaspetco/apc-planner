@@ -748,29 +748,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("Sample completed cycles:", completedCycles.slice(0, 3));
       }
       
-      // Create a map of completed hours by operator and production order
-      const completedHoursByOperatorAndPO = new Map<string, number>();
+      // Create a map of completed hours by operator and work order ID for dashboard work orders
+      const completedHoursByOperatorAndWO = new Map<string, number>();
+      
+      // Get all work order IDs from current assignments
+      const dashboardWorkOrderIds = new Set(assignments.map(a => a.workOrderId));
+      console.log(`Dashboard work order IDs: ${Array.from(dashboardWorkOrderIds).slice(0, 10).join(', ')}...`);
       
       completedCycles.forEach(cycle => {
-        if (cycle.operatorName && cycle.productionId && cycle.duration) {
-          const key = `${cycle.operatorName}|${cycle.productionId}`;
-          const hours = cycle.duration / 3600; // Convert seconds to hours
+        if (cycle.operatorName && cycle.duration) {
+          // Try to match work cycles to dashboard work orders
+          // Check if this cycle's production order has work orders in the dashboard
+          const matchingAssignments = assignments.filter(a => {
+            const workOrderData = workOrderMap.get(a.workOrderId);
+            return workOrderData && workOrderData.productionOrder.id === cycle.productionId;
+          });
           
-          if (completedHoursByOperatorAndPO.has(key)) {
-            completedHoursByOperatorAndPO.set(key, completedHoursByOperatorAndPO.get(key)! + hours);
-          } else {
-            completedHoursByOperatorAndPO.set(key, hours);
+          if (matchingAssignments.length > 0) {
+            matchingAssignments.forEach(assignment => {
+              const key = `${cycle.operatorName}|${assignment.workOrderId}`;
+              const hours = cycle.duration / 3600; // Convert seconds to hours
+              
+              if (completedHoursByOperatorAndWO.has(key)) {
+                completedHoursByOperatorAndWO.set(key, completedHoursByOperatorAndWO.get(key)! + hours);
+              } else {
+                completedHoursByOperatorAndWO.set(key, hours);
+              }
+            });
           }
         }
       });
       
       console.log(`Found ${completedCycles.length} completed work cycles`);
-      console.log(`Completed hours map has ${completedHoursByOperatorAndPO.size} operator/PO combinations with completed hours`);
+      console.log(`Completed hours map has ${completedHoursByOperatorAndWO.size} operator/WO combinations with completed hours`);
       
-      // Debug: show sample of completed hours
-      if (completedHoursByOperatorAndPO.size > 0) {
-        const sampleEntries = Array.from(completedHoursByOperatorAndPO.entries()).slice(0, 5);
-        console.log("Sample completed hours by operator|PO:", sampleEntries);
+      // Debug: show sample of completed hours for dashboard work orders
+      if (completedHoursByOperatorAndWO.size > 0) {
+        const sampleEntries = Array.from(completedHoursByOperatorAndWO.entries()).slice(0, 5);
+        console.log("Sample completed hours by operator|WorkOrder:", sampleEntries);
       }
       
       // Debug: Check if Devin Cann has any completed hours
@@ -929,29 +944,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
       
-      // Now calculate completed hours for each assignment based on operator and production order
-      console.log(`\n=== DEBUGGING COMPLETED HOURS MAPPING ===`);
+      // Now calculate completed hours for each assignment based on specific dashboard work orders
+      console.log(`\n=== DEBUGGING COMPLETED HOURS FOR DASHBOARD WORK ORDERS ===`);
       console.log(`Total enriched assignments: ${enrichedAssignments.length}`);
-      console.log(`Completed hours map size: ${completedHoursByOperatorAndPO.size}`);
+      console.log(`Completed hours map size: ${completedHoursByOperatorAndWO.size}`);
       
       // Show some sample mappings
-      if (completedHoursByOperatorAndPO.size > 0) {
-        const sampleMappings = Array.from(completedHoursByOperatorAndPO.entries()).slice(0, 5);
-        console.log(`Sample completed hours mappings:`, sampleMappings);
+      if (completedHoursByOperatorAndWO.size > 0) {
+        const sampleMappings = Array.from(completedHoursByOperatorAndWO.entries()).slice(0, 5);
+        console.log(`Sample completed hours mappings (operator|workOrderId):`, sampleMappings);
       }
       
       const finalEnrichedAssignments = enrichedAssignments.map(assignment => {
-        if (assignment.operatorName && assignment.productionOrderId) {
-          const key = `${assignment.operatorName}|${assignment.productionOrderId}`;
-          const completedHours = completedHoursByOperatorAndPO.get(key) || 0;
+        if (assignment.operatorName && assignment.workOrderId) {
+          const key = `${assignment.operatorName}|${assignment.workOrderId}`;
+          const completedHours = completedHoursByOperatorAndWO.get(key) || 0;
           
-          // Debug Courtney Banh specifically
+          // Debug specific assignments
           if (assignment.operatorName === "Courtney Banh") {
-            console.log(`🔍 Courtney assignment: PO ${assignment.productionOrderId}, key: "${key}", completed hours: ${completedHours}`);
+            console.log(`🔍 Courtney assignment: WO ${assignment.workOrderId}, key: "${key}", completed hours: ${completedHours}`);
           }
           
           if (completedHours > 0) {
-            console.log(`✅ Found ${completedHours.toFixed(2)}h completed for ${assignment.operatorName} on PO ${assignment.productionOrderId}`);
+            console.log(`✅ Found ${completedHours.toFixed(2)}h completed for ${assignment.operatorName} on WO ${assignment.workOrderId}`);
           }
           
           return {
@@ -962,23 +977,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return assignment;
       });
       
-      // Calculate total historical completed hours for each operator
-      const operatorHistoricalHours = new Map<string, number>();
-      
-      completedCycles.forEach(cycle => {
-        if (cycle.operatorName && cycle.duration) {
-          const hours = cycle.duration / 3600; // Convert seconds to hours
-          const currentTotal = operatorHistoricalHours.get(cycle.operatorName) || 0;
-          operatorHistoricalHours.set(cycle.operatorName, currentTotal + hours);
-        }
-      });
-      
-      console.log(`\n=== OPERATOR HISTORICAL COMPLETED HOURS ===`);
-      if (operatorHistoricalHours.size > 0) {
-        const historicalHoursSample = Array.from(operatorHistoricalHours.entries()).slice(0, 5);
-        console.log(`Historical completed hours by operator:`, historicalHoursSample);
-      }
-      
       // Add cache headers to prevent stale data
       res.set({
         'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -986,10 +984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'Expires': '0'
       });
       
-      res.json({ 
-        assignments: finalEnrichedAssignments,
-        operatorHistoricalHours: Object.fromEntries(operatorHistoricalHours)
-      });
+      res.json({ assignments: finalEnrichedAssignments });
     } catch (error) {
       console.error('Error fetching work order assignments:', error);
       res.status(500).json({ message: 'Failed to fetch assignments' });
