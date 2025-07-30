@@ -978,10 +978,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Create operator ID to name mapping for completed hours distribution
+      const allOperators = await db.select().from(operators);
+      const operatorIdToName = new Map<number, string>();
+      allOperators.forEach(op => operatorIdToName.set(op.id, op.name));
+      
+      console.log(`Created operator mapping for ${operatorIdToName.size} operators`);
+      
       const finalEnrichedAssignments = enrichedAssignments.map(assignment => {
-        // Use the completed hours already calculated during assignment enrichment
-        // This was computed proportionally from dashboardCompletedHoursByOperator
-        return assignment; // completedHours is already set in the enrichment step
+        // Apply dashboard completed hours from the calculation above
+        const operatorName = operatorIdToName.get(assignment.operatorId) || 'Unknown';
+        const operatorDashboardCompletedHours = dashboardCompletedHoursByOperator.get(operatorName) || 0;
+        
+        // Distribute completed hours proportionally across operator's assignments
+        const operatorAssignmentCount = enrichedAssignments.filter(a => a.operatorId === assignment.operatorId).length;
+        const assignmentCompletedHours = operatorAssignmentCount > 0 ? operatorDashboardCompletedHours / operatorAssignmentCount : 0;
+        
+        if (assignmentCompletedHours > 0) {
+          console.log(`${operatorName} assignment gets ${assignmentCompletedHours.toFixed(2)}h completed hours`);
+        }
+        
+        return {
+          ...assignment,
+          completedHours: assignmentCompletedHours
+        };
       });
       
       // Add cache headers to prevent stale data
