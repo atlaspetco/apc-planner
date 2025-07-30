@@ -8,37 +8,30 @@ import Dashboard from "@/pages/dashboard";
 import OperatorSettings from "@/pages/operator-settings";
 import UphAnalytics from "@/pages/uph-analytics";
 import FulfilSettings from "@/pages/fulfil-settings";
-import Landing from "@/pages/landing";
 import NotFound from "@/pages/not-found";
-import { useAuth } from "@/hooks/useAuth";
+// Landing and useAuth temporarily commented out while auth is disabled
+// import Landing from "@/pages/landing";
+// import { useAuth } from "@/hooks/useAuth";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
-
+  // Temporarily bypass auth and landing page - go directly to dashboard
   return (
     <Switch>
-      {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : (
-        <>
-          <Route path="/" component={Dashboard} />
-          <Route path="/dashboard" component={Dashboard} />
-          <Route path="/operator-settings" component={OperatorSettings} />
-          <Route path="/uph-analytics" component={UphAnalytics} />
-          <Route path="/fulfil-settings" component={FulfilSettings} />
-        </>
-      )}
+      <Route path="/" component={Dashboard} />
+      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/operator-settings" component={OperatorSettings} />
+      <Route path="/uph-analytics" component={UphAnalytics} />
+      <Route path="/fulfil-settings" component={FulfilSettings} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
 function AppContent() {
-  const { isAuthenticated, isLoading } = useAuth();
-
+  // Always show navigation since we're bypassing auth
   return (
     <div className="min-h-screen bg-gray-50">
-      {isAuthenticated && !isLoading && <Navigation />}
+      <Navigation />
       <Router />
     </div>
   );

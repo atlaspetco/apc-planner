@@ -24,19 +24,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTH ROUTES
   // ===========================
   app.get('/api/auth/user', async (req: any, res) => {
-    try {
-      const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id;
-      const user = await db.select().from(operators).where(eq(operators.slackUserId, userId)).limit(1);
-      
-      if (user.length === 0) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      res.json(user[0]);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
+    // Return a default user since auth is disabled
+    res.json({ 
+      id: 1, 
+      name: "Default User", 
+      slackUserId: "default",
+      availableHours: 40
+    });
   });
 
   // ===========================
