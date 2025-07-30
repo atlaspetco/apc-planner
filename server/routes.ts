@@ -12,7 +12,7 @@ import {
   activeWorkOrders
 } from "@shared/schema";
 import { eq, and, inArray, gt, isNotNull, isNull, or, sql, not, ne } from "drizzle-orm";
-import { isAuthenticated } from "./slackAuth";
+
 import { FulfilCurrentService } from "./fulfil-current";
 import { calculateCoreUph } from "./uph-core-calculator";
 import { enrichProductionOrders, cleanWorkOrderKey } from "./utils/production-order-utils";
@@ -23,7 +23,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // AUTH ROUTES
   // ===========================
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.get('/api/auth/user', async (req: any, res) => {
     try {
       const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id;
       const user = await db.select().from(operators).where(eq(operators.slackUserId, userId)).limit(1);
@@ -42,7 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // PRODUCTION ORDERS ROUTES
   // ===========================
-  app.get("/api/production-orders", isAuthenticated, async (req, res) => {
+  app.get("/api/production-orders", async (req, res) => {
     try {
       console.log('Fetching production orders from Fulfil service (attempt 1/3)...');
       const fulfilService = new FulfilCurrentService();
@@ -66,7 +66,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // ASSIGNMENTS ROUTE - OPTIMIZED VERSION
   // ===========================
-  app.get("/api/assignments", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/assignments", async (req: Request, res: Response) => {
     try {
       // Fetch production orders from Fulfil
       const fulfilService = new FulfilCurrentService();
@@ -189,7 +189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // WORK ORDERS ROUTES
   // ===========================
-  app.post("/api/work-orders/assign-operator", isAuthenticated, async (req, res) => {
+  app.post("/api/work-orders/assign-operator", async (req, res) => {
     try {
       const { workOrderId, operatorId, estimatedHours } = req.body;
       
@@ -231,7 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // OPERATORS ROUTES
   // ===========================
-  app.get("/api/operators", isAuthenticated, async (req, res) => {
+  app.get("/api/operators", async (req, res) => {
     try {
       const allOperators = await db
         .select()
@@ -245,7 +245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/operators/qualified", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/operators/qualified", async (req: Request, res: Response) => {
     try {
       const { workCenter, routing } = req.query;
       
@@ -295,7 +295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/operators/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/operators/:id", async (req, res) => {
     try {
       const operatorId = parseInt(req.params.id);
       const updates = req.body;
@@ -330,7 +330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/uph/table-data", isAuthenticated, async (req, res) => {
+  app.get("/api/uph/table-data", async (req, res) => {
     try {
       const uphValues = await calculateCoreUph();
       
@@ -352,7 +352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/uph/calculation-details", isAuthenticated, async (req, res) => {
+  app.get("/api/uph/calculation-details", async (req, res) => {
     try {
       const { operatorName, workCenter, routing } = req.query;
       
@@ -420,7 +420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/uph/calculate", isAuthenticated, async (req, res) => {
+  app.post("/api/uph/calculate", async (req, res) => {
     try {
       console.log('Starting UPH calculation...');
       const result = await calculateCoreUph();
@@ -439,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // FULFIL INTEGRATION ROUTES
   // ===========================
-  app.get("/api/fulfil/settings", isAuthenticated, async (req, res) => {
+  app.get("/api/fulfil/settings", async (req, res) => {
     try {
       // Return default settings since fulfilSettings table doesn't exist
       res.json({ 
@@ -454,14 +454,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/fulfil/import-status", isAuthenticated, async (req, res) => {
+  app.get("/api/fulfil/import-status", async (req, res) => {
     res.json({ 
       isImporting: false, 
       isCalculatingUph: false 
     });
   });
 
-  app.post("/api/fulfil/upload-work-cycles-csv", isAuthenticated, async (req, res) => {
+  app.post("/api/fulfil/upload-work-cycles-csv", async (req, res) => {
     try {
       res.json({ 
         message: "CSV upload endpoint - implementation pending",
@@ -476,7 +476,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // SMART BULK ASSIGNMENT ROUTES
   // ===========================
-  app.post("/api/assignments/smart-bulk", isAuthenticated, async (req, res) => {
+  app.post("/api/assignments/smart-bulk", async (req, res) => {
     try {
       const { workOrderIds, operatorId } = req.body;
       
@@ -525,7 +525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // AUTO-ASSIGN ROUTES
   // ===========================
-  app.post("/api/auto-assign", isAuthenticated, async (req, res) => {
+  app.post("/api/auto-assign", async (req, res) => {
     try {
       const { productionOrderIds } = req.body;
       
@@ -627,7 +627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================
   // SLACK INTEGRATION ROUTES
   // ===========================
-  app.post("/api/slack/send-workload", isAuthenticated, async (req, res) => {
+  app.post("/api/slack/send-workload", async (req, res) => {
     try {
       const { operatorId, message } = req.body;
       
