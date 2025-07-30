@@ -351,14 +351,14 @@ export const insertOperatorUphSchema = createInsertSchema(operatorUph).omit({
   updatedAt: true,
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
 });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
 export type ProductionOrder = typeof productionOrders.$inferSelect;
 export type InsertProductionOrder = z.infer<typeof insertProductionOrderSchema>;
 export type WorkOrder = typeof workOrders.$inferSelect;

@@ -54,16 +54,13 @@ export function OperatorWorkloadSummary({ assignments, assignmentsData }: Operat
   });
 
   // Fetch UPH data for more accurate time calculations
-  const { data: uphData, isLoading: isLoadingUph } = useQuery({
+  const { data: uphResults, isLoading: isLoadingUph } = useQuery<UphEntry[] | undefined>({
     queryKey: ["/api/uph-data"],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
   
-  // Extract the uphData array from the response
-  const uphResults = (uphData as any)?.uphData || [];
-  
   React.useEffect(() => {
-    if (uphResults && uphResults.length > 0) {
+    if (uphResults) {
       console.log('UPH data loaded:', uphResults.length, 'entries');
       const evanUph = uphResults.filter((d: any) => d.operatorName === "Evan Crosby");
       console.log('Evan Crosby UPH entries:', evanUph.length);

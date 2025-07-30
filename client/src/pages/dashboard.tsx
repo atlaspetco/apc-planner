@@ -23,13 +23,13 @@ export default function Dashboard() {
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [isUphLoading, setIsUphLoading] = useState(false);
 
-  const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery<any[]>({
+  const { data: productionOrders = [], isLoading: isLoadingPOs, error: errorPOs, refetch: refetchPOs } = useQuery({
     queryKey: ["/api/production-orders"],
     staleTime: 0,
     gcTime: 0,
   });
 
-  const { data: assignmentsData, isLoading: isLoadingAssignments, refetch: refetchAssignments } = useQuery<{assignments: any[]}>({
+  const { data: assignmentsData, isLoading: isLoadingAssignments, refetch: refetchAssignments } = useQuery({
     queryKey: ["/api/assignments"],
     staleTime: 0,
     gcTime: 0,
