@@ -727,32 +727,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`🔍 TRACKING: Imported work cycles schema`);  
       
-      // Get completed hours from work cycles for work orders that are finished/done
-      // Look at work order states in the dashboard to identify completed ones
-      const workOrderStates = new Map<number, string>();
-      workOrderMap.forEach((workOrderData, workOrderId) => {
-        workOrderStates.set(workOrderId, workOrderData.workOrder.state);
-      });
+      // Get the production order IDs from the current dashboard MOs
+      const dashboardProductionOrderIds = Array.from(workOrderMap.values())
+        .map(workOrderData => workOrderData.productionOrder.id);
       
-      console.log(`\n=== WORK ORDER STATES DEBUG ===`);
-      const stateDistribution = {};
-      workOrderStates.forEach((state) => {
-        stateDistribution[state] = (stateDistribution[state] || 0) + 1;
-      });
-      console.log(`Work order state distribution:`, stateDistribution);
+      const uniqueProductionOrderIds = [...new Set(dashboardProductionOrderIds)];
+      console.log(`Dashboard has ${uniqueProductionOrderIds.length} unique production orders (MOs)`);
       
-      // Find work orders that are completed (done, finished) and have assignments
-      const completedWorkOrderIds = Array.from(workOrderStates.entries())
-        .filter(([workOrderId, state]) => state === 'done' || state === 'finished')
-        .map(([workOrderId]) => workOrderId);
-      
-      console.log(`Found ${completedWorkOrderIds.length} completed work orders: ${completedWorkOrderIds.slice(0, 5).join(', ')}...`);
-      
-      // Get work cycles for any work orders (completed or not) that have duration data
+      // Get work cycles ONLY for the MOs currently shown on the planning grid
       const completedCycles = await db
         .select({
           operatorName: workCycles.work_cycles_operator_rec_name,
-          workOrderId: workCycles.work_cycles_rec_name, // This should map to work order ID
           productionId: workCycles.work_production_id,
           duration: workCycles.work_cycles_duration,
           state: workCycles.state,
@@ -764,7 +749,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           and(
             gt(workCycles.work_cycles_duration, 0),
             isNotNull(workCycles.work_cycles_duration),
-            isNotNull(workCycles.work_cycles_operator_rec_name)
+            isNotNull(workCycles.work_cycles_operator_rec_name),
+            // Only get work cycles for the production orders shown on the dashboard
+            workCycles.work_production_id.in(uniqueProductionOrderIds)
           )
         );
       
@@ -789,76 +776,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`\n=== COMPLETED HOURS CALCULATION ===`);
-      console.log(`Found ${completedCycles.length} work cycles with duration data`);
+      console.log(`\n=== COMPLETED HOURS CALCULATION (DASHBOARD MOs ONLY) ===`);
+      console.log(`Found ${completedCycles.length} work cycles for dashboard MOs`);
       
-      // Calculate total completed hours per operator from all 'done' work cycles
-      // These are completed work cycles that can't be assigned anymore
-      const totalCompletedHoursByOperator = new Map<string, number>();
+      // Calculate completed hours per operator only for work cycles associated with dashboard MOs
+      const dashboardCompletedHoursByOperator = new Map<string, number>();
       
       completedCycles.forEach(cycle => {
         if (cycle.operatorName && cycle.duration && cycle.duration > 0) {
           const hours = cycle.duration / 3600; // Convert seconds to hours
-          const currentHours = totalCompletedHoursByOperator.get(cycle.operatorName) || 0;
-          totalCompletedHoursByOperator.set(cycle.operatorName, currentHours + hours);
+          const currentHours = dashboardCompletedHoursByOperator.get(cycle.operatorName) || 0;
+          dashboardCompletedHoursByOperator.set(cycle.operatorName, currentHours + hours);
         }
       });
       
-      console.log(`Calculated total completed hours for ${totalCompletedHoursByOperator.size} operators`);
-      totalCompletedHoursByOperator.forEach((hours, operatorName) => {
-        console.log(`  ${operatorName}: ${hours.toFixed(2)}h completed`);
+      console.log(`Calculated dashboard completed hours for ${dashboardCompletedHoursByOperator.size} operators`);
+      dashboardCompletedHoursByOperator.forEach((hours, operatorName) => {
+        console.log(`  ${operatorName}: ${hours.toFixed(2)}h completed (dashboard MOs only)`);
       });
       
-      // For completed work orders, find their work cycles and calculate actual hours (legacy logic)
-      completedWorkOrderIds.forEach(workOrderId => {
-        const workOrderData = workOrderMap.get(workOrderId);
-        if (workOrderData) {
-          console.log(`🔍 Checking completed WO ${workOrderId} (${workOrderData.workOrder.state}) - ${workOrderData.workOrder.operation}`);
-          
-          // Find work cycles that match this completed work order's production order
-          const matchingCycles = completedCycles.filter(cycle => 
-            cycle.productionId === workOrderData.productionOrder.id
-          );
-          
-          if (matchingCycles.length > 0) {
-            console.log(`  Found ${matchingCycles.length} work cycles for this completed work order`);
-            
-            // Group cycles by operator and sum their hours
-            const operatorHours = new Map<string, number>();
-            matchingCycles.forEach(cycle => {
-              if (cycle.operatorName && cycle.duration) {
-                const hours = cycle.duration / 3600;
-                const current = operatorHours.get(cycle.operatorName) || 0;
-                operatorHours.set(cycle.operatorName, current + hours);
-              }
-            });
-            
-            // Apply completed hours to this work order
-            operatorHours.forEach((hours, operatorName) => {
-              const key = `${operatorName}|${workOrderId}`;
-              completedHoursByOperatorAndWO.set(key, hours);
-              console.log(`  ✅ Applied ${hours.toFixed(2)}h completed to ${operatorName} on WO ${workOrderId}`);
-            });
-          }
-        }
-      });
+      // Show breakdown of completed hours from dashboard MOs
+      console.log(`Found ${completedCycles.length} work cycles for dashboard MOs`);
       
-      console.log(`Found ${completedCycles.length} completed work cycles`);
-      console.log(`Completed hours map has ${completedHoursByOperatorAndWO.size} operator/WO combinations with completed hours`);
-      
-      // Debug: show sample of completed hours for dashboard work orders
-      if (completedHoursByOperatorAndWO.size > 0) {
-        const sampleEntries = Array.from(completedHoursByOperatorAndWO.entries()).slice(0, 5);
-        console.log("Sample completed hours by operator|WorkOrder:", sampleEntries);
-      }
-      
-      // Debug: Check if Devin Cann has any completed hours
-      const devinCompletedCycles = completedCycles.filter(c => c.operatorName?.includes("Devin Cann"));
-      console.log(`Devin Cann has ${devinCompletedCycles.length} completed cycles`);
-      if (devinCompletedCycles.length > 0) {
-        const devinHours = devinCompletedCycles.reduce((sum, c) => sum + (c.duration || 0) / 3600, 0);
-        console.log(`Devin's total completed hours: ${devinHours.toFixed(2)}h`);
-        console.log("Devin's completed cycles sample:", devinCompletedCycles.slice(0, 3));
+      // Debug: Check if specific operators have completed hours from dashboard MOs
+      const devinDashboardCycles = completedCycles.filter(c => c.operatorName?.includes("Devin Cann"));
+      console.log(`Devin Cann has ${devinDashboardCycles.length} completed cycles from dashboard MOs`);
+      if (devinDashboardCycles.length > 0) {
+        const devinHours = devinDashboardCycles.reduce((sum, c) => sum + (c.duration || 0) / 3600, 0);
+        console.log(`Devin's completed hours from dashboard MOs: ${devinHours.toFixed(2)}h`);
+        console.log("Devin's dashboard cycles sample:", devinDashboardCycles.slice(0, 3));
       }
 
       // Enrich assignments with production order data and completed hours
@@ -871,14 +817,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return operator[0]?.name || 'Unknown';
         })();
         
-        // Get total completed hours for this operator from all their 'done' work cycles
-        // These are completed work cycles that can't be assigned anymore
-        const totalCompletedHours = totalCompletedHoursByOperator.get(operatorName) || 0;
+        // Get completed hours for this operator from dashboard MOs work cycles only
+        // These are completed work cycles from MOs currently shown on the planning grid
+        const operatorDashboardCompletedHours = dashboardCompletedHoursByOperator.get(operatorName) || 0;
         
         // For now, distribute completed hours proportionally across their assignments
-        // (This is a simple approximation - in reality we'd want more precise tracking)
+        // (This focuses only on work completed for the current dashboard MOs)
         const operatorAssignmentCount = assignments.filter(a => a.operatorId === assignment.operatorId).length;
-        const completedHours = operatorAssignmentCount > 0 ? totalCompletedHours / operatorAssignmentCount : 0;
+        const completedHours = operatorAssignmentCount > 0 ? operatorDashboardCompletedHours / operatorAssignmentCount : 0;
         
         if (!workOrderData) {
           // Try to find work order by looking through all production orders
@@ -1020,31 +966,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
       
-      console.log(`\n=== APPLYING COMPLETED HOURS TO ASSIGNMENTS ===`);
+      console.log(`\n=== APPLYING DASHBOARD COMPLETED HOURS TO ASSIGNMENTS ===`);
       console.log(`Total enriched assignments: ${enrichedAssignments.length}`);
-      console.log(`Completed hours map size: ${completedHoursByOperatorAndWO.size}`);
+      console.log(`Dashboard completed hours for ${dashboardCompletedHoursByOperator.size} operators`);
       
-      // Show some sample mappings
-      if (completedHoursByOperatorAndWO.size > 0) {
-        const sampleMappings = Array.from(completedHoursByOperatorAndWO.entries()).slice(0, 5);
-        console.log(`Sample completed hours mappings (operator|workOrderId):`, sampleMappings);
+      // Show dashboard completed hours summary
+      if (dashboardCompletedHoursByOperator.size > 0) {
+        console.log(`Dashboard completed hours by operator:`);
+        dashboardCompletedHoursByOperator.forEach((hours, operatorName) => {
+          console.log(`  ${operatorName}: ${hours.toFixed(2)}h completed (dashboard MOs)`);
+        });
       }
       
       const finalEnrichedAssignments = enrichedAssignments.map(assignment => {
-        if (assignment.operatorName && assignment.workOrderId) {
-          const key = `${assignment.operatorName}|${assignment.workOrderId}`;
-          const completedHours = completedHoursByOperatorAndWO.get(key) || 0;
-          
-          if (completedHours > 0) {
-            console.log(`✅ Applied ${completedHours.toFixed(2)}h completed to ${assignment.operatorName} on WO ${assignment.workOrderId}`);
-          }
-          
-          return {
-            ...assignment,
-            completedHours
-          };
-        }
-        return assignment;
+        // Use the completed hours already calculated during assignment enrichment
+        // This was computed proportionally from dashboardCompletedHoursByOperator
+        return assignment; // completedHours is already set in the enrichment step
       });
       
       // Add cache headers to prevent stale data
