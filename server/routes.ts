@@ -1026,6 +1026,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
       
+      // CRITICAL FIX: Include operators with completed work cycles but no current assignments
+      // This ensures operators like Courtney Banh show their completed hours even without assignments
+      console.log('\n🔧 ADDING OPERATORS WITH COMPLETED WORK BUT NO ASSIGNMENTS...');
+      
+      const assignedOperatorIds = new Set(finalEnrichedAssignments.map(a => a.operatorId));
+      const operatorNamesToIds = new Map<string, number>();
+      allOperators.forEach(op => operatorNamesToIds.set(op.name, op.id));
+      
+      const completedOnlyAssignments = [];
+      dashboardCompletedHoursByOperator.forEach((completedHours, operatorName) => {
+        const operatorId = operatorNamesToIds.get(operatorName);
+        
+        // Only add if operator has completed hours but no current assignments
+        if (operatorId && !assignedOperatorIds.has(operatorId) && completedHours > 0) {
+          console.log(`➕ Adding ${operatorName} (ID: ${operatorId}) with ${completedHours.toFixed(4)}h completed work`);
+          
+          completedOnlyAssignments.push({
+            workOrderId: null, // No work order - this is completed work only
+            operatorId: operatorId,
+            operatorName: operatorName,
+            assignedAt: null,
+            isActive: false, // Not an active assignment
+            isAutoAssigned: false,
+            autoAssignReason: null,
+            autoAssignConfidence: null,
+            assignedBy: null,
+            estimatedHours: 0,
+            workCenter: 'Completed Work', // Special indicator
+            operation: 'Various',
+            routing: 'Multiple',
+            productRouting: 'Multiple',
+            quantity: 0,
+            productionOrderId: null,
+            productName: 'Multiple',
+            moNumber: 'Multiple Dashboard MOs',
+            completedHours: completedHours, // Show their total completed hours
+            workOrderState: 'completed',
+            workCycles: 0
+          });
+        }
+      });
+      
+      console.log(`Added ${completedOnlyAssignments.length} operators with completed work but no assignments`);
+      
+      // Combine regular assignments with completed-only operators
+      const allAssignments = [...finalEnrichedAssignments, ...completedOnlyAssignments];
+      
+      console.log(`\n📋 FINAL RESPONSE: ${allAssignments.length} total entries (${finalEnrichedAssignments.length} assignments + ${completedOnlyAssignments.length} completed-only)`);
+      
       // Add cache headers to prevent stale data
       res.set({
         'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -1033,7 +1082,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'Expires': '0'
       });
       
-      res.json({ assignments: finalEnrichedAssignments });
+      res.json({ assignments: allAssignments });
     } catch (error) {
       console.error('Error fetching work order assignments:', error);
       res.status(500).json({ message: 'Failed to fetch assignments' });
