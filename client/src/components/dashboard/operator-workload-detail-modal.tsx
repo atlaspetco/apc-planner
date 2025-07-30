@@ -82,16 +82,28 @@ export function OperatorWorkloadDetailModal({
       assignmentsByMO.get(moNumber)!.workOrders.push(assignment);
     });
     
-    // Now process assignments with MO-level quantities
+    // Now process assignments with MO-level quantities (ONLY ONCE PER MO/WORK CENTER COMBINATION)
+    const processedKeys = new Set<string>();
     operator.assignments.forEach(assignment => {
-      console.log('Processing assignment:', assignment);
       const routing = assignment.productRouting || assignment.routing || 'Unknown';
+      const moNumber = assignment.moNumber || 'Unknown';
+      const workCenter = assignment.workCenter || 'Unknown';
+      
+      // Create unique key for MO + Work Center to avoid double counting
+      const uniqueKey = `${moNumber}-${workCenter}-${routing}`;
+      if (processedKeys.has(uniqueKey)) {
+        console.log(`Skipping duplicate: ${uniqueKey}`);
+        return; // Skip duplicates
+      }
+      processedKeys.add(uniqueKey);
+      
+      console.log('Processing assignment:', assignment);
       if (!grouped.has(routing)) {
         grouped.set(routing, []);
       }
       
       // Get MO-level quantity
-      const moData = assignmentsByMO.get(assignment.moNumber || 'Unknown');
+      const moData = assignmentsByMO.get(moNumber);
       const moQuantity = moData?.moQuantity || assignment.quantity || 0;
       
       // Calculate estimated hours - prioritize cached values first
@@ -105,7 +117,7 @@ export function OperatorWorkloadDetailModal({
         console.log(`Modal: Using cached hours for ${operator.operatorName} - ${assignment.workCenter}/${routing}: ${estimatedHours.toFixed(2)}h (cached)`);
       }
       // 2. Second priority: Calculate from UPH data if quantity available and no cached value
-      else if (uphResults && moQuantity > 0) {
+      else if (uphResults && Array.isArray(uphResults) && moQuantity > 0) {
         const uphEntry = uphResults.find((entry: any) => 
           entry.operatorName === operator.operatorName &&
           entry.workCenter === assignment.workCenter &&

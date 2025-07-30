@@ -930,13 +930,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Enriched ${enrichedAssignments.length} assignments with production order data`);
       
       // Now calculate completed hours for each assignment based on operator and production order
+      console.log(`\n=== DEBUGGING COMPLETED HOURS MAPPING ===`);
+      console.log(`Total enriched assignments: ${enrichedAssignments.length}`);
+      console.log(`Completed hours map size: ${completedHoursByOperatorAndPO.size}`);
+      
+      // Show some sample mappings
+      if (completedHoursByOperatorAndPO.size > 0) {
+        const sampleMappings = Array.from(completedHoursByOperatorAndPO.entries()).slice(0, 5);
+        console.log(`Sample completed hours mappings:`, sampleMappings);
+      }
+      
       const finalEnrichedAssignments = enrichedAssignments.map(assignment => {
         if (assignment.operatorName && assignment.productionOrderId) {
           const key = `${assignment.operatorName}|${assignment.productionOrderId}`;
           const completedHours = completedHoursByOperatorAndPO.get(key) || 0;
           
+          // Debug Courtney Banh specifically
+          if (assignment.operatorName === "Courtney Banh") {
+            console.log(`🔍 Courtney assignment: PO ${assignment.productionOrderId}, key: "${key}", completed hours: ${completedHours}`);
+          }
+          
           if (completedHours > 0) {
-            console.log(`Found ${completedHours.toFixed(2)}h completed for ${assignment.operatorName} on PO ${assignment.productionOrderId}`);
+            console.log(`✅ Found ${completedHours.toFixed(2)}h completed for ${assignment.operatorName} on PO ${assignment.productionOrderId}`);
           }
           
           return {
@@ -1837,12 +1852,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analysis = {
         operator: operator,
         totalRecords: uphData.length,
-        averageUph: uphData.length > 0 ? uphData.reduce((sum, data) => sum + data.unitsPerHour, 0) / uphData.length : 0,
-        maxUph: uphData.length > 0 ? Math.max(...uphData.map(d => d.unitsPerHour)) : 0,
-        minUph: uphData.length > 0 ? Math.min(...uphData.map(d => d.unitsPerHour)) : 0,
+        averageUph: uphData.length > 0 ? uphData.reduce((sum, data) => sum + data.uph, 0) / uphData.length : 0,
+        maxUph: uphData.length > 0 ? Math.max(...uphData.map(d => d.uph)) : 0,
+        minUph: uphData.length > 0 ? Math.min(...uphData.map(d => d.uph)) : 0,
         workCenters: [...new Set(uphData.map(d => d.workCenter))],
         operations: [...new Set(uphData.map(d => d.operation))],
-        routings: [...new Set(uphData.map(d => d.routing))],
+        routings: [...new Set(uphData.map(d => d.productRouting))],
         performanceByWorkCenter: {} as Record<string, { average: number; count: number; operations: string[] }>
       };
 
@@ -1857,7 +1872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         const centerData = analysis.performanceByWorkCenter[data.workCenter];
-        centerData.average = (centerData.average * centerData.count + data.unitsPerHour) / (centerData.count + 1);
+        centerData.average = (centerData.average * centerData.count + data.uph) / (centerData.count + 1);
         centerData.count++;
         
         if (!centerData.operations.includes(data.operation)) {
@@ -1894,7 +1909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        const averageUph = generalUphData.reduce((sum, data) => sum + data.unitsPerHour, 0) / generalUphData.length;
+        const averageUph = generalUphData.reduce((sum, data) => sum + data.uph, 0) / generalUphData.length;
         
         const efficiency = {
           operatorId,
@@ -1917,8 +1932,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         operation,
         routing,
         quantity,
-        unitsPerHour: operatorUph.unitsPerHour,
-        estimatedHours: quantity / operatorUph.unitsPerHour,
+        unitsPerHour: operatorUph.uph,
+        estimatedHours: quantity / operatorUph.uph,
         dataSource: "specific",
         confidence: "high",
         lastUpdated: operatorUph.lastUpdated
