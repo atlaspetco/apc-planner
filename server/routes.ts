@@ -727,14 +727,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`🔍 TRACKING: Imported work cycles schema`);  
       
-      // Get the production order IDs from the current dashboard MOs
-      const dashboardProductionOrderIds = Array.from(workOrderMap.values())
-        .map(workOrderData => workOrderData.productionOrder.id);
+      // Get work cycles from recent completed work (last 30 days) instead of filtering by dashboard MOs
+      // This shows actual completed hours from operators' recent work regardless of which MOs are on dashboard
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
-      const uniqueProductionOrderIds = [...new Set(dashboardProductionOrderIds)];
-      console.log(`Dashboard has ${uniqueProductionOrderIds.length} unique production orders (MOs)`);
+      console.log(`Getting completed work cycles from the last 30 days (since ${thirtyDaysAgo.toISOString().split('T')[0]})`);
       
-      // Get work cycles ONLY for the MOs currently shown on the planning grid
       const completedCycles = await db
         .select({
           operatorName: workCycles.work_cycles_operator_rec_name,
@@ -742,16 +741,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           duration: workCycles.work_cycles_duration,
           state: workCycles.state,
           workCenter: workCycles.work_cycles_work_center_rec_name,
-          quantity: workCycles.work_cycles_quantity_done
+          quantity: workCycles.work_cycles_quantity_done,
+          createDate: workCycles.work_production_create_date
         })
         .from(workCycles)
         .where(
           and(
             gt(workCycles.work_cycles_duration, 0),
             isNotNull(workCycles.work_cycles_duration),
-            isNotNull(workCycles.work_cycles_operator_rec_name),
-            // Only get work cycles for the production orders shown on the dashboard
-            inArray(workCycles.work_production_id, uniqueProductionOrderIds)
+            isNotNull(workCycles.work_cycles_operator_rec_name)
+            // Include ALL recent work cycles, not just dashboard MOs
           )
         );
       
@@ -776,10 +775,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
       
-      console.log(`\n=== COMPLETED HOURS CALCULATION (DASHBOARD MOs ONLY) ===`);
-      console.log(`Found ${completedCycles.length} work cycles for dashboard MOs`);
+      console.log(`\n=== COMPLETED HOURS CALCULATION (RECENT 30 DAYS) ===`);
+      console.log(`Found ${completedCycles.length} recent work cycles for completed hours calculation`);
       
-      // Calculate completed hours per operator only for work cycles associated with dashboard MOs
+      // Calculate completed hours per operator from recent work cycles (last 30 days)
       const dashboardCompletedHoursByOperator = new Map<string, number>();
       
       completedCycles.forEach(cycle => {
