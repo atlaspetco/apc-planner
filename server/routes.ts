@@ -962,6 +962,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return assignment;
       });
       
+      // Calculate total historical completed hours for each operator
+      const operatorHistoricalHours = new Map<string, number>();
+      
+      completedCycles.forEach(cycle => {
+        if (cycle.operatorName && cycle.duration) {
+          const hours = cycle.duration / 3600; // Convert seconds to hours
+          const currentTotal = operatorHistoricalHours.get(cycle.operatorName) || 0;
+          operatorHistoricalHours.set(cycle.operatorName, currentTotal + hours);
+        }
+      });
+      
+      console.log(`\n=== OPERATOR HISTORICAL COMPLETED HOURS ===`);
+      if (operatorHistoricalHours.size > 0) {
+        const historicalHoursSample = Array.from(operatorHistoricalHours.entries()).slice(0, 5);
+        console.log(`Historical completed hours by operator:`, historicalHoursSample);
+      }
+      
       // Add cache headers to prevent stale data
       res.set({
         'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -969,7 +986,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'Expires': '0'
       });
       
-      res.json({ assignments: finalEnrichedAssignments });
+      res.json({ 
+        assignments: finalEnrichedAssignments,
+        operatorHistoricalHours: Object.fromEntries(operatorHistoricalHours)
+      });
     } catch (error) {
       console.error('Error fetching work order assignments:', error);
       res.status(500).json({ message: 'Failed to fetch assignments' });
